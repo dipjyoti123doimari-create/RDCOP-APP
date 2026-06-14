@@ -1,0 +1,17 @@
+# ---------------------------------------------------------------------------
+# Python packages needed for the Batching Incentive & Deduction Calculator.
+#
+# Install everything at once with:
+#     pip install -r requirements.txt
+#
+# (We pin only loose minimum versions so it stays beginner-friendly and
+#  easy to install. You can tighten these later if you want.)
+# ---------------------------------------------------------------------------
+
+streamlit            # Builds the web app user interface (UI)
+pandas               # Reads and processes table data (Excel, calculations)
+openpyxl             # Reads .xlsx Excel files and helps format Excel output
+xlsxwriter           # Writes nicely formatted Excel reports (colors, freeze, etc.)
+requests             # Reliable HTTP fetching (used for public Google Sheets access)
+gspread              # Talks to Google Sheets (private sheets via service account)
+google-auth          # Handles Google service-account login for Google Sheets

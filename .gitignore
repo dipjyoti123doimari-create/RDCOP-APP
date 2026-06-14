@@ -1,0 +1,38 @@
+# Database (contains live data — never commit)
+data/app.db
+*.db
+*.sqlite
+*.sqlite3
+
+# Credentials and secrets
+credentials/
+.env
+*.env
+
+# Exported reports (generated files)
+exports/
+*.xlsx
+*.pdf
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+
+# Streamlit
+.streamlit/secrets.toml
+streamlit_boot.log
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE and local dev tools
+.vscode/
+.idea/
+.claude/
+
+# Logs
+*.log

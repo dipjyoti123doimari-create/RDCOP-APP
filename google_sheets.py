@@ -1,0 +1,426 @@
+"""
+google_sheets.py
+================
+Connects to Google Sheets and syncs the Master Data into SQLite.
+
+TWO ACCESS MODES (chosen automatically):
+
+  1. PUBLIC MODE (no credentials needed)
+     If your Google Sheet is shared as "Anyone with the link can view",
+     we fetch it as a CSV export — no API key required.
+     This is the default mode.
+
+  2. PRIVATE MODE (service account credentials)
+     If credentials/service_account.json exists, we use the Google Sheets
+     API via a service account. This lets you sync from private sheets.
+     See credentials/README.txt for setup instructions.
+
+The app picks mode 2 automatically when the credentials file is present,
+and falls back to mode 1 otherwise. You never need to change code to switch.
+
+ACCEPTS FULL URLS OR SHEET IDs:
+  You can paste either of these into the Sheet ID field:
+    - Full URL:  https://docs.google.com/spreadsheets/d/1BxiMVs0.../edit
+    - Just the ID:  1BxiMVs0...
+  Both work — the app extracts the ID from the URL automatically.
+"""
+
+import io
+import os
+import re
+import urllib.parse
+from datetime import datetime
+
+import pandas as pd
+
+import config
+import database
+
+# Path to the optional service account key file.
+CREDS_PATH = os.path.join("credentials", "service_account.json")
+
+# Google API scopes (only needed for private/service-account mode).
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    "https://www.googleapis.com/auth/drive.readonly",
+]
+
+
+# ---------------------------------------------------------------------------
+# 1. HELPERS
+# ---------------------------------------------------------------------------
+
+def credentials_exist() -> bool:
+    """Return True if the service account JSON file is present."""
+    return os.path.exists(CREDS_PATH)
+
+
+def extract_sheet_id(url_or_id: str) -> str:
+    """
+    Accept any Google Sheets URL or raw ID and return just the sheet ID.
+
+    Handles two URL formats:
+      Published URL:  .../spreadsheets/d/e/{PUB_ID}/pubhtml  → returns {PUB_ID}
+      Regular URL:    .../spreadsheets/d/{SHEET_ID}/edit     → returns {SHEET_ID}
+      Raw ID:         1BxiMVs0...                            → returned as-is
+    """
+    url_or_id = url_or_id.strip()
+    # Published-to-web URL: /d/e/{ID}/...  (must check before the regular pattern)
+    match = re.search(r"/spreadsheets/d/e/([a-zA-Z0-9_-]+)", url_or_id)
+    if match:
+        return match.group(1)
+    # Regular URL: /d/{ID}/...
+    match = re.search(r"/spreadsheets/d/([a-zA-Z0-9_-]+)", url_or_id)
+    if match:
+        return match.group(1)
+    return url_or_id  # already a raw ID
+
+
+def _is_published_id(sheet_id: str) -> bool:
+    """
+    Published-to-web IDs always start with '2PACX-'.
+    Regular sheet IDs are shorter alphanumeric strings.
+    """
+    return sheet_id.startswith("2PACX-")
+
+
+# ---------------------------------------------------------------------------
+# 2. FETCH — PUBLIC MODE (no credentials)
+# ---------------------------------------------------------------------------
+
+def _fetch_public(sheet_id: str, worksheet_name: str) -> pd.DataFrame:
+    """
+    Fetch a publicly accessible Google Sheet and return a raw DataFrame.
+
+    Tries three URL formats in order (most reliable first):
+      1. export?format=csv  — works when sheet is "Anyone with link can view"
+      2. gviz/tq CSV        — works when sheet is "Published to the web"
+      3. pub?output=csv     — works when sheet is "Published to the web"
+
+    Uses the requests library for reliable fetching and detects HTML error
+    pages that Google returns when permissions are wrong.
+    """
+    try:
+        import requests as _requests
+    except ImportError:
+        raise ImportError(
+            "The 'requests' package is not installed.\n"
+            "Run: python -m pip install requests"
+        )
+
+    encoded_name = urllib.parse.quote(worksheet_name)
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+
+    # Choose URL set based on the sheet ID type.
+    if _is_published_id(sheet_id):
+        # "Published to the web" sheets — use the /d/e/ path with pub?output=csv
+        urls = [
+            f"https://docs.google.com/spreadsheets/d/e/{sheet_id}/pub?output=csv&sheet={encoded_name}",
+            f"https://docs.google.com/spreadsheets/d/e/{sheet_id}/pub?output=csv",
+        ]
+    else:
+        # Regular sheets shared as "Anyone with the link can view"
+        urls = [
+            f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&sheet={encoded_name}",
+            f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={encoded_name}",
+            f"https://docs.google.com/spreadsheets/d/{sheet_id}/pub?output=csv&sheet={encoded_name}",
+        ]
+
+    last_error = "Unknown error"
+    for url in urls:
+        try:
+            resp = _requests.get(url, timeout=15, headers=headers, allow_redirects=True)
+
+            content = resp.text.strip()
+
+            # Google returns an HTML page when permissions deny the request.
+            if resp.status_code != 200 or content.startswith("<"):
+                last_error = (
+                    f"HTTP {resp.status_code} — Google returned an error page, "
+                    "not CSV data. Check sheet permissions."
+                )
+                continue  # try next URL format
+
+            # Parse as CSV — dtype=str keeps numeric codes like "818000000001"
+            # from being converted to scientific notation (8.18E+11).
+            df = pd.read_csv(io.StringIO(content), dtype=str)
+            if df.empty:
+                last_error = "The sheet returned empty data."
+                continue
+
+            return df  # success
+
+        except Exception as exc:
+            last_error = str(exc)
+            continue
+
+    # All three formats failed.
+    raise ValueError(
+        "Could not read your Google Sheet after trying all URL formats.\n\n"
+        f"Last error: {last_error}\n\n"
+        "How to fix:\n"
+        "  1. Open your Google Sheet.\n"
+        "  2. Click File → Share → Publish to the web.\n"
+        "  3. Choose 'Entire Document' and 'CSV', then click Publish.\n"
+        "  4. Come back and click Sync Now again.\n\n"
+        "OR confirm the sheet is shared as 'Anyone with the link can view'."
+    )
+
+
+# ---------------------------------------------------------------------------
+# 3. FETCH — PRIVATE MODE (service account credentials)
+# ---------------------------------------------------------------------------
+
+def _fetch_private(sheet_id: str, worksheet_name: str) -> pd.DataFrame:
+    """
+    Fetch a Google Sheet using the gspread library and a service account.
+    Used automatically when credentials/service_account.json exists.
+    """
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials
+    except ImportError:
+        raise ImportError(
+            "The 'gspread' and 'google-auth' packages are not installed.\n"
+            "Run:  python -m pip install gspread google-auth"
+        )
+
+    creds = Credentials.from_service_account_file(CREDS_PATH, scopes=SCOPES)
+    client = gspread.authorize(creds)
+
+    spreadsheet = client.open_by_key(sheet_id)
+    worksheet = spreadsheet.worksheet(worksheet_name)
+    records = worksheet.get_all_records(expected_headers=None)
+
+    if not records:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(records)
+    # Keep all columns as strings so numeric codes aren't turned into floats.
+    return df.astype(str)
+
+
+# ---------------------------------------------------------------------------
+# 4. LAYOUT DETECTION & TRANSPOSE
+# ---------------------------------------------------------------------------
+
+def _is_transposed(df: pd.DataFrame) -> bool:
+    """
+    Detect whether the sheet uses a TRANSPOSED (row-based) layout.
+
+    Normal layout  — field names are COLUMN HEADERS (first row):
+        Employee Code | Employee Name | Designation | ...
+        E001          | John          | SPE         | ...
+        E002          | Jane          | MO          | ...
+
+    Transposed layout — field names are ROW LABELS (first column):
+        Employee Code | E001  | E002  | ...
+        Employee Name | John  | Jane  | ...
+        Designation   | SPE   | MO    | ...
+
+    We detect it by counting how many of the required field names appear
+    as values inside the first column vs. as column headers.
+    """
+    if df.empty:
+        return False
+
+    required_lower = {c.lower() for c in config.MASTER_DATA_COLUMNS}
+
+    # How many required names appear as values in the first column?
+    first_col_values = {str(v).strip().lower() for v in df.iloc[:, 0]}
+    matches_in_rows = len(required_lower & first_col_values)
+
+    # How many required names appear as column headers?
+    header_values = {str(c).strip().lower() for c in df.columns}
+    matches_in_headers = len(required_lower & header_values)
+
+    # If the first column holds more field names than the headers do, it's transposed.
+    return matches_in_rows > matches_in_headers
+
+
+def _transpose_df(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Pivot a transposed sheet back to the standard column-based layout.
+
+    Before (transposed):
+        col[0]="Employee Code" | col[1]="E001" | col[2]="E002"
+        row 0: "Employee Name" | "John"         | "Jane"
+        row 1: "Designation"   | "SPE"          | "MO"
+        ...
+
+    After (standard):
+        Employee Code | Employee Name | Designation | ...
+        E001          | John          | SPE         | ...
+        E002          | Jane          | MO          | ...
+    """
+    # The name of column 0 is the first field label (e.g. "Employee Code").
+    first_field = str(df.columns[0]).strip()
+
+    # Make the first column the DataFrame index so it becomes column names after .T
+    df = df.set_index(df.columns[0])
+
+    # Transpose: old column names (E001, E002 …) become the row index.
+    df = df.T
+
+    # Bring the row index (employee codes) back as a normal column.
+    df.index.name = first_field
+    df = df.reset_index()
+
+    # Clean up any whitespace in the new column names.
+    df.columns = [str(c).strip() for c in df.columns]
+
+    return df
+
+
+# ---------------------------------------------------------------------------
+# 5. SHARED CLEANING & VALIDATION
+# ---------------------------------------------------------------------------
+
+def _clean_and_validate(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Take a raw DataFrame (from either public or private fetch) and:
+      - Auto-detect and fix the transposed layout if needed.
+      - Strip whitespace from column names and cell values.
+      - Map sheet column names → config.MASTER_DATA_COLUMNS (case-insensitive).
+      - Raise ValueError if a required column is missing.
+      - Drop blank Employee Code rows.
+      - Return a clean DataFrame with exactly the 6 required columns.
+    """
+    if raw_df.empty:
+        return pd.DataFrame(columns=config.MASTER_DATA_COLUMNS)
+
+    # Strip whitespace from column headers first (needed for detection).
+    raw_df.columns = [str(c).strip() for c in raw_df.columns]
+
+    # Auto-detect transposed layout and flip it back to standard.
+    if _is_transposed(raw_df):
+        raw_df = _transpose_df(raw_df)
+
+    # Case-insensitive column matching.
+    sheet_cols_lower = {c.lower(): c for c in raw_df.columns}
+    rename_map = {}
+    missing_cols = []
+
+    for required_col in config.MASTER_DATA_COLUMNS:
+        if required_col.lower() in sheet_cols_lower:
+            rename_map[sheet_cols_lower[required_col.lower()]] = required_col
+        else:
+            missing_cols.append(required_col)
+
+    if missing_cols:
+        raise ValueError(
+            f"The sheet is missing these required columns: {missing_cols}\n"
+            f"Columns found in the sheet: {list(raw_df.columns)}\n\n"
+            "Your sheet must have these labels (spelling matters, case does not):\n"
+            f"{config.MASTER_DATA_COLUMNS}"
+        )
+
+    df = raw_df.rename(columns=rename_map)[config.MASTER_DATA_COLUMNS].copy()
+
+    # Strip whitespace from every cell.
+    for col in df.columns:
+        df[col] = df[col].astype(str).str.strip()
+
+    # Drop rows where Employee Code is blank or the literal string "nan".
+    df = df[
+        (df["Employee Code"].str.len() > 0) & (df["Employee Code"] != "nan")
+    ].reset_index(drop=True)
+
+    # Remove duplicate employee codes — keep the last occurrence so that
+    # any corrections made lower in the sheet win over earlier entries.
+    dupes = df["Employee Code"].duplicated(keep="last").sum()
+    if dupes > 0:
+        df = df.drop_duplicates(subset="Employee Code", keep="last").reset_index(drop=True)
+
+    return df
+
+
+# ---------------------------------------------------------------------------
+# 5. PUBLIC FETCH ENTRY POINT
+# ---------------------------------------------------------------------------
+
+def fetch_master_data(sheet_id: str, worksheet_name: str) -> pd.DataFrame:
+    """
+    Fetch and return master data as a clean DataFrame.
+
+    Automatically chooses the right mode:
+      - Service account mode  →  if credentials/service_account.json exists
+      - Public CSV mode       →  otherwise (works for publicly shared sheets)
+
+    Always accepts a full Google Sheets URL or a raw Sheet ID.
+    """
+    sheet_id = extract_sheet_id(sheet_id)
+
+    if credentials_exist():
+        raw_df = _fetch_private(sheet_id, worksheet_name)
+    else:
+        raw_df = _fetch_public(sheet_id, worksheet_name)
+
+    return _clean_and_validate(raw_df)
+
+
+# ---------------------------------------------------------------------------
+# 6. SYNC: FETCH + SAVE TO SQLITE
+# ---------------------------------------------------------------------------
+
+def sync_master_data(sheet_id: str, worksheet_name: str) -> dict:
+    """
+    Fetch the latest Master Data from Google Sheets and replace the SQLite
+    master_data table with it.
+
+    Returns:
+        {
+            "rows_synced": int,        # rows saved to SQLite
+            "synced_at":  str | None,  # ISO timestamp
+            "error":      str | None,  # None = success
+            "mode":       str,         # "public" or "private"
+        }
+
+    Never raises — all errors are captured so the UI can show a message.
+    """
+    mode = "private" if credentials_exist() else "public"
+    try:
+        clean_id = extract_sheet_id(sheet_id)
+        df = fetch_master_data(clean_id, worksheet_name)
+
+        now = datetime.now().isoformat(timespec="seconds")
+
+        rows = [
+            {
+                "employee_code": str(row["Employee Code"]),
+                "employee_name": str(row["Employee Name"]),
+                "designation":   str(row["Designation"]),
+                "category":      str(row["Category"]),
+                "plant":         str(row["Plant"]),
+                "plant_code":    str(row["Plant Code"]),
+                "updated_at":    now,
+            }
+            for _, row in df.iterrows()
+        ]
+
+        inserted = database.replace_table_rows("master_data", rows)
+
+        # Persist sync details so the UI can show "Last synced …" info.
+        database.set_setting("gsheet_id",         clean_id)
+        database.set_setting("gsheet_worksheet",  worksheet_name)
+        database.set_setting("gsheet_last_sync",  now)
+        database.set_setting("gsheet_last_count", str(inserted))
+
+        return {"rows_synced": inserted, "synced_at": now, "error": None, "mode": mode}
+
+    except Exception as exc:
+        return {"rows_synced": 0, "synced_at": None, "error": str(exc), "mode": mode}
+
+
+# ---------------------------------------------------------------------------
+# 7. LAST SYNC INFO
+# ---------------------------------------------------------------------------
+
+def get_last_sync_info() -> dict:
+    """Return the last sync details stored in app_settings."""
+    return {
+        "sheet_id":   database.get_setting("gsheet_id",        ""),
+        "worksheet":  database.get_setting("gsheet_worksheet", ""),
+        "last_sync":  database.get_setting("gsheet_last_sync", None),
+        "last_count": database.get_setting("gsheet_last_count", "0"),
+    }
