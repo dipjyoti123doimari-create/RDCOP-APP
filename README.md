@@ -1,210 +1,188 @@
 # Batching Incentive & Deduction Calculator
 
-A simple, **local** web app (built with Python + Streamlit) that calculates
-month-wise batching **incentives** and **deductions** based on the quantity each
-employee produced and any shortfall, across all plants.
+A **local** web app (Python + Streamlit + SQLite) that calculates month-wise
+batching **incentives** and **deductions** for all employees across all plants.
 
-> **Status: Phase 1 complete** — this is the project skeleton: folder
-> structure, a modern theme, logo support, sidebar navigation, and placeholder
-> pages. The real features (data upload, calculation, reports, email) are added
-> in the later phases listed at the bottom of this file.
+> **Status: All 14 phases complete — app is fully built and production-ready.**
 
 ---
 
 ## 1. What you need installed
 
-You only need **Python** (version 3.9 or newer). To check if you already have it,
-open the VS Code terminal and run:
+Only **Python 3.9 or newer**. Check with:
 
 ```bash
 python --version
 ```
 
-If you see something like `Python 3.11.x`, you are ready. If not, install Python
-from https://www.python.org/downloads/ and tick **"Add Python to PATH"** during
-installation.
+If not installed, download from https://www.python.org/downloads/ and tick
+**"Add Python to PATH"** during setup.
 
 ---
 
-## 2. How to set up the project (one time)
+## 2. First-time setup (do once)
 
-Do these steps once, inside VS Code, in the terminal
-(**Terminal → New Terminal**). Make sure the terminal is in the project folder
-(the folder that contains `app.py`).
+Open a terminal in the project folder (the folder that contains `app.py`).
 
-**Step 1 — (Recommended) create a "virtual environment".**
-A virtual environment is a private box for this project's packages, so they do
-not mix with other Python projects.
+**Step 1 — create a virtual environment (recommended)**
 
 ```bash
 python -m venv .venv
 ```
 
-**Step 2 — activate the virtual environment.**
+**Step 2 — activate it**
 
-- On **Windows PowerShell** (the default VS Code terminal on Windows):
+- Windows PowerShell:
   ```powershell
   .venv\Scripts\Activate.ps1
   ```
-  If PowerShell blocks the script, run this once and try again:
-  ```powershell
-  Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-  ```
+  If blocked, run once: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 
-- On **macOS / Linux**:
+- macOS / Linux:
   ```bash
   source .venv/bin/activate
   ```
 
-When it is active you will see `(.venv)` at the start of the terminal line.
+You'll see `(.venv)` at the start of the terminal line when active.
 
-**Step 3 — install the required packages.**
+**Step 3 — install packages**
 
 ```bash
 pip install -r requirements.txt
 ```
 
-This downloads Streamlit, pandas, and the other tools listed in
-`requirements.txt`.
-
 ---
 
-## 3. How to RUN the app
-
-Still in the project folder (with the virtual environment active), run:
+## 3. How to run the app
 
 ```bash
 streamlit run app.py
 ```
 
-Streamlit will start and automatically open the app in your web browser
-(usually at http://localhost:8501). If it does not open by itself, copy that
-address from the terminal into your browser.
-
-To **stop** the app, click the terminal and press `Ctrl + C`.
+The app opens at **http://localhost:8501** (or port 2001 if configured).
+Stop with `Ctrl + C`.
 
 ---
 
-## 4. What you should see (Phase 1 test)
+## 4. What the app does
 
-When the app opens you should see:
+| Page | Description |
+|------|-------------|
+| **Dashboard** | Live KPI cards (master data rows, backend rows, maintenance rows, calculated rows) and database status |
+| **Data Uploader** | Three tabs: sync Master Data from Google Sheets, upload Backend Data Excel, upload Maintenance Cost Excel |
+| **Calculate Incentive & Deduction** | Pick a date range, run the full category-wise calculation, browse results by category with colour-coded rows |
+| **View Reports** | Browse any date range with multi-select filters (Category, Designation, Plant), generate a report snapshot, download Excel / CSV, or email the report |
+| **Error / Validation Report** | Run data quality checks across all three data sources; review and clear validation errors |
+| **Settings** | Animated background controls, SMTP email settings, cache & database compaction |
 
-- A **left sidebar** with the app name (or your logo) and a navigation menu.
-- A colourful **gradient header** at the top of each page.
-- The **Dashboard** page with four KPI cards (all showing 0 for now).
-- Eight other pages in the sidebar. Clicking each one shows a "Coming soon"
-  card — that is expected in Phase 1.
-
-If all of that works, **Phase 1 is successful.** 🎉
-
----
-
-## 5. Optional: add a logo
-
-Add a PNG image named `app_logo.png` into the `assets/` folder. The app will
-then show it in the sidebar and use it as the browser tab icon. If you skip
-this, the app still works and uses a default icon.
+### Colour coding
+- 🟢 **Green row** — incentive earned
+- 🔴 **Red row** — deduction applied (takes priority if both apply)
+- In reports: red rows first (largest first), then green, then plain
 
 ---
 
-## 6. Project structure
+## 5. Email setup
+
+Go to **Settings → Email (SMTP) settings**:
+
+| Field | Value |
+|-------|-------|
+| SMTP host | `smtp.gmail.com` |
+| Port | `587` |
+| Sender email | your Gmail address |
+| Password | Gmail **App Password** (not your login password) |
+| Use TLS | ON |
+
+To create a Gmail App Password: Google Account → Security → 2-Step Verification
+→ App Passwords → create one for "Mail".
+
+---
+
+## 6. Google Sheets setup (Master Data)
+
+Go to **Data Uploader → Master Data Sync & Management**.
+
+**Public mode (easiest):** Share your sheet as "Anyone with the link can view",
+paste the URL, click Sync Now.
+
+**Private mode:** Add `credentials/service_account.json` (Google Cloud service
+account). See `credentials/README.txt` for setup steps.
+
+Your sheet must have these columns (spelling matters, case does not):
+`Employee Code · Employee Name · Designation · Category · Plant · Plant Code`
+
+---
+
+## 7. Project structure
 
 ```
 Incentive_Calculator/
 │
-├── app.py                # Main app: sidebar + navigation (keep it small)
-├── config.py             # All constants: columns, categories, rates, colors
-├── ui_helpers.py         # The theme/look: CSS, headers, cards, messages
+├── app.py                # Main app: page routing and all page functions
+├── config.py             # All constants: categories, rates, column names, colours
+├── ui_helpers.py         # Theme/CSS, headers, cards, messages, progress tracker
 │
-├── database.py           # SQLite database (Phase 2)         [placeholder]
-├── google_sheets.py      # Google Sheets master-data sync (Phase 3) [placeholder]
-├── data_loader.py        # Read/clean uploaded Excel (Phase 4) [placeholder]
-├── validations.py        # Validate data (Phase 5)            [done]
-├── calculator.py         # Incentive/deduction rules (Phase 6-7) [done]
-├── report_generator.py   # Excel export & formatting (Phase 10) [done]
-├── email_helper.py       # Email the report (Phase 12)        [done]
-├── cache_helpers.py      # Performance/cache helpers (Phase 13)[done]
+├── database.py           # SQLite database — all read/write/table helpers
+├── google_sheets.py      # Google Sheets sync (public URL or service account)
+├── data_loader.py        # Read and clean uploaded Excel files
+├── validations.py        # Data quality checks across all three data sources
+├── calculator.py         # Category-wise incentive & deduction calculation engine
+├── report_generator.py   # Excel workbook builder (multi-sheet, colour-coded)
+├── email_helper.py       # SMTP email sender with HTML/plain-text + attachment
+├── cache_helpers.py      # Streamlit cache clear + SQLite VACUUM compaction
 │
-├── requirements.txt      # The list of Python packages to install
+├── requirements.txt      # Python package list
 ├── README.md             # This file
 │
-├── data/                 # The SQLite database file (app.db) will live here
-├── exports/              # Generated Excel reports will be saved here
-├── credentials/          # Google service_account.json goes here (Phase 3)
-└── assets/               # Optional app_logo.png goes here
+├── data/                 # SQLite database file (app.db) — not committed to git
+├── exports/              # Generated Excel reports — not committed to git
+├── credentials/          # Google service_account.json (if used) — not in git
+├── assets/               # Optional app_logo.png
+└── utils/
+    └── animated_background.py   # Stripe-inspired animated ray-burst background
 ```
 
-The `[placeholder]` files are intentionally empty for now. Each one has a
-comment at the top explaining exactly what it will do and in which phase.
+---
+
+## 8. Animated background
+
+A Stripe-inspired fan of thin rays that reacts to your mouse.
+
+**6 themes:** Pre-dawn · Sunrise · Daytime · Dusk · Sunset · Night
+
+**Automatic mode (default):** theme follows your system clock:
+`04:00–05:59 Pre-dawn · 06:00–08:59 Sunrise · 09:00–16:59 Daytime ·
+17:00–18:29 Dusk · 18:30–20:00 Sunset · 20:01–03:59 Night`
+
+**Manual mode:** Settings page → turn off Auto → pick any theme.
+A quick-select dropdown also lives in the top-right corner of the page.
+
+**Performance:** FPS capped at 40, DPR capped at 2, gradient cached.
+Settings: **Animation On/Off** and **Intensity** (Low 70 / Medium 120 / High 180 rays).
 
 ---
 
-## 7. The build plan (phases)
+## 9. Build history (all phases complete)
 
-| Phase | What it adds |
-|------:|--------------|
-| **1** | **Project skeleton, theme, logo, navigation (done ✅)** |
-| 2  | SQLite database and tables |
-| 3  | Google Sheets Master Data sync |
-| 4  | Upload Backend Data and Maintenance Cost Excel files |
-| 5  | Data validation with friendly error messages |
-| 6  | Incentive & deduction calculation rules |
-| 7  | Date-range filtering |
-| 8  | Dynamic multi-select filters from Master Data |
-| 9  | View Reports page |
-| 10 | Excel export (multiple sheets, colours, formatting, progress bar) |
+| Phase | Feature |
+|------:|---------|
+| 1 | Project skeleton, theme, logo, sidebar navigation |
+| 2 | SQLite database and all 9 tables |
+| 3 | Google Sheets Master Data sync (public + private modes) |
+| 4 | Upload Backend Data and Maintenance Cost Excel files |
+| 5 | Data validation with friendly error messages |
+| 6 | Incentive & deduction calculation rules (all categories) |
+| 7 | Date-range filtering |
+| 8 | Dynamic multi-select filters from Master Data |
+| 9 | View Reports page with report snapshot (Generate button) |
+| 10 | Excel export (multi-sheet, colour-coded, header frozen) |
 | 11 | Master Data add / edit / delete + change log |
-| 12 | Email circulation of the report + email log |
-| 13 | Caching / performance + "Clear Cache" button |
+| 12 | Email report via SMTP + email log |
+| 13 | Cache clear + SQLite VACUUM compaction |
 | 14 | Final cleanup and documentation |
 
-A Stripe-inspired **animated background** theme system is also planned as an
-add-on after the core app is working.
-
 ---
 
-## 8. Settings that come later (just so you know)
-
-- **Google Sheets (Phase 3):** see `credentials/README.txt`. You will create a
-  Google Cloud service account, enable the Google Sheets API, download a JSON
-  key into `credentials/service_account.json`, and share your sheet with the
-  service account's email.
-- **Email / SMTP (Phase 12):** the Settings page will let you enter SMTP host,
-  port, sender email, app password, and TLS. **Passwords are never hardcoded
-  and never printed** — they are kept in Streamlit secrets or environment
-  variables and masked in the UI.
-
----
-
-## 9. Animated background (Stripe-inspired)
-
-The app has a reusable animated background: a fan of thin rays bursting up from
-the bottom of the screen that gently reacts to your mouse. It lives in
-`utils/animated_background.py` and is applied app-wide from `app.py`.
-
-**Themes (6):** Pre-dawn, Sunrise, Daytime, Dusk, Sunset, Night.
-
-**How the theme is chosen** — controlled on the **Settings** page:
-- **Automatic (default):** the theme follows your computer's clock, detected in
-  the browser:
-  `04:00-05:59 Pre-dawn · 06:00-08:59 Sunrise · 09:00-16:59 Daytime ·
-   17:00-18:29 Dusk · 18:30-20:00 Sunset · 20:01-03:59 Night`.
-- **Manual:** turn automatic off and pick a theme from the dropdown.
-- **Theme dropdown (LOV):** a dropdown in the **top-right corner** lets you pick
-  "Auto" or any of the six themes directly, at any time.
-
-**Disable / performance:**
-- Settings has **Background animation On/Off** (off = calm static gradient) and
-  **Intensity Low / Medium / High** (70 / 120 / 180 rays).
-- If your system has "reduce motion" enabled, the app automatically shows a
-  static gradient instead of the animation.
-- The background sits *behind* everything and never blocks buttons, forms,
-  uploads, filters or tables. It uses no external libraries or CDNs.
-
-> Tip: the dark themes (Night, Pre-dawn) darken the page. If any text is hard to
-> read, pick a lighter theme or switch the animation off.
-
----
-
-Made to be simple and local first. No Django, FastAPI, React, Docker, or cloud
-deployment is used.
+Made to be simple and local-first. No Django, FastAPI, React, Docker, or cloud
+deployment needed — just Python and a browser.

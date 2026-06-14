@@ -13,12 +13,8 @@ What this file does (and ONLY this):
 - Looks at which page the user picked and calls the matching page function.
 
 Important design rule for this project:
-app.py should stay SMALL. It should NOT contain heavy business logic
-(no calculations, no database code). Those live in their own files
-(calculator.py, database.py, etc.) which we build in later phases.
-
-Right now (Phase 1) every page is just a friendly placeholder so you can
-see the navigation working.
+app.py stays SMALL. Heavy business logic (calculations, database code) lives
+in its own file (calculator.py, database.py, etc.).
 """
 
 import os
@@ -89,27 +85,14 @@ def render_sidebar():
         )
 
         st.divider()
-        st.caption("Calculate • Reports • Email • Cache (Phases 1–13)")
+        st.caption("Calculate • Reports • Email • Cache")
 
     return selected_page
 
 
 # ---------------------------------------------------------------------------
-# STEP 3: Define a placeholder for each page.
+# STEP 3: Page functions — one per sidebar item.
 # ---------------------------------------------------------------------------
-# In later phases each of these functions will be replaced with the real page.
-# For now they just show the page header and a "coming soon" note so you can
-# confirm the navigation works.
-
-def _placeholder(title, subtitle, coming_in_phase):
-    """A small reusable placeholder body used by every page for now."""
-    ui_helpers.render_page_header(title, subtitle)
-    ui_helpers.render_glass_card(
-        "🚧 Coming soon",
-        f"This page is a placeholder for now. The real feature will be built in "
-        f"<b>{coming_in_phase}</b>.",
-    )
-
 
 def page_dashboard():
     ui_helpers.render_page_header(
@@ -150,8 +133,7 @@ def page_dashboard():
     st.dataframe(status_df, hide_index=True, use_container_width=True)
 
     ui_helpers.render_success_message(
-        "Database ready — all 9 tables are created. They are empty for now and "
-        "will fill up as you sync Master Data (Phase 3) and upload files (Phase 4)."
+        "Database ready — all 9 tables are created."
     )
 
 
@@ -1439,7 +1421,7 @@ def page_validation():
 def page_settings():
     ui_helpers.render_page_header(
         "Settings",
-        "Control the animated background now; SMTP & cache settings come later",
+        "Animated background • SMTP email • Cache & storage",
     )
 
     # ---- Animated background controls ----
