@@ -115,9 +115,14 @@ def parse_oracle_df(raw_df: pd.DataFrame) -> tuple:
 
 # ── Main calculation ──────────────────────────────────────────────────────────
 
-def run_tp_calculation(month: int, year: int) -> tuple:
+def run_tp_calculation(month: int, year: int,
+                        from_date: str = None, to_date: str = None) -> tuple:
     """
     Calculate plant-wise and location-wise throughput from stored data.
+
+    If from_date/to_date are given (YYYY-MM-DD strings), only Oracle rows whose
+    production_date falls in that range are used. month/year are used to tag the
+    saved results (derive them from from_date in the caller).
 
     Returns:
         plant_rows    – list[dict]  one row per plant/mixer
@@ -126,11 +131,19 @@ def run_tp_calculation(month: int, year: int) -> tuple:
     """
     warnings = []
 
-    # 1. Load oracle data (all stored rows — user filtered by date at fetch time)
+    # 1. Load oracle data
     ora_df = database.read_table("tp_oracle_data")
     if ora_df.empty:
         warnings.append("No Oracle data found — fetch from Oracle first.")
         return [], [], warnings
+
+    # 1b. Filter to the requested date range (production_date is 'YYYY-MM-DD')
+    if from_date and to_date:
+        pd_str = ora_df["production_date"].astype(str).str.slice(0, 10)
+        ora_df = ora_df[(pd_str >= str(from_date)) & (pd_str <= str(to_date))]
+        if ora_df.empty:
+            warnings.append(f"No Oracle data in range {from_date} → {to_date}.")
+            return [], [], warnings
 
     # 2. Load plant reference data
     plant_df = database.read_table("tp_plant_data")
@@ -191,72 +204,66 @@ def run_tp_calculation(month: int, year: int) -> tuple:
             "plant_manager":  str(info.get("plant_manager", "")),
             "mixer_theo_cap": mixer_cap,
             "total_quantity": round(float(row["total_quantity"]), 2),
+            "total_time_min": round(float(row["total_time_min"]), 1),
             "total_time_hrs": round(total_time_hrs, 2),
             "throughput_pct": round(throughput_pct, 2),
             "batch_count":    int(row["batch_count"]),
             "generated_at":   now,
         })
 
-    # 4. Location-wise: simple average of plant throughput %
+    # 4. Sort plant rows lowest → highest and build location summary
+    plant_rows.sort(key=lambda r: r["throughput_pct"])
+    location_rows = build_location_rows(plant_rows, month, year)
+
+    return plant_rows, location_rows, warnings
+
+
+def build_location_rows(plant_rows: list, month: int, year: int) -> list:
+    """
+    Build Exco-Location rows (simple average of plant throughput %) from a list
+    of plant rows, sorted lowest → highest with a PAN India total at the bottom.
+    Reused by both the calculation and the filtered Reports view.
+    """
     location_map = {}
     for pr in plant_rows:
-        loc = pr["exco_location"]
+        loc = pr.get("exco_location", "")
         if not loc:
             continue
         if loc not in location_map:
-            location_map[loc] = {
-                "month": month, "year": year,
-                "exco_location": loc,
-                "plant_count": 0,
-                "total_throughput_pct": 0.0,
-                "total_quantity": 0.0,
-                "generated_at": now,
-            }
-        location_map[loc]["plant_count"]         += 1
+            location_map[loc] = {"plant_count": 0, "total_throughput_pct": 0.0,
+                                 "total_quantity": 0.0}
+        location_map[loc]["plant_count"]          += 1
         location_map[loc]["total_throughput_pct"] += pr["throughput_pct"]
         location_map[loc]["total_quantity"]        += pr["total_quantity"]
 
-    # Sort plant rows: lowest throughput first
-    plant_rows.sort(key=lambda r: r["throughput_pct"])
-
-    # Build location rows sorted lowest → highest, PAN India last
     location_rows = []
-    all_pct_sum   = 0.0
-    all_qty_sum   = 0.0
-    all_count     = 0
-
+    all_pct_sum = all_qty_sum = 0.0
+    all_count = 0
     for loc, d in sorted(location_map.items()):
         cnt = d["plant_count"]
-        avg = round(d["total_throughput_pct"] / cnt, 2) if cnt else 0.0
         location_rows.append({
             "exco_location":      loc,
             "plant_count":        cnt,
-            "avg_throughput_pct": avg,
+            "avg_throughput_pct": round(d["total_throughput_pct"] / cnt, 2) if cnt else 0.0,
             "total_quantity":     round(d["total_quantity"], 2),
-            "month":              month,
-            "year":               year,
-            "is_pan_india":       False,
+            "month": month, "year": year, "is_pan_india": False,
         })
         all_pct_sum += d["total_throughput_pct"]
         all_qty_sum += d["total_quantity"]
         all_count   += cnt
 
-    # Sort locations lowest → highest
     location_rows.sort(key=lambda r: r["avg_throughput_pct"])
 
-    # Append PAN India summary at the bottom
     if all_count:
         location_rows.append({
             "exco_location":      "PAN India",
             "plant_count":        all_count,
             "avg_throughput_pct": round(all_pct_sum / all_count, 2),
             "total_quantity":     round(all_qty_sum, 2),
-            "month":              month,
-            "year":               year,
-            "is_pan_india":       True,
+            "month": month, "year": year, "is_pan_india": True,
         })
 
-    return plant_rows, location_rows, warnings
+    return location_rows
 
 
 # ── Persist results ───────────────────────────────────────────────────────────
@@ -272,8 +279,10 @@ def save_tp_results(plant_rows: list, month: int, year: int) -> int:
     finally:
         conn.close()
 
-    db_rows = [
-        {k: v for k, v in r.items() if k != "generated_at" or True}
-        for r in plant_rows
-    ]
+    # Only persist columns that exist in the tp_results table (total_time_min is
+    # a display-only field kept in the in-memory rows, not stored).
+    keep = {"month", "year", "lookup_code", "plant_name", "exco_location",
+            "business_head", "plant_manager", "mixer_theo_cap", "total_quantity",
+            "total_time_hrs", "throughput_pct", "batch_count", "generated_at"}
+    db_rows = [{k: v for k, v in r.items() if k in keep} for r in plant_rows]
     return database.insert_rows("tp_results", db_rows)

@@ -4,18 +4,110 @@
 
 <div class="page-header">
   <h1>View Reports</h1>
-  <p>Plant &amp; location throughput for <strong>{{ month_label }}</strong> — browse, export or email</p>
+  <p>Plant &amp; location throughput for <strong>{{ month_label }}</strong> — filter, browse, export or email</p>
+</div>
+
+<!-- Date range + filter form -->
+<div class="card">
+  <div class="section-title">📅 Report Period &amp; Filters</div>
+  <form method="GET" action="{{ url_for('tp_reports') }}" id="filter-form">
+    <div class="date-row">
+      <div class="form-group">
+        <label>From Date</label>
+        <input type="date" name="from_date" value="{{ from_date }}" required>
+      </div>
+      <div class="form-group">
+        <label>To Date</label>
+        <input type="date" name="to_date" value="{{ to_date }}" required>
+      </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <button type="submit" class="btn btn-primary" id="load-btn">🔄 Load Report</button>
+      </div>
+    </div>
+
+    {% if unique_excos or unique_bheads %}
+    <hr class="divider">
+    <div class="filter-grid filter-grid-3">
+
+      <!-- Exco Location multi-select -->
+      <div class="form-group" style="margin-bottom:0">
+        <label>Exco Location</label>
+        <div class="ms-wrap">
+          <div class="ms-box" tabindex="0">
+            <span class="ms-label {% if not excos %}placeholder{% endif %}">{% if excos %}{{ excos|length }} selected{% else %}All{% endif %}</span>
+            <span class="ms-arrow">▾</span>
+          </div>
+          <div class="ms-panel">
+            <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
+            <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
+            <div class="ms-opts">
+              {% for e in unique_excos %}
+              <label><input type="checkbox" name="exco" value="{{ e }}" {% if e in excos %}checked{% endif %}> {{ e }}</label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Business Head multi-select -->
+      <div class="form-group" style="margin-bottom:0">
+        <label>Business Head</label>
+        <div class="ms-wrap">
+          <div class="ms-box" tabindex="0">
+            <span class="ms-label {% if not bheads %}placeholder{% endif %}">{% if bheads %}{{ bheads|length }} selected{% else %}All{% endif %}</span>
+            <span class="ms-arrow">▾</span>
+          </div>
+          <div class="ms-panel">
+            <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
+            <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
+            <div class="ms-opts">
+              {% for b in unique_bheads %}
+              <label><input type="checkbox" name="bhead" value="{{ b }}" {% if b in bheads %}checked{% endif %}> {{ b }}</label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Throughput band -->
+      <div class="form-group" style="margin-bottom:0">
+        <label>Throughput Band</label>
+        <select name="band">
+          <option value="All"    {% if band=='All' %}selected{% endif %}>All</option>
+          <option value="red"    {% if band=='red' %}selected{% endif %}>🔴 Below 60%</option>
+          <option value="yellow" {% if band=='yellow' %}selected{% endif %}>🟡 60% – 74%</option>
+          <option value="green"  {% if band=='green' %}selected{% endif %}>🟢 75% &amp; above</option>
+        </select>
+      </div>
+
+      <!-- Search -->
+      <div class="form-group" style="margin-bottom:0">
+        <label>Search Plant Code / Name</label>
+        <input type="text" name="search" value="{{ search }}" placeholder="e.g. MU9 or Deonar">
+      </div>
+
+    </div>
+    <div style="margin-top:14px">
+      <button type="submit" class="btn btn-secondary btn-sm">Apply Filters</button>
+      {% if excos or bheads or band != 'All' or search %}
+      <a href="{{ url_for('tp_reports', from_date=from_date, to_date=to_date) }}" class="btn btn-secondary btn-sm" style="margin-left:8px">✕ Clear Filters</a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </form>
+  <div class="loading" id="report-loading"><div class="spinner"></div> Loading report…</div>
 </div>
 
 {% if not plant_rows %}
 <div class="glass-card" style="text-align:center;padding:36px">
-  <h3>No results yet</h3>
-  <p>Run a calculation on the <strong>Calculate Throughput</strong> page first.</p>
+  <h3>No rows to show</h3>
+  <p>Run a calculation on the <strong>Calculate Throughput</strong> page, or change the date range / clear filters above.</p>
 </div>
 {% else %}
 
 <!-- Summary KPIs -->
-<div class="kpi-grid" style="margin-top:6px">
+<div class="kpi-grid" style="margin-top:20px">
   <div class="kpi-card">
     <div class="kpi-label">Plants / Mixers</div>
     <div class="kpi-value">{{ plant_rows | length | format_int }}</div>
@@ -45,7 +137,7 @@
 
 <!-- Toolbar -->
 <div class="report-toolbar">
-  <p class="caption" style="margin:0">Throughput report · {{ month_label }} · sorted lowest → highest</p>
+  <p class="caption" style="margin:0">Showing <strong>{{ plant_rows | length | format_int }}</strong> of <strong>{{ total_plants | format_int }}</strong> plants · {{ from_date }} → {{ to_date }} · sorted lowest → highest</p>
   <div class="btn-group">
     <a href="{{ url_for('tp_download_excel') }}" class="btn btn-primary btn-sm">⬇️ Excel</a>
     <a href="{{ url_for('tp_download_csv') }}" class="btn btn-secondary btn-sm">⬇️ CSV</a>
@@ -91,7 +183,7 @@
         <tr>
           <th>#</th><th>Plant Code</th><th>Plant</th><th>Exco Location</th>
           <th>Business Head</th><th>Plant Manager</th><th>Mixer Cap</th>
-          <th>Total Qty</th><th>Time (hrs)</th><th>Throughput %</th><th>Batches</th>
+          <th>Total Qty</th><th>Time (min)</th><th>Throughput %</th><th>Batches</th>
         </tr>
       </thead>
       <tbody>
@@ -106,7 +198,7 @@
           <td>{{ r.plant_manager }}</td>
           <td>{{ r.mixer_theo_cap }}</td>
           <td>{{ r.total_quantity | round(1) }}</td>
-          <td>{{ r.total_time_hrs | round(2) }}</td>
+          <td>{{ r.total_time_min | round(1) }}</td>
           <td><strong>{{ tp }}%</strong></td>
           <td>{{ r.batch_count }}</td>
         </tr>
@@ -143,6 +235,12 @@
 {% endblock %}
 {% block scripts %}
 <script>
+var ff = document.getElementById('filter-form');
+if (ff) ff.addEventListener('submit', function() {
+  var b = document.getElementById('load-btn');
+  var l = document.getElementById('report-loading');
+  if (l) l.classList.add('active');
+});
 function openEmailModal() {
   var m = document.getElementById('email-modal');
   if (m) { m.style.display = 'flex'; document.body.style.overflow = 'hidden'; }

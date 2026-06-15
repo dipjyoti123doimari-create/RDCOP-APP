@@ -427,27 +427,35 @@ def tp_calculate():
     ran           = _ms("tp", "calc_ran", False)
 
     if request.method == "POST":
-        month_str = request.form.get("month", "")
-        year_str  = request.form.get("year", "")
+        from_s = request.form.get("from_date", "")
+        to_s   = request.form.get("to_date", "")
         try:
-            month = int(month_str)
-            year  = int(year_str)
+            fd = _date.fromisoformat(from_s)
+            td = _date.fromisoformat(to_s)
         except (ValueError, TypeError):
-            flash("Please select a valid month and year.", "error")
+            flash("Please select valid From and To dates.", "error")
+            return redirect(url_for("tp_calculate"))
+        if fd > td:
+            flash("'From Date' must be on or before 'To Date'.", "error")
             return redirect(url_for("tp_calculate"))
 
-        plant_rows, location_rows, warnings = tp_calculator.run_tp_calculation(month, year)
+        month, year = fd.month, fd.year
+        plant_rows, location_rows, warnings = tp_calculator.run_tp_calculation(
+            month, year, from_date=str(fd), to_date=str(td))
         _mss("tp", "plant_rows",    plant_rows)
         _mss("tp", "location_rows", location_rows)
         _mss("tp", "calc_warnings", warnings)
         _mss("tp", "calc_month",    month)
         _mss("tp", "calc_year",     year)
+        _mss("tp", "calc_from",     str(fd))
+        _mss("tp", "calc_to",       str(td))
         _mss("tp", "calc_ran",      True)
         ran = True
 
         if plant_rows:
             tp_calculator.save_tp_results(plant_rows, month, year)
-            flash(f"✅ Calculated throughput for {month}/{year} — {len(plant_rows)} plants, {len(location_rows)} locations.", "success")
+            flash(f"✅ Calculated throughput for {fd} → {td} — {len(plant_rows)} plants, "
+                  f"{len([l for l in location_rows if not l['is_pan_india']])} locations.", "success")
         else:
             flash("No results produced — check data and warnings.", "warning")
         return redirect(url_for("tp_calculate"))
@@ -458,22 +466,97 @@ def tp_calculate():
     return render_template("tp_calculate.html",
                            plant_rows=plant_rows, location_rows=location_rows,
                            warnings=warnings, ran=ran,
-                           default_month=today.month, default_year=today.year,
+                           default_from=_ms("tp", "calc_from", str(today.replace(day=1))),
+                           default_to=_ms("tp", "calc_to", str(today)),
                            **ctx)
 
 
 # ── Reports ───────────────────────────────────────────────────────────────────
+def _tp_band(pct):
+    """Throughput colour band for a percentage."""
+    if pct < 60:
+        return "red"
+    if pct < 75:
+        return "yellow"
+    return "green"
+
+
+def _apply_tp_filters(plant_rows, excos, bheads, band, search):
+    """Filter plant rows by Exco Location, Business Head, throughput band and a
+    free-text search over plant code / plant name."""
+    out = []
+    s = (search or "").strip().lower()
+    for r in plant_rows:
+        if excos and r.get("exco_location") not in excos:
+            continue
+        if bheads and r.get("business_head") not in bheads:
+            continue
+        if band and band != "All" and _tp_band(r.get("throughput_pct", 0)) != band:
+            continue
+        if s and s not in str(r.get("lookup_code", "")).lower() \
+             and s not in str(r.get("plant_name", "")).lower():
+            continue
+        out.append(r)
+    return out
+
+
 @app.route("/tp/reports")
 def tp_reports():
-    plant_rows    = _ms("tp", "plant_rows", [])
-    location_rows = _ms("tp", "location_rows", [])
-    calc_month    = _ms("tp", "calc_month", _date.today().month)
-    calc_year     = _ms("tp", "calc_year",  _date.today().year)
-    smtp          = email_helper.get_smtp_config()
-    email_ready   = email_helper.is_configured()
+    today = _date.today()
 
-    import calendar
-    month_label    = f"{calendar.month_name[calc_month]} {calc_year}"
+    # Date range — default to the last calculation's range, else this month.
+    from_s = request.args.get("from_date",
+                              _ms("tp", "calc_from", str(today.replace(day=1))))
+    to_s   = request.args.get("to_date",
+                              _ms("tp", "calc_to", str(today)))
+    try:
+        fd = _date.fromisoformat(from_s)
+        td = _date.fromisoformat(to_s)
+    except ValueError:
+        fd, td = today.replace(day=1), today
+
+    # Re-run the calculation for the chosen range when the user loads a report,
+    # otherwise fall back to the rows from the last Calculate run.
+    if "from_date" in request.args:
+        month, year = fd.month, fd.year
+        all_plants, all_locs, _w = tp_calculator.run_tp_calculation(
+            month, year, from_date=str(fd), to_date=str(td))
+        _mss("tp", "plant_rows", all_plants)
+        _mss("tp", "location_rows", all_locs)
+        _mss("tp", "calc_from", str(fd))
+        _mss("tp", "calc_to", str(td))
+        _mss("tp", "calc_month", month)
+        _mss("tp", "calc_year", year)
+    else:
+        all_plants = _ms("tp", "plant_rows", [])
+        all_locs   = _ms("tp", "location_rows", [])
+
+    # Filter inputs
+    excos  = request.args.getlist("exco")
+    bheads = request.args.getlist("bhead")
+    band   = request.args.get("band", "All")
+    search = request.args.get("search", "")
+
+    # Distinct filter options (from the full, unfiltered set)
+    unique_excos  = sorted({r.get("exco_location", "") for r in all_plants if r.get("exco_location")})
+    unique_bheads = sorted({r.get("business_head", "") for r in all_plants if r.get("business_head")})
+
+    # Apply filters → plant rows, then rebuild location rows from the filtered set
+    plant_rows = _apply_tp_filters(all_plants, excos, bheads, band, search)
+    location_rows = tp_calculator.build_location_rows(plant_rows, fd.month, fd.year)
+
+    # Keep a filtered snapshot for downloads / email
+    _mss("tp", "report_plant_rows", plant_rows)
+    _mss("tp", "report_location_rows", location_rows)
+
+    smtp        = email_helper.get_smtp_config()
+    email_ready = email_helper.is_configured()
+
+    if (fd.year, fd.month) == (td.year, td.month):
+        import calendar
+        month_label = f"{calendar.month_name[fd.month]} {fd.year}"
+    else:
+        month_label = f"{fd:%d %b %Y} → {td:%d %b %Y}"
     default_subject = f"RDC-TP Plant Throughput Report — {month_label}"
     default_body    = (f"Dear Team,\n\nPlease find attached the Plant Throughput "
                        f"Report for {month_label}.\n\nRegards,\nRDC Operations")
@@ -482,7 +565,10 @@ def tp_reports():
     ctx["active_page"] = "reports"
     return render_template("tp_reports.html",
                            plant_rows=plant_rows, location_rows=location_rows,
-                           calc_month=calc_month, calc_year=calc_year,
+                           total_plants=len(all_plants),
+                           from_date=str(fd), to_date=str(td),
+                           unique_excos=unique_excos, unique_bheads=unique_bheads,
+                           excos=excos, bheads=bheads, band=band, search=search,
                            month_label=month_label, email_cfg=smtp,
                            email_ready=email_ready,
                            default_subject=default_subject,
@@ -491,8 +577,8 @@ def tp_reports():
 
 @app.route("/tp/download-excel")
 def tp_download_excel():
-    plant_rows    = _ms("tp", "plant_rows", [])
-    location_rows = _ms("tp", "location_rows", [])
+    plant_rows    = _ms("tp", "report_plant_rows", _ms("tp", "plant_rows", []))
+    location_rows = _ms("tp", "report_location_rows", _ms("tp", "location_rows", []))
     month = _ms("tp", "calc_month", _date.today().month)
     year  = _ms("tp", "calc_year",  _date.today().year)
     if not plant_rows:
@@ -501,13 +587,13 @@ def tp_download_excel():
 
     plant_df  = pd.DataFrame(plant_rows)[[
         "lookup_code","plant_name","exco_location","business_head",
-        "plant_manager","mixer_theo_cap","total_quantity","total_time_hrs",
+        "plant_manager","mixer_theo_cap","total_quantity","total_time_min",
         "throughput_pct","batch_count"
     ]].rename(columns={
         "lookup_code":"Plant Code","plant_name":"Plant","exco_location":"Exco Location",
         "business_head":"Business Head","plant_manager":"Plant Manager",
         "mixer_theo_cap":"Mixer Capacity","total_quantity":"Total Qty",
-        "total_time_hrs":"Total Time (hrs)","throughput_pct":"Throughput %",
+        "total_time_min":"Total Time (min)","throughput_pct":"Throughput %",
         "batch_count":"Batches",
     })
     loc_df = pd.DataFrame(location_rows)[[
@@ -529,7 +615,7 @@ def tp_download_excel():
 
 @app.route("/tp/download-csv")
 def tp_download_csv():
-    plant_rows = _ms("tp", "plant_rows", [])
+    plant_rows = _ms("tp", "report_plant_rows", _ms("tp", "plant_rows", []))
     month = _ms("tp", "calc_month", _date.today().month)
     year  = _ms("tp", "calc_year",  _date.today().year)
     if not plant_rows:
@@ -544,8 +630,8 @@ def tp_download_csv():
 
 @app.route("/tp/action/send-email", methods=["POST"])
 def tp_send_email():
-    plant_rows    = _ms("tp", "plant_rows", [])
-    location_rows = _ms("tp", "location_rows", [])
+    plant_rows    = _ms("tp", "report_plant_rows", _ms("tp", "plant_rows", []))
+    location_rows = _ms("tp", "report_location_rows", _ms("tp", "location_rows", []))
     month = _ms("tp", "calc_month", _date.today().month)
     year  = _ms("tp", "calc_year",  _date.today().year)
     to_addr = request.form.get("to", "").strip()
