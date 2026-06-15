@@ -111,6 +111,41 @@
   {% endif %}
 </div>
 
+<!-- ── Scheduled Monthly Report ───────────────────── -->
+<div class="card settings-section">
+  <div class="section-title">📅 Scheduled Monthly Report</div>
+  <p class="caption" style="margin-bottom:14px">Automatically emails the <strong>previous month's</strong> incentive report to the configured recipients on the <strong>1st of every month</strong> at the chosen time.</p>
+
+  <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px">
+    <form method="POST" action="{{ url_for('toggle_email_schedule') }}" style="display:inline">
+      <button type="submit" class="btn {% if sched_enabled %}btn-primary{% else %}btn-secondary{% endif %}">
+        {% if sched_enabled %}✅ Scheduler ON — click to disable{% else %}⏸ Scheduler OFF — click to enable{% endif %}
+      </button>
+    </form>
+    {% if sched_last_status %}
+    <span class="caption">Last run: <strong>{{ sched_last_status }}</strong></span>
+    {% endif %}
+  </div>
+
+  <form method="POST" action="{{ url_for('save_email_schedule') }}">
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Send Time (on 1st of month)</label>
+        <input type="time" name="sched_time" value="{{ sched_time }}">
+      </div>
+      <div class="form-group">
+        <label>To (comma-separated)</label>
+        <input type="text" name="sched_to" value="{{ sched_to }}" placeholder="manager@company.com, director@company.com">
+      </div>
+      <div class="form-group">
+        <label>CC (optional)</label>
+        <input type="text" name="sched_cc" value="{{ sched_cc }}" placeholder="hr@company.com">
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">💾 Save Schedule Settings</button>
+  </form>
+</div>
+
 <!-- ── Cache & Storage ────────────────────────────── -->
 <div class="card settings-section">
   <div class="section-title">🧹 Cache &amp; Storage</div>

@@ -15,9 +15,11 @@ from __future__ import annotations
 import io
 import json
 import os
-from datetime import date as _date, datetime as _dt
+from datetime import date as _date, datetime as _dt, timedelta
 
 import pandas as pd
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from flask import (Flask, flash, jsonify, redirect, render_template,
                    request, send_file, url_for)
 
@@ -50,6 +52,69 @@ def _ss(key, val):
 
 # ── Boot ─────────────────────────────────────────────────────────────────────
 database.init_db()
+
+# ── Monthly email scheduler ───────────────────────────────────────────────────
+_scheduler: BackgroundScheduler | None = None
+
+
+def _scheduled_email_job():
+    """Fires on 1st of each month — sends previous month's report."""
+    if database.get_setting("email_schedule_enabled", "false") != "true":
+        return
+    today         = _date.today()
+    first_this    = today.replace(day=1)
+    last_prev     = first_this - timedelta(days=1)
+    first_prev    = last_prev.replace(day=1)
+    from_s, to_s  = str(first_prev), str(last_prev)
+    try:
+        res = calculator.run_calculation(
+            month=first_prev.month, year=first_prev.year,
+            start_date=from_s, end_date=to_s, persist=False,
+        )
+        if res["error"]:
+            database.set_setting("email_schedule_last_status",
+                f"FAIL {_dt.now():%Y-%m-%d %H:%M} — {res['error']}")
+            return
+        rows     = res.get("results_rows", [])
+        unmapped = res.get("unmapped_rows", [])
+        month_label = first_prev.strftime("%B %Y")
+        meta    = _build_meta(from_s, to_s, rows, unmapped, "Scheduled monthly report")
+        df_f    = pd.DataFrame(rows)    if rows     else pd.DataFrame(columns=RESULT_COLS)
+        df_u    = pd.DataFrame(unmapped) if unmapped else pd.DataFrame()
+        val_df  = database.read_table("validation_errors")
+        xlsx    = report_generator.generate_excel_report(df_f, df_u, val_df, meta)
+        fname   = f"incentive_report_{from_s}_to_{to_s}.xlsx"
+        to_addr = database.get_setting("email_schedule_to", "")
+        cc_addr = database.get_setting("email_schedule_cc", "")
+        result  = email_helper.send_report_email(
+            to_emails=to_addr, cc_emails=cc_addr,
+            subject=email_helper.compose_report_subject(month_label),
+            body=email_helper.compose_report_body(month_label),
+            attachment_bytes=xlsx, attachment_name=fname,
+        )
+        status = (f"OK {_dt.now():%Y-%m-%d %H:%M} — sent to {to_addr}" if result["success"]
+                  else f"FAIL {_dt.now():%Y-%m-%d %H:%M} — {result.get('error','')}")
+        database.set_setting("email_schedule_last_status", status)
+    except Exception as exc:
+        database.set_setting("email_schedule_last_status",
+            f"ERROR {_dt.now():%Y-%m-%d %H:%M} — {exc}")
+
+
+def _start_scheduler():
+    global _scheduler
+    sched_time = database.get_setting("email_schedule_time", "08:00")
+    try:
+        h, m = map(int, sched_time.split(":"))
+    except Exception:
+        h, m = 8, 0
+    _scheduler = BackgroundScheduler(daemon=True)
+    _scheduler.add_job(_scheduled_email_job,
+                       CronTrigger(day=1, hour=h, minute=m),
+                       id="monthly_report", replace_existing=True)
+    _scheduler.start()
+
+
+_start_scheduler()
 
 # ── Jinja filters / globals ───────────────────────────────────────────────────
 
@@ -532,13 +597,22 @@ def page_settings():
     last_cache_clear   = database.get_setting("last_cache_clear_date", "")
     cache_cleared_today = last_cache_clear == str(_date.today())
 
+    sched_enabled     = database.get_setting("email_schedule_enabled", "false") == "true"
+    sched_time        = database.get_setting("email_schedule_time", "08:00")
+    sched_to          = database.get_setting("email_schedule_to", "")
+    sched_cc          = database.get_setting("email_schedule_cc", "")
+    sched_last_status = database.get_setting("email_schedule_last_status", "")
+
     return render_template("settings.html",
                            smtp=smtp, email_configured=email_configured,
                            ora=ora, ora_configured=ora_configured,
                            db_size_mb=cache_helpers.get_db_size_mb(),
                            bg_auto=bg_auto(), bg_animate=bg_animate(), bg_theme=bg_theme(),
                            last_cache_clear=last_cache_clear,
-                           cache_cleared_today=cache_cleared_today)
+                           cache_cleared_today=cache_cleared_today,
+                           sched_enabled=sched_enabled, sched_time=sched_time,
+                           sched_to=sched_to, sched_cc=sched_cc,
+                           sched_last_status=sched_last_status)
 
 
 # ── ACTIONS ───────────────────────────────────────────────────────────────────
@@ -942,6 +1016,38 @@ def send_email():
         flash(f"Could not send: {exc}", "error")
 
     return redirect(url_for("page_reports"))
+
+
+@app.route("/action/save-email-schedule", methods=["POST"])
+def save_email_schedule():
+    sched_time = request.form.get("sched_time", "08:00").strip()
+    sched_to   = request.form.get("sched_to",   "").strip()
+    sched_cc   = request.form.get("sched_cc",   "").strip()
+    database.set_settings_bulk({
+        "email_schedule_time": sched_time,
+        "email_schedule_to":   sched_to,
+        "email_schedule_cc":   sched_cc,
+    })
+    if _scheduler:
+        try:
+            h, m = map(int, sched_time.split(":"))
+        except Exception:
+            h, m = 8, 0
+        _scheduler.reschedule_job(
+            "monthly_report",
+            trigger=CronTrigger(day=1, hour=h, minute=m),
+        )
+    flash("Schedule settings saved.", "success")
+    return redirect(url_for("page_settings"))
+
+
+@app.route("/action/toggle-email-schedule", methods=["POST"])
+def toggle_email_schedule():
+    current = database.get_setting("email_schedule_enabled", "false")
+    new_val = "false" if current == "true" else "true"
+    database.set_setting("email_schedule_enabled", new_val)
+    flash(f"Scheduled monthly report {'enabled' if new_val == 'true' else 'disabled'}.", "success")
+    return redirect(url_for("page_settings"))
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
