@@ -1,38 +1,40 @@
 {% extends "tp_base.html" %}
-{% block title %}Calculate — RDC-TP{% endblock %}
+{% block title %}Calculate{% endblock %}
 {% block content %}
 
 <div class="page-header">
   <h1>Calculate Throughput</h1>
-  <p>Select month &amp; year then run the calculation</p>
+  <p>Choose a month &amp; year and run the plant-wise throughput calculation</p>
 </div>
 
-<!-- ── Calculation form ───────────────────────────────────────────── -->
 <div class="card">
-  <div class="section-title">⚡ Run Calculation</div>
-  <form method="POST" action="{{ url_for('tp_calculate') }}">
-    <div class="form-row">
+  <form method="POST" action="{{ url_for('tp_calculate') }}" id="calc-form">
+    <div class="date-row">
       <div class="form-group">
-        <label class="form-label">Month</label>
-        <select name="month" class="form-control">
+        <label>Month</label>
+        <select name="month">
           {% for m in range(1,13) %}
           <option value="{{ m }}" {% if m == default_month %}selected{% endif %}>
-            {{ ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m] }}
+            {{ ['','January','February','March','April','May','June','July','August','September','October','November','December'][m] }}
           </option>
           {% endfor %}
         </select>
       </div>
       <div class="form-group">
-        <label class="form-label">Year</label>
-        <select name="year" class="form-control">
+        <label>Year</label>
+        <select name="year">
           {% for y in range(default_year - 2, default_year + 2) %}
           <option value="{{ y }}" {% if y == default_year %}selected{% endif %}>{{ y }}</option>
           {% endfor %}
         </select>
       </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <button type="submit" class="btn btn-primary" id="run-btn">⚡ Run Calculation</button>
+      </div>
     </div>
-    <button type="submit" class="btn btn-primary">▶ Calculate Throughput</button>
   </form>
+  <div class="loading" id="calc-loading"><div class="spinner"></div> Running calculation…</div>
 </div>
 
 {% if warnings %}
@@ -45,41 +47,79 @@
 {% endif %}
 
 {% if ran and plant_rows %}
-<!-- ── Plant results preview ──────────────────────────────────────── -->
-<div class="card">
-  <div class="section-title">🏭 Plant Throughput Preview</div>
-  <div class="table-wrapper">
-    <table>
-      <thead>
-        <tr>
-          <th>Plant Code</th><th>Plant</th><th>Exco Location</th>
-          <th>Mixer Cap</th><th>Total Qty</th><th>Time (hrs)</th>
-          <th>Throughput %</th><th>Batches</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in plant_rows %}
-        {% set tp = r.throughput_pct %}
-        <tr class="{% if tp < 60 %}row-deduction{% elif tp < 75 %}row-warning{% else %}row-incentive{% endif %}">
-          <td>{{ r.lookup_code }}</td>
-          <td>{{ r.plant_name }}</td>
-          <td>{{ r.exco_location }}</td>
-          <td>{{ r.mixer_theo_cap }}</td>
-          <td>{{ r.total_quantity | round(1) }}</td>
-          <td>{{ r.total_time_hrs | round(2) }}</td>
-          <td><strong>{{ tp }}%</strong></td>
-          <td>{{ r.batch_count }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+
+<!-- Summary KPIs -->
+<div class="kpi-grid" style="margin-top:20px">
+  <div class="kpi-card">
+    <div class="kpi-label">Plants / Mixers</div>
+    <div class="kpi-value">{{ plant_rows | length | format_int }}</div>
   </div>
-  <div style="margin-top:12px">
-    <a href="{{ url_for('tp_reports') }}" class="btn btn-primary">📋 View Full Reports →</a>
+  <div class="kpi-card">
+    <div class="kpi-label">Exco Locations</div>
+    <div class="kpi-value">{{ (location_rows | rejectattr('is_pan_india') | list | length) | format_int }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Below 60%</div>
+    <div class="kpi-value">{{ (plant_rows | selectattr('throughput_pct','lt',60) | list | length) | format_int }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">75% &amp; Above</div>
+    <div class="kpi-value">{{ (plant_rows | selectattr('throughput_pct','ge',75) | list | length) | format_int }}</div>
   </div>
 </div>
+
+<!-- Legend -->
+<div class="legend">
+  <span class="legend-item legend-red">🔴 0–59%</span>
+  <span class="legend-item legend-yellow">🟡 60–74%</span>
+  <span class="legend-item legend-green">🟢 ≥ 75%</span>
+</div>
+
+<div class="report-toolbar">
+  <p class="caption" style="margin:0">Plant Throughput preview · sorted lowest → highest</p>
+  <a href="{{ url_for('tp_reports') }}" class="btn btn-primary btn-sm">📋 View Full Reports →</a>
+</div>
+
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr>
+        <th>Plant Code</th><th>Plant</th><th>Exco Location</th>
+        <th>Mixer Cap</th><th>Total Qty</th><th>Time (hrs)</th>
+        <th>Throughput %</th><th>Batches</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in plant_rows %}
+      {% set tp = r.throughput_pct %}
+      <tr class="{% if tp < 60 %}row-red{% elif tp < 75 %}row-yellow{% else %}row-green{% endif %}">
+        <td>{{ r.lookup_code }}</td>
+        <td>{{ r.plant_name }}</td>
+        <td>{{ r.exco_location }}</td>
+        <td>{{ r.mixer_theo_cap }}</td>
+        <td>{{ r.total_quantity | round(1) }}</td>
+        <td>{{ r.total_time_hrs | round(2) }}</td>
+        <td><strong>{{ tp }}%</strong></td>
+        <td>{{ r.batch_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
 {% elif ran %}
-<div class="alert alert-warning">No results — ensure Oracle data and Plant Data are loaded first.</div>
+<div class="glass-card" style="text-align:center;padding:28px;margin-top:20px">
+  <h3>No results</h3>
+  <p>Ensure Oracle data and Plant Data are loaded first, then run again.</p>
+</div>
 {% endif %}
 
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('calc-form').addEventListener('submit', function() {
+  document.getElementById('run-btn').disabled = true;
+  document.getElementById('calc-loading').classList.add('active');
+});
+</script>
 {% endblock %}

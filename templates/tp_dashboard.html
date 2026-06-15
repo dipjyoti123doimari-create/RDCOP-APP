@@ -1,26 +1,27 @@
 {% extends "tp_base.html" %}
-{% block title %}Dashboard — RDC-TP{% endblock %}
+{% block title %}Dashboard{% endblock %}
 {% block content %}
 
 <div class="page-header">
   <h1>RDC-TP — Plant Throughput</h1>
-  <p>Oracle live data · Plant-wise &amp; Location-wise throughput calculation</p>
+  <p>Oracle live data · plant-wise &amp; location-wise throughput calculation</p>
 </div>
 
+<!-- KPI cards -->
 <div class="kpi-grid">
   <div class="kpi-card">
     <div class="kpi-label">Plant Reference Rows</div>
-    <div class="kpi-value">{{ counts.tp_plant_data }}</div>
+    <div class="kpi-value">{{ counts.tp_plant_data | format_int }}</div>
     <div class="kpi-sub">Synced from Google Sheets</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Oracle Rows Fetched</div>
-    <div class="kpi-value">{{ counts.tp_oracle_data }}</div>
+    <div class="kpi-value">{{ counts.tp_oracle_data | format_int }}</div>
     <div class="kpi-sub">Production batches loaded</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Saved Results</div>
-    <div class="kpi-value">{{ counts.tp_results }}</div>
+    <div class="kpi-value">{{ counts.tp_results | format_int }}</div>
     <div class="kpi-sub">Calculated plant rows</div>
   </div>
   <div class="kpi-card">
@@ -30,36 +31,40 @@
   </div>
 </div>
 
+<!-- Data status -->
 <div class="card">
   <div class="section-title">📋 Data Status</div>
-  <table>
-    <thead><tr><th>Source</th><th>Details</th></tr></thead>
-    <tbody>
-      <tr>
-        <td>Google Sheets (Plant Data)</td>
-        <td>
-          {% if last_sync.last_sync %}
-            Last synced: {{ last_sync.last_sync }} &nbsp;·&nbsp; {{ last_sync.last_count }} rows
-          {% else %}
-            <span style="color:var(--text-faint)">Not synced yet</span>
-          {% endif %}
-        </td>
-      </tr>
-      <tr>
-        <td>Oracle Production Data</td>
-        <td>{{ counts.tp_oracle_data }} rows in local store</td>
-      </tr>
-      <tr>
-        <td>Calculated Results</td>
-        <td>{{ counts.tp_results }} plant results saved</td>
-      </tr>
-    </tbody>
-  </table>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Source</th><th>Details</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Google Sheets (Plant Data)</td>
+          <td>
+            {% if last_sync.last_sync %}
+              Last synced: <strong>{{ last_sync.last_sync }}</strong> · <strong>{{ last_sync.last_count }}</strong> rows
+            {% else %}
+              <span style="color:var(--text-faint)">Not synced yet</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td>Oracle Production Data</td>
+          <td>{{ counts.tp_oracle_data | format_int }} rows in local store</td>
+        </tr>
+        <tr>
+          <td>Calculated Results</td>
+          <td>{{ counts.tp_results | format_int }} plant results saved</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 </div>
 
+<!-- Quick start -->
 <div class="card">
   <div class="section-title">🚀 Quick Start</div>
-  <ol style="color:var(--text-muted);line-height:2">
+  <ol style="color:var(--text-muted);line-height:2;margin:0;padding-left:20px">
     <li>Go to <a href="{{ url_for('tp_data_uploader') }}">Data Uploader</a> → sync Plant Data from Google Sheets &amp; fetch Oracle data for the period.</li>
     <li>Go to <a href="{{ url_for('tp_calculate') }}">Calculate Throughput</a> → select month/year and run.</li>
     <li>Go to <a href="{{ url_for('tp_reports') }}">View Reports</a> → review Plant &amp; Location reports, download or email.</li>

@@ -1,157 +1,156 @@
 {% extends "tp_base.html" %}
-{% block title %}Reports — RDC-TP{% endblock %}
+{% block title %}View Reports{% endblock %}
 {% block content %}
 
 <div class="page-header">
   <h1>View Reports</h1>
-  <p>
-    {% if calc_month and calc_year %}
-      Results for {{ ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][calc_month] }} {{ calc_year }}
-    {% else %}
-      Run Calculate first to see results
-    {% endif %}
-  </p>
+  <p>Plant &amp; location throughput for <strong>{{ month_label }}</strong> — browse, export or email</p>
 </div>
 
-<!-- ── Action bar ─────────────────────────────────────────────────── -->
-<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">
-  <a href="{{ url_for('tp_download_excel') }}" class="btn btn-primary">⬇ Download Excel</a>
-  <a href="{{ url_for('tp_download_csv') }}" class="btn">⬇ Download CSV</a>
-  <button class="btn" onclick="openEmailModal()">✉ Email Report</button>
+{% if not plant_rows %}
+<div class="glass-card" style="text-align:center;padding:36px">
+  <h3>No results yet</h3>
+  <p>Run a calculation on the <strong>Calculate Throughput</strong> page first.</p>
 </div>
+{% else %}
 
-<!-- ── Colour legend ──────────────────────────────────────────────── -->
-<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px;font-size:13px;align-items:center">
-  <span style="color:var(--text-faint)">Colour key:</span>
-  <span class="badge" style="background:rgba(239,68,68,0.18);color:#f87171;padding:3px 10px;border-radius:6px">🔴 &lt; 60%</span>
-  <span class="badge" style="background:rgba(251,191,36,0.18);color:#fbbf24;padding:3px 10px;border-radius:6px">🟡 60%–74%</span>
-  <span class="badge" style="background:rgba(74,222,128,0.18);color:#4ade80;padding:3px 10px;border-radius:6px">🟢 ≥ 75%</span>
-</div>
-
-<!-- ── Tab bar ────────────────────────────────────────────────────── -->
-<div class="tab-bar" style="margin-bottom:20px">
-  <button class="tab-btn active" data-tabset="rpt" data-tab="plant"    onclick="switchTab('rpt','plant')">🏭 Plant Throughput</button>
-  <button class="tab-btn"        data-tabset="rpt" data-tab="location" onclick="switchTab('rpt','location')">📍 Location-wise TP</button>
-</div>
-
-<!-- ── Plant Throughput tab ───────────────────────────────────────── -->
-<div data-tabpanel="rpt" data-tab="plant" class="active">
-  {% if plant_rows %}
-  <div class="card" style="padding:0">
-    <div class="table-wrapper">
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Plant Code</th>
-            <th>Plant</th>
-            <th>Exco Location</th>
-            <th>Business Head</th>
-            <th>Plant Manager</th>
-            <th>Mixer Cap</th>
-            <th>Total Qty</th>
-            <th>Time (hrs)</th>
-            <th>Throughput %</th>
-            <th>Batches</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in plant_rows %}
-          {% set tp = r.throughput_pct %}
-          <tr class="{% if tp < 60 %}row-deduction{% elif tp < 75 %}row-warning{% else %}row-incentive{% endif %}">
-            <td>{{ loop.index }}</td>
-            <td><strong>{{ r.lookup_code }}</strong></td>
-            <td>{{ r.plant_name }}</td>
-            <td>{{ r.exco_location }}</td>
-            <td>{{ r.business_head }}</td>
-            <td>{{ r.plant_manager }}</td>
-            <td style="text-align:right">{{ r.mixer_theo_cap }}</td>
-            <td style="text-align:right">{{ "{:,.1f}".format(r.total_quantity) }}</td>
-            <td style="text-align:right">{{ "{:,.2f}".format(r.total_time_hrs) }}</td>
-            <td style="text-align:right"><strong>{{ tp }}%</strong></td>
-            <td style="text-align:right">{{ r.batch_count }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+<!-- Summary KPIs -->
+<div class="kpi-grid" style="margin-top:6px">
+  <div class="kpi-card">
+    <div class="kpi-label">Plants / Mixers</div>
+    <div class="kpi-value">{{ plant_rows | length | format_int }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Exco Locations</div>
+    <div class="kpi-value">{{ (location_rows | rejectattr('is_pan_india') | list | length) | format_int }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Below 60%</div>
+    <div class="kpi-value">{{ (plant_rows | selectattr('throughput_pct','lt',60) | list | length) | format_int }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">PAN India Avg</div>
+    <div class="kpi-value" style="font-size:24px">
+      {% for r in location_rows if r.is_pan_india %}{{ r.avg_throughput_pct }}%{% endfor %}
     </div>
   </div>
-  {% else %}
-  <div class="alert alert-warning">No plant results — run Calculate first.</div>
-  {% endif %}
 </div>
 
-<!-- ── Location-wise tab ──────────────────────────────────────────── -->
-<div data-tabpanel="rpt" data-tab="location" style="display:none">
-  {% if location_rows %}
-  <div class="card" style="padding:0">
-    <div class="table-wrapper">
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Exco Location</th>
-            <th>Plants</th>
-            <th>Total Qty</th>
-            <th>Avg Throughput %</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in location_rows %}
-          <tr {% if r.is_pan_india %}style="font-weight:700;border-top:2px solid var(--border)"{% endif %}>
-            <td>{% if not r.is_pan_india %}{{ loop.index }}{% else %}—{% endif %}</td>
-            <td>
-              {% if r.is_pan_india %}
-                <span style="color:var(--accent)">🇮🇳 {{ r.exco_location }}</span>
-              {% else %}
-                {{ r.exco_location }}
-              {% endif %}
-            </td>
-            <td style="text-align:right">{{ r.plant_count }}</td>
-            <td style="text-align:right">{{ "{:,.1f}".format(r.total_quantity) }}</td>
-            <td style="text-align:right">
-              <strong>{{ r.avg_throughput_pct }}%</strong>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+<!-- Legend -->
+<div class="legend">
+  <span class="legend-item legend-red">🔴 0–59%</span>
+  <span class="legend-item legend-yellow">🟡 60–74%</span>
+  <span class="legend-item legend-green">🟢 ≥ 75%</span>
+</div>
+
+<!-- Toolbar -->
+<div class="report-toolbar">
+  <p class="caption" style="margin:0">Throughput report · {{ month_label }} · sorted lowest → highest</p>
+  <div class="btn-group">
+    <a href="{{ url_for('tp_download_excel') }}" class="btn btn-primary btn-sm">⬇️ Excel</a>
+    <a href="{{ url_for('tp_download_csv') }}" class="btn btn-secondary btn-sm">⬇️ CSV</a>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="openEmailModal()">✉️ Email</button>
   </div>
-  {% else %}
-  <div class="alert alert-warning">No location results — run Calculate first.</div>
-  {% endif %}
 </div>
 
-<!-- ── Email modal ────────────────────────────────────────────────── -->
+<!-- Email modal -->
 <div id="email-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeEmailModal()">
-  <div class="modal-box">
+  <div class="modal-box" style="max-width:640px">
     <div class="modal-header">
-      <span class="modal-title">✉ Email Report</span>
+      <span>✉️ Send Report by Email</span>
       <button class="modal-close" onclick="closeEmailModal()">✕</button>
     </div>
-    <form method="POST" action="{{ url_for('tp_send_email') }}">
-      <div class="form-group">
-        <label class="form-label">To</label>
-        <input type="text" name="to_emails" class="form-control" placeholder="email1@co.com, email2@co.com" required>
-      </div>
-      <div class="form-group">
-        <label class="form-label">CC</label>
-        <input type="text" name="cc_emails" class="form-control" placeholder="optional">
-      </div>
-      <div style="display:flex;gap:10px;margin-top:16px">
-        <button type="submit" class="btn btn-primary">Send</button>
-        <button type="button" class="btn" onclick="closeEmailModal()">Cancel</button>
-      </div>
-    </form>
+    <div class="modal-body">
+      {% if not email_ready %}
+      <div class="alert alert-warning" style="margin-bottom:14px">Email not set up. Configure SMTP in <strong>RDC-I&amp;D → Settings</strong> first.</div>
+      {% endif %}
+      <form method="POST" action="{{ url_for('tp_send_email') }}">
+        <div class="form-grid">
+          <div class="form-group"><label>To (comma-separated)</label><input type="text" name="to" value="{{ email_cfg.default_to or '' }}" placeholder="name@company.com"></div>
+          <div class="form-group"><label>CC (optional)</label><input type="text" name="cc" value="{{ email_cfg.default_cc or '' }}" placeholder="manager@company.com"></div>
+        </div>
+        <div class="form-group"><label>Subject</label><input type="text" name="subject" value="{{ default_subject }}"></div>
+        <div class="form-group"><label>Message</label><textarea name="body" rows="7" style="min-height:160px">{{ default_body }}</textarea></div>
+        <button type="submit" class="btn btn-primary" {% if not email_ready %}disabled{% endif %}>✉️ Send Report</button>
+      </form>
+    </div>
   </div>
 </div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <button class="tab-btn active" data-tabset="rpt" data-tab="plant">🏭 Plant Throughput</button>
+  <button class="tab-btn" data-tabset="rpt" data-tab="location">📍 Location-wise TP</button>
+</div>
+
+<!-- Plant Throughput -->
+<div class="tab-panel active" data-tabpanel="rpt" data-tab="plant">
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>Plant Code</th><th>Plant</th><th>Exco Location</th>
+          <th>Business Head</th><th>Plant Manager</th><th>Mixer Cap</th>
+          <th>Total Qty</th><th>Time (hrs)</th><th>Throughput %</th><th>Batches</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in plant_rows %}
+        {% set tp = r.throughput_pct %}
+        <tr class="{% if tp < 60 %}row-red{% elif tp < 75 %}row-yellow{% else %}row-green{% endif %}">
+          <td>{{ loop.index }}</td>
+          <td><strong>{{ r.lookup_code }}</strong></td>
+          <td>{{ r.plant_name }}</td>
+          <td>{{ r.exco_location }}</td>
+          <td>{{ r.business_head }}</td>
+          <td>{{ r.plant_manager }}</td>
+          <td>{{ r.mixer_theo_cap }}</td>
+          <td>{{ r.total_quantity | round(1) }}</td>
+          <td>{{ r.total_time_hrs | round(2) }}</td>
+          <td><strong>{{ tp }}%</strong></td>
+          <td>{{ r.batch_count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Location-wise TP -->
+<div class="tab-panel" data-tabpanel="rpt" data-tab="location">
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Exco Location</th><th>Plants</th><th>Total Qty</th><th>Avg Throughput %</th></tr>
+      </thead>
+      <tbody>
+        {% for r in location_rows %}
+        <tr {% if r.is_pan_india %}style="font-weight:700;border-top:2px solid var(--border)"{% endif %}>
+          <td>{% if not r.is_pan_india %}{{ loop.index }}{% else %}—{% endif %}</td>
+          <td>{% if r.is_pan_india %}<span style="color:var(--accent)">🇮🇳 {{ r.exco_location }}</span>{% else %}{{ r.exco_location }}{% endif %}</td>
+          <td>{{ r.plant_count }}</td>
+          <td>{{ r.total_quantity | round(1) }}</td>
+          <td><strong>{{ r.avg_throughput_pct }}%</strong></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endif %}
 
 {% endblock %}
 {% block scripts %}
 <script>
-function openEmailModal()  { document.getElementById('email-modal').style.display='flex'; }
-function closeEmailModal() { document.getElementById('email-modal').style.display='none'; }
-document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeEmailModal(); });
+function openEmailModal() {
+  var m = document.getElementById('email-modal');
+  if (m) { m.style.display = 'flex'; document.body.style.overflow = 'hidden'; }
+}
+function closeEmailModal() {
+  var m = document.getElementById('email-modal');
+  if (m) { m.style.display = 'none'; document.body.style.overflow = ''; }
+}
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeEmailModal(); });
 </script>
 {% endblock %}

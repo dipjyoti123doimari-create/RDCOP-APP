@@ -1,78 +1,139 @@
 {% extends "tp_base.html" %}
-{% block title %}Settings — RDC-TP{% endblock %}
+{% block title %}Settings{% endblock %}
 {% block content %}
 
 <div class="page-header">
   <h1>Settings</h1>
-  <p>Configure Oracle column mappings, Google Sheet, and email for RDC-TP</p>
+  <p>Click any card to configure that section</p>
 </div>
 
-<!-- ── Oracle column names ───────────────────────────────────────── -->
-<div class="card">
-  <div class="section-title">🔌 Oracle Column Mapping</div>
-  <p class="caption" style="margin-bottom:16px">
-    Map the Oracle column names from <code>APPSREAD.rdc_batch_trx_headers</code> to the fields RDC-TP expects.
-    Defaults are shown — only change if your DB view uses different column names.
-  </p>
-  <form method="POST" action="{{ url_for('tp_save_oracle_cols') }}">
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Plant Code Column</label>
-        <input type="text" name="plant_col" class="form-control"
-               value="{{ plant_col }}" placeholder="PLANT_CODE">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Batch Number Column</label>
-        <input type="text" name="batch_col" class="form-control"
-               value="{{ batch_col }}" placeholder="BATCH_NO">
+<!-- ── Settings cards grid ─────────────────────────────────────── -->
+<div class="settings-card-grid">
+
+  <!-- Oracle column mapping -->
+  <div class="settings-tile" onclick="openModal('modal-oracle-cols')">
+    <div class="settings-tile-icon">🔌</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Oracle Column Mapping</div>
+      <div class="settings-tile-status {% if ora_configured %}status-ok{% else %}status-warn{% endif %}">
+        {% if ora_configured %}✅ Connected · {{ plant_col }} / {{ batch_col }} / {{ time_col }}{% else %}❌ Oracle not connected{% endif %}
       </div>
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Mixing Time Column (minutes)</label>
-        <input type="text" name="time_col" class="form-control"
-               value="{{ time_col }}" placeholder="MIXING_TIME">
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
+  <!-- Google Sheet -->
+  <div class="settings-tile" onclick="openModal('modal-sheet')">
+    <div class="settings-tile-icon">📊</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Google Sheet — Plant Data</div>
+      <div class="settings-tile-status {% if last_sync.last_sync %}status-ok{% else %}status-warn{% endif %}">
+        {% if last_sync.last_sync %}✅ {{ last_sync.last_count }} rows · {{ worksheet }}{% else %}⚠️ Not synced yet{% endif %}
       </div>
     </div>
-    <button type="submit" class="btn btn-primary">💾 Save Oracle Columns</button>
-  </form>
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
+  <!-- Email (shared) -->
+  <div class="settings-tile" onclick="openModal('modal-email')">
+    <div class="settings-tile-icon">✉️</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Email (SMTP)</div>
+      <div class="settings-tile-status {% if email_configured %}status-ok{% else %}status-warn{% endif %}">
+        {% if email_configured %}✅ Configured — {{ smtp.sender }}{% else %}⚠️ Not configured{% endif %}
+      </div>
+    </div>
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
 </div>
 
-<!-- ── Google Sheet settings ─────────────────────────────────────── -->
-<div class="card">
-  <div class="section-title">📊 Google Sheet — Plant Data</div>
-  <p class="caption" style="margin-bottom:16px">
-    The same Google Sheet used by RDC-I&amp;D, but a different tab.
-    Required columns: <code>Plant Code, Exco Location, Plant, Business Head, Plant Manager/ Asst. PI, Mixer Theo. Capacity</code>
-  </p>
-  <form method="POST" action="{{ url_for('tp_save_worksheet') }}">
-    <div class="form-group">
-      <label class="form-label">Google Sheet ID / URL</label>
-      <input type="text" name="sheet_id" class="form-control"
-             value="{{ sheet_id }}" placeholder="Paste Sheet URL or just the ID part">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Worksheet Tab Name</label>
-      <input type="text" name="worksheet" class="form-control"
-             value="{{ worksheet }}" placeholder="Plant Data for TP">
-    </div>
-    <button type="submit" class="btn btn-primary">💾 Save Sheet Settings</button>
-  </form>
-</div>
 
-<!-- ── Email / SMTP note ─────────────────────────────────────────── -->
-<div class="card">
-  <div class="section-title">✉ Email / SMTP</div>
-  <p class="caption">
-    RDC-TP uses the same SMTP settings as RDC-I&amp;D.
-    Configure sender email, App Password, and monthly schedule in
-    <a href="{{ url_for('page_settings') }}">RDC-I&amp;D → Settings</a>.
-  </p>
-  <div class="alert alert-info" style="margin-top:12px">
-    SMTP Sender: <strong>{{ smtp.sender or 'Not configured' }}</strong>
-    &nbsp;·&nbsp;
-    Status: <strong>{% if email_configured %}Configured{% else %}Not set{% endif %}</strong>
+<!-- ══════════════════════════════════════════════════════════════
+     MODAL: Oracle Column Mapping
+══════════════════════════════════════════════════════════════ -->
+<div id="modal-oracle-cols" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-oracle-cols')">
+  <div class="modal-box" style="max-width:620px">
+    <div class="modal-header">
+      <span>🔌 Oracle Column Mapping</span>
+      <button class="modal-close" onclick="closeModal('modal-oracle-cols')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="caption" style="margin-bottom:12px">Map the column names in <strong>APPSREAD.rdc_batch_trx_headers</strong> to the fields RDC-TP expects. Only change these if your DB view uses different column names.</p>
+      <form method="POST" action="{{ url_for('tp_save_oracle_cols') }}">
+        <div class="form-grid">
+          <div class="form-group"><label>Plant Code Column</label><input type="text" name="plant_col" value="{{ plant_col }}" placeholder="PLANT_CODE"></div>
+          <div class="form-group"><label>Batch Number Column</label><input type="text" name="batch_col" value="{{ batch_col }}" placeholder="BATCH_NO"></div>
+          <div class="form-group"><label>Mixing Time Column (minutes)</label><input type="text" name="time_col" value="{{ time_col }}" placeholder="MIXING_TIME"></div>
+        </div>
+        <button type="submit" class="btn btn-primary">💾 Save Oracle Columns</button>
+      </form>
+    </div>
   </div>
 </div>
 
+
+<!-- ══════════════════════════════════════════════════════════════
+     MODAL: Google Sheet
+══════════════════════════════════════════════════════════════ -->
+<div id="modal-sheet" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-sheet')">
+  <div class="modal-box" style="max-width:620px">
+    <div class="modal-header">
+      <span>📊 Google Sheet — Plant Data</span>
+      <button class="modal-close" onclick="closeModal('modal-sheet')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="caption" style="margin-bottom:12px">The same Google Sheet used by RDC-I&amp;D, but a different tab. Required columns: <strong>Plant Code, Exco Location, Plant, Business Head, Plant Manager/ Asst. PI, Mixer Theo. Capacity</strong></p>
+      <form method="POST" action="{{ url_for('tp_save_worksheet') }}">
+        <div class="form-group"><label>Google Sheet URL or ID</label><input type="text" name="sheet_id" value="{{ sheet_id }}" placeholder="Paste Sheet URL or ID"></div>
+        <div class="form-group"><label>Worksheet / Tab Name</label><input type="text" name="worksheet" value="{{ worksheet }}" placeholder="Plant Data for TP"></div>
+        <button type="submit" class="btn btn-primary">💾 Save Sheet Settings</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════
+     MODAL: Email (shared with RDC-I&D)
+══════════════════════════════════════════════════════════════ -->
+<div id="modal-email" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-email')">
+  <div class="modal-box" style="max-width:560px">
+    <div class="modal-header">
+      <span>✉️ Email (SMTP)</span>
+      <button class="modal-close" onclick="closeModal('modal-email')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="caption" style="margin-bottom:12px">RDC-TP shares the same SMTP setup as RDC-I&amp;D. To change the sender, App Password or schedule, open the RDC-I&amp;D settings.</p>
+      {% if email_configured %}
+      <div class="alert alert-success" style="margin-bottom:14px">✅ Configured — sending as <strong>{{ smtp.sender }}</strong></div>
+      {% else %}
+      <div class="alert alert-warning" style="margin-bottom:14px">⚠️ SMTP not configured yet.</div>
+      {% endif %}
+      <a href="{{ url_for('page_settings') }}" class="btn btn-primary">⚙️ Open RDC-I&amp;D Email Settings →</a>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function openModal(id) {
+  var m = document.getElementById(id);
+  if (m) { m.style.display = 'flex'; document.body.style.overflow = 'hidden'; }
+}
+function closeModal(id) {
+  var m = document.getElementById(id);
+  if (m) { m.style.display = 'none'; document.body.style.overflow = ''; }
+}
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay').forEach(function(m) { m.style.display = 'none'; });
+    document.body.style.overflow = '';
+  }
+});
+/* Auto-open modal after a save redirect (?m=oracle-cols / sheet / email) */
+var which = new URLSearchParams(location.search).get('m');
+if (which) openModal('modal-' + which);
+</script>
 {% endblock %}

@@ -442,13 +442,23 @@ def tp_reports():
     calc_month    = _ms("tp", "calc_month", _date.today().month)
     calc_year     = _ms("tp", "calc_year",  _date.today().year)
     smtp          = email_helper.get_smtp_config()
-    email_configured = bool(smtp.get("host") and smtp.get("sender"))
+    email_ready   = email_helper.is_configured()
+
+    import calendar
+    month_label    = f"{calendar.month_name[calc_month]} {calc_year}"
+    default_subject = f"RDC-TP Plant Throughput Report — {month_label}"
+    default_body    = (f"Dear Team,\n\nPlease find attached the Plant Throughput "
+                       f"Report for {month_label}.\n\nRegards,\nRDC Operations")
+
     ctx = _tp_ctx()
     ctx["active_page"] = "reports"
     return render_template("tp_reports.html",
                            plant_rows=plant_rows, location_rows=location_rows,
                            calc_month=calc_month, calc_year=calc_year,
-                           smtp=smtp, email_configured=email_configured, **ctx)
+                           month_label=month_label, email_cfg=smtp,
+                           email_ready=email_ready,
+                           default_subject=default_subject,
+                           default_body=default_body, **ctx)
 
 
 @app.route("/tp/download-excel")
@@ -510,8 +520,10 @@ def tp_send_email():
     location_rows = _ms("tp", "location_rows", [])
     month = _ms("tp", "calc_month", _date.today().month)
     year  = _ms("tp", "calc_year",  _date.today().year)
-    to_addr = request.form.get("to_emails", "").strip()
-    cc_addr = request.form.get("cc_emails", "").strip()
+    to_addr = request.form.get("to", "").strip()
+    cc_addr = request.form.get("cc", "").strip()
+    subject = request.form.get("subject", "").strip()
+    body    = request.form.get("body", "").strip()
     if not plant_rows:
         flash("No results to email — run Calculate first.", "warning")
         return redirect(url_for("tp_reports"))
@@ -530,9 +542,11 @@ def tp_send_email():
 
     import calendar
     month_name = calendar.month_name[month]
-    subject = f"RDC-TP Plant Throughput Report — {month_name} {year}"
-    body    = (f"Dear Team,\n\nPlease find attached the Plant Throughput Report "
-               f"for {month_name} {year}.\n\nRegards,\nRDC Operations")
+    if not subject:
+        subject = f"RDC-TP Plant Throughput Report — {month_name} {year}"
+    if not body:
+        body = (f"Dear Team,\n\nPlease find attached the Plant Throughput Report "
+                f"for {month_name} {year}.\n\nRegards,\nRDC Operations")
 
     result = email_helper.send_report_email(
         to_emails=to_addr, cc_emails=cc_addr,
@@ -567,12 +581,15 @@ def tp_settings():
     time_col    = database.get_module_setting("tp", "oracle_time_col",  "MIXING_TIME")
     smtp        = email_helper.get_smtp_config()
     email_configured = bool(smtp.get("host") and smtp.get("sender"))
+    ora_configured   = oracle_connector.is_configured()
+    last_sync        = google_sheets.get_tp_last_sync_info()
     ctx = _tp_ctx()
     ctx["active_page"] = "settings"
     return render_template("tp_settings.html",
                            sheet_id=sheet_id, worksheet=worksheet,
                            plant_col=plant_col, batch_col=batch_col, time_col=time_col,
-                           smtp=smtp, email_configured=email_configured, **ctx)
+                           smtp=smtp, email_configured=email_configured,
+                           ora_configured=ora_configured, last_sync=last_sync, **ctx)
 
 
 @app.route("/tp/settings/save-oracle-cols", methods=["POST"])
@@ -583,7 +600,7 @@ def tp_save_oracle_cols():
         "oracle_time_col":  request.form.get("time_col",  "MIXING_TIME").strip(),
     })
     flash("Oracle column names saved.", "success")
-    return redirect(url_for("tp_settings"))
+    return redirect(url_for("tp_settings", m="oracle-cols"))
 
 
 @app.route("/tp/settings/save-worksheet", methods=["POST"])
@@ -594,7 +611,7 @@ def tp_save_worksheet():
     if sheet_id:
         database.set_setting("gsheet_id", sheet_id)
     flash("Sheet settings saved.", "success")
-    return redirect(url_for("tp_settings"))
+    return redirect(url_for("tp_settings", m="sheet"))
 
 @app.route("/btrtp")
 def page_btrtp():

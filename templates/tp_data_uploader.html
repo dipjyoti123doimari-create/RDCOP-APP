@@ -1,5 +1,5 @@
 {% extends "tp_base.html" %}
-{% block title %}Data Uploader — RDC-TP{% endblock %}
+{% block title %}Data Uploader{% endblock %}
 {% block content %}
 
 <div class="page-header">
@@ -7,77 +7,87 @@
   <p>Sync Plant Data from Google Sheets &amp; fetch production data from Oracle</p>
 </div>
 
-<!-- ── Tab switcher ──────────────────────────────────────────────────── -->
-<div class="tab-bar" style="margin-bottom:20px">
-  <button class="tab-btn active" data-tabset="up" data-tab="oracle" onclick="switchTab('up','oracle')">🔌 Oracle Data</button>
-  <button class="tab-btn"        data-tabset="up" data-tab="sheets" onclick="switchTab('up','sheets')">📊 Plant Data (Sheets)</button>
+<!-- Main Tabs -->
+<div class="tabs">
+  <button class="tab-btn active" data-tabset="main" data-tab="sheets">📊 Plant Data (Sheets)</button>
+  <button class="tab-btn" data-tabset="main" data-tab="oracle">🔌 Oracle (Live)</button>
 </div>
 
-<!-- ── Oracle tab ────────────────────────────────────────────────────── -->
-<div data-tabpanel="up" data-tab="oracle" class="active">
+<!-- ── Plant Data (Google Sheets) ──────────────────── -->
+<div class="tab-panel active" data-tabpanel="main" data-tab="sheets">
   <div class="card">
-    <div class="section-title">🔌 Fetch from Oracle</div>
-
-    {% if ora_ready %}
-      <div class="alert alert-success">✅ Connected to Oracle</div>
-    {% else %}
-      <div class="alert alert-warning">❌ Not connected to Oracle — configure in RDC-I&amp;D Settings → Oracle</div>
-    {% endif %}
-
-    <form method="POST" action="{{ url_for('tp_fetch_oracle') }}" style="margin-top:16px">
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">From Date</label>
-          <input type="date" name="from_date" class="form-control" required>
-        </div>
-        <div class="form-group">
-          <label class="form-label">To Date</label>
-          <input type="date" name="to_date" class="form-control" required>
-        </div>
-      </div>
-      <button type="submit" class="btn btn-primary" {% if not ora_ready %}disabled{% endif %}>
-        🔄 Fetch from Oracle
-      </button>
-    </form>
-
-    {% if ora_counts %}
-    <div class="alert alert-info" style="margin-top:16px">
-      {{ ora_counts }} production rows currently in local store.
-      <a href="{{ url_for('tp_validation') }}" style="color:var(--info-text)">View skip log →</a>
-    </div>
-    {% endif %}
-  </div>
-</div>
-
-<!-- ── Sheets tab ─────────────────────────────────────────────────────── -->
-<div data-tabpanel="up" data-tab="sheets" style="display:none">
-  <div class="card">
-    <div class="section-title">📊 Sync Plant Data from Google Sheets</div>
-    <p class="caption" style="margin-bottom:16px">
+    <div class="section-title">🔄 Sync from Google Sheets</div>
+    <p class="caption" style="margin-bottom:14px">
       Syncs the <strong>"Plant Data for TP"</strong> tab from the same Google Sheet used by RDC-I&amp;D.
-      Required columns: <code>Plant Code, Exco Location, Plant, Business Head, Plant Manager/ Asst. PI, Mixer Theo. Capacity</code>
+      Required columns: <strong>Plant Code, Exco Location, Plant, Business Head, Plant Manager/ Asst. PI, Mixer Theo. Capacity</strong>
     </p>
 
+    <form method="POST" action="{{ url_for('tp_sync_sheets') }}" id="sync-form">
+      <div class="form-group">
+        <label>Google Sheet URL or ID</label>
+        <input type="text" name="sheet_id" value="{{ sheet_id or '' }}" placeholder="https://docs.google.com/spreadsheets/d/1BxiMVs0.../edit">
+      </div>
+      <div class="form-group">
+        <label>Worksheet / Tab Name</label>
+        <input type="text" name="worksheet" value="{{ tp_worksheet or 'Plant Data for TP' }}" placeholder="Plant Data for TP">
+      </div>
+      <div class="btn-group">
+        <button type="submit" class="btn btn-primary" id="sync-btn">🔄 Sync Now</button>
+        <div class="loading" id="sync-loading"><div class="spinner"></div> Syncing from Google Sheets…</div>
+      </div>
+    </form>
+
     {% if last_sync.last_sync %}
-    <div class="alert alert-success">
-      ✅ Last synced: {{ last_sync.last_sync }} &nbsp;·&nbsp; {{ last_sync.last_count }} plant rows
+    <div class="alert alert-info" style="margin-top:14px">
+      🕐 Last synced: <strong>{{ last_sync.last_sync }}</strong> · <strong>{{ last_sync.last_count }}</strong> plant rows
     </div>
     {% endif %}
-
-    <form method="POST" action="{{ url_for('tp_sync_sheets') }}" style="margin-top:16px">
-      <div class="form-group">
-        <label class="form-label">Google Sheet ID / URL</label>
-        <input type="text" name="sheet_id" class="form-control"
-               value="{{ sheet_id }}" placeholder="Paste Sheet URL or ID">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Worksheet Tab Name</label>
-        <input type="text" name="worksheet" class="form-control"
-               value="{{ tp_worksheet }}" placeholder="Plant Data for TP">
-      </div>
-      <button type="submit" class="btn btn-primary">🔄 Sync Plant Data</button>
-    </form>
   </div>
 </div>
 
+<!-- ── Oracle (Live) ───────────────────────────────── -->
+<div class="tab-panel" data-tabpanel="main" data-tab="oracle">
+  <div class="card">
+    <div class="section-title">🔌 Fetch Production Data from Oracle</div>
+    <p class="caption" style="margin-bottom:14px">Pulls batch data directly from APPSREAD.rdc_batch_trx_headers for any date range — no Excel needed.</p>
+
+    {% if ora_ready %}
+    <div class="alert alert-success">✅ Connected to Oracle</div>
+    {% else %}
+    <div class="alert alert-warning">❌ Not connected to Oracle — configure in <a href="{{ url_for('page_settings') }}">RDC-I&amp;D → Settings → Oracle</a></div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('tp_fetch_oracle') }}" id="oracle-form">
+      <div class="date-row">
+        <div class="form-group"><label>From Date</label><input type="date" name="from_date" required></div>
+        <div class="form-group"><label>To Date</label><input type="date" name="to_date" required></div>
+        <div class="form-group"><label>&nbsp;</label>
+          <button type="submit" class="btn btn-primary" {% if not ora_ready %}disabled{% endif %}>🔌 Fetch from Oracle</button>
+        </div>
+      </div>
+    </form>
+    <div class="loading" id="oracle-loading" style="margin-top:10px"><div class="spinner"></div> Fetching from Oracle…</div>
+
+    {% if ora_counts %}
+    <div class="alert alert-info" style="margin-top:14px">
+      <strong>{{ ora_counts | format_int }}</strong> production rows currently in local store.
+      <a href="{{ url_for('tp_validation') }}">View skip log →</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+  document.getElementById('sync-form').addEventListener('submit', function() {
+    document.getElementById('sync-btn').disabled = true;
+    document.getElementById('sync-loading').classList.add('active');
+  });
+  document.getElementById('oracle-form').addEventListener('submit', function() {
+    document.getElementById('oracle-loading').classList.add('active');
+  });
+  var hash = location.hash.replace('#','');
+  if (['sheets','oracle'].includes(hash)) switchTab('main', hash);
+</script>
 {% endblock %}

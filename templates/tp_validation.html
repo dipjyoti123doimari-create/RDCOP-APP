@@ -1,73 +1,79 @@
 {% extends "tp_base.html" %}
-{% block title %}Validation — RDC-TP{% endblock %}
+{% block title %}Validation Report{% endblock %}
 {% block content %}
 
 <div class="page-header">
   <h1>Validation / Skip Log</h1>
-  <p>Rows excluded during data parsing and warnings from calculation</p>
+  <p>Rows excluded during Oracle data parsing and warnings raised during calculation</p>
 </div>
 
-<!-- ── Tab bar ────────────────────────────────────────────────────── -->
-<div class="tab-bar" style="margin-bottom:20px">
-  <button class="tab-btn active" data-tabset="val" data-tab="skip"  onclick="switchTab('val','skip')">
-    🚫 Skip Log
-    {% if skip_log %}<span class="badge-count" style="margin-left:6px">{{ skip_log|length }}</span>{% endif %}
-  </button>
-  <button class="tab-btn" data-tabset="val" data-tab="warn" onclick="switchTab('val','warn')">
-    ⚠️ Calc Warnings
-    {% if calc_warnings %}<span class="badge-count" style="margin-left:6px">{{ calc_warnings|length }}</span>{% endif %}
-  </button>
+{% if not skip_log and not calc_warnings %}
+<div class="glass-card" style="text-align:center;padding:28px">
+  <h3>Nothing to review</h3>
+  <p>No skipped rows and no calculation warnings. Fetch Oracle data and run a calculation to populate this page.</p>
+</div>
+{% else %}
+
+<!-- Summary KPIs -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">Skipped Rows</div>
+    <div class="kpi-value">{{ skip_log | length | format_int }}</div>
+    <div class="kpi-sub">Excluded from calculation</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Calc Warnings</div>
+    <div class="kpi-value">{{ calc_warnings | length | format_int }}</div>
+    <div class="kpi-sub">Raised on last run</div>
+  </div>
 </div>
 
-<!-- ── Skip Log tab ───────────────────────────────────────────────── -->
-<div data-tabpanel="val" data-tab="skip" class="active">
+<!-- Tabs -->
+<div class="tabs">
+  <button class="tab-btn active" data-tabset="val" data-tab="skip">🚫 Skip Log</button>
+  <button class="tab-btn" data-tabset="val" data-tab="warn">⚠️ Calc Warnings</button>
+</div>
+
+<!-- Skip Log -->
+<div class="tab-panel active" data-tabpanel="val" data-tab="skip">
   {% if skip_log %}
-  <div class="card" style="padding:0">
-    <div class="table-wrapper">
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Batch</th>
-            <th>Plant Code</th>
-            <th>Date</th>
-            <th>Qty</th>
-            <th>Time (min)</th>
-            <th>Reason</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in skip_log %}
-          <tr class="row-deduction">
-            <td>{{ loop.index }}</td>
-            <td>{{ row.batch_ref }}</td>
-            <td>{{ row.plant_code }}</td>
-            <td>{{ row.production_date }}</td>
-            <td style="text-align:right">{{ row.quantity }}</td>
-            <td style="text-align:right">{{ row.time_taken_min }}</td>
-            <td>{{ row.reason }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+  <p class="caption" style="margin-bottom:10px">Showing <strong>{{ skip_log | length | format_int }}</strong> skipped row(s)</p>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Batch</th><th>Plant Code</th><th>Date</th><th>Qty</th><th>Time (min)</th><th>Reason</th></tr>
+      </thead>
+      <tbody>
+        {% for row in skip_log %}
+        <tr class="row-red">
+          <td>{{ loop.index }}</td>
+          <td>{{ row.batch_ref }}</td>
+          <td>{{ row.plant_code }}</td>
+          <td>{{ row.production_date }}</td>
+          <td>{{ row.quantity }}</td>
+          <td>{{ row.time_taken_min }}</td>
+          <td>{{ row.reason }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
   {% else %}
   <div class="alert alert-success">✅ No skipped rows — all fetched data passed validation.</div>
   {% endif %}
 </div>
 
-<!-- ── Calc Warnings tab ──────────────────────────────────────────── -->
-<div data-tabpanel="val" data-tab="warn" style="display:none">
+<!-- Calc Warnings -->
+<div class="tab-panel" data-tabpanel="val" data-tab="warn">
   {% if calc_warnings %}
-  <div class="card">
-    {% for w in calc_warnings %}
-    <div class="alert alert-warning">{{ w }}</div>
-    {% endfor %}
-  </div>
+  {% for w in calc_warnings %}
+  <div class="alert alert-warning">{{ w }}</div>
+  {% endfor %}
   {% else %}
   <div class="alert alert-success">✅ No calculation warnings.</div>
   {% endif %}
 </div>
+
+{% endif %}
 
 {% endblock %}
