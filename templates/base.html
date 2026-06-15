@@ -79,7 +79,7 @@
       </div>
       <!-- Hidden native select still used by app.js for the actual API call -->
       <select id="topbar-theme" style="display:none">
-        {% for t, icon in _themes %}
+        {% for t, icon, cls in _themes %}
         <option value="{{ t }}" {% if t == bg_theme %}selected{% endif %}>{{ t }}</option>
         {% endfor %}
       </select>
