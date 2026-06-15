@@ -319,9 +319,9 @@
     <p class="caption" style="margin-bottom:14px">Pulls production data directly from APPSREAD.rdc_batch_trx_headers for any date range — no Excel needed.</p>
 
     {% if ora_ready %}
-    <div class="alert alert-success">🔌 Connected to <strong>{{ ora_cfg.host }}:{{ ora_cfg.port }}/{{ ora_cfg.service }}</strong> as <strong>{{ ora_cfg.user }}</strong></div>
+    <div class="alert alert-success">✅ Connected to Oracle</div>
     {% else %}
-    <div class="alert alert-warning">Oracle connection is not configured. Go to <strong>Settings → Oracle Database</strong> and save your credentials first.</div>
+    <div class="alert alert-warning">❌ Not connected to Oracle</div>
     {% endif %}
 
     <form method="POST" action="{{ url_for('fetch_oracle') }}" id="oracle-form">
