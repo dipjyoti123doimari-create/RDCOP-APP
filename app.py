@@ -15,6 +15,8 @@ from __future__ import annotations
 import io
 import json
 import os
+import sys
+import threading
 from datetime import date as _date, datetime as _dt, timedelta
 
 import pandas as pd
@@ -1035,6 +1037,16 @@ def send_email():
         flash(f"Could not send: {exc}", "error")
 
     return redirect(url_for("page_reports"))
+
+
+@app.route("/action/restart-server", methods=["POST"])
+def restart_server():
+    def _restart():
+        import time
+        time.sleep(1)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    threading.Thread(target=_restart, daemon=True).start()
+    return jsonify({"ok": True})
 
 
 @app.route("/action/save-email-schedule", methods=["POST"])

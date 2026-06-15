@@ -288,7 +288,7 @@
       <p style="color:var(--text-muted);font-size:14px;margin-bottom:10px">
         <strong>Hard Refresh</strong> forces the browser to reload all CSS, JS and fonts fresh.
       </p>
-      <button class="btn btn-secondary btn-sm" onclick="hardRefresh()">🔄 Hard Refresh Browser</button>
+      <button class="btn btn-primary btn-sm" onclick="hardRefresh()">🔄 Restart Server &amp; Refresh</button>
     </div>
   </div>
 </div>
@@ -333,8 +333,28 @@ if (autoToggle) {
 }
 
 function hardRefresh() {
-  var url = window.location.href.split('?')[0] + '?_=' + Date.now();
-  window.location.replace(url);
+  var btn = document.querySelector('[onclick="hardRefresh()"]');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Restarting…'; }
+  fetch('/action/restart-server', { method: 'POST' })
+    .catch(function() {})
+    .finally(function() {
+      /* Poll until server is back, then reload with cache-bust */
+      setTimeout(function() {
+        var attempts = 0;
+        var poll = setInterval(function() {
+          attempts++;
+          fetch('/', { cache: 'no-store' })
+            .then(function(r) {
+              if (r.ok) {
+                clearInterval(poll);
+                window.location.replace(window.location.href.split('?')[0] + '?_=' + Date.now());
+              }
+            })
+            .catch(function() {});
+          if (attempts > 30) clearInterval(poll);
+        }, 500);
+      }, 1500);
+    });
 }
 </script>
 {% endblock %}
