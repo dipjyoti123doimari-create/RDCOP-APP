@@ -1,0 +1,157 @@
+{% extends "tp_base.html" %}
+{% block title %}Reports — RDC-TP{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>View Reports</h1>
+  <p>
+    {% if calc_month and calc_year %}
+      Results for {{ ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][calc_month] }} {{ calc_year }}
+    {% else %}
+      Run Calculate first to see results
+    {% endif %}
+  </p>
+</div>
+
+<!-- ── Action bar ─────────────────────────────────────────────────── -->
+<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">
+  <a href="{{ url_for('tp_download_excel') }}" class="btn btn-primary">⬇ Download Excel</a>
+  <a href="{{ url_for('tp_download_csv') }}" class="btn">⬇ Download CSV</a>
+  <button class="btn" onclick="openEmailModal()">✉ Email Report</button>
+</div>
+
+<!-- ── Colour legend ──────────────────────────────────────────────── -->
+<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px;font-size:13px;align-items:center">
+  <span style="color:var(--text-faint)">Colour key:</span>
+  <span class="badge" style="background:rgba(239,68,68,0.18);color:#f87171;padding:3px 10px;border-radius:6px">🔴 &lt; 60%</span>
+  <span class="badge" style="background:rgba(251,191,36,0.18);color:#fbbf24;padding:3px 10px;border-radius:6px">🟡 60%–74%</span>
+  <span class="badge" style="background:rgba(74,222,128,0.18);color:#4ade80;padding:3px 10px;border-radius:6px">🟢 ≥ 75%</span>
+</div>
+
+<!-- ── Tab bar ────────────────────────────────────────────────────── -->
+<div class="tab-bar" style="margin-bottom:20px">
+  <button class="tab-btn active" data-tabset="rpt" data-tab="plant"    onclick="switchTab('rpt','plant')">🏭 Plant Throughput</button>
+  <button class="tab-btn"        data-tabset="rpt" data-tab="location" onclick="switchTab('rpt','location')">📍 Location-wise TP</button>
+</div>
+
+<!-- ── Plant Throughput tab ───────────────────────────────────────── -->
+<div data-tabpanel="rpt" data-tab="plant" class="active">
+  {% if plant_rows %}
+  <div class="card" style="padding:0">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Plant Code</th>
+            <th>Plant</th>
+            <th>Exco Location</th>
+            <th>Business Head</th>
+            <th>Plant Manager</th>
+            <th>Mixer Cap</th>
+            <th>Total Qty</th>
+            <th>Time (hrs)</th>
+            <th>Throughput %</th>
+            <th>Batches</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in plant_rows %}
+          {% set tp = r.throughput_pct %}
+          <tr class="{% if tp < 60 %}row-deduction{% elif tp < 75 %}row-warning{% else %}row-incentive{% endif %}">
+            <td>{{ loop.index }}</td>
+            <td><strong>{{ r.lookup_code }}</strong></td>
+            <td>{{ r.plant_name }}</td>
+            <td>{{ r.exco_location }}</td>
+            <td>{{ r.business_head }}</td>
+            <td>{{ r.plant_manager }}</td>
+            <td style="text-align:right">{{ r.mixer_theo_cap }}</td>
+            <td style="text-align:right">{{ "{:,.1f}".format(r.total_quantity) }}</td>
+            <td style="text-align:right">{{ "{:,.2f}".format(r.total_time_hrs) }}</td>
+            <td style="text-align:right"><strong>{{ tp }}%</strong></td>
+            <td style="text-align:right">{{ r.batch_count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-warning">No plant results — run Calculate first.</div>
+  {% endif %}
+</div>
+
+<!-- ── Location-wise tab ──────────────────────────────────────────── -->
+<div data-tabpanel="rpt" data-tab="location" style="display:none">
+  {% if location_rows %}
+  <div class="card" style="padding:0">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Exco Location</th>
+            <th>Plants</th>
+            <th>Total Qty</th>
+            <th>Avg Throughput %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in location_rows %}
+          <tr {% if r.is_pan_india %}style="font-weight:700;border-top:2px solid var(--border)"{% endif %}>
+            <td>{% if not r.is_pan_india %}{{ loop.index }}{% else %}—{% endif %}</td>
+            <td>
+              {% if r.is_pan_india %}
+                <span style="color:var(--accent)">🇮🇳 {{ r.exco_location }}</span>
+              {% else %}
+                {{ r.exco_location }}
+              {% endif %}
+            </td>
+            <td style="text-align:right">{{ r.plant_count }}</td>
+            <td style="text-align:right">{{ "{:,.1f}".format(r.total_quantity) }}</td>
+            <td style="text-align:right">
+              <strong>{{ r.avg_throughput_pct }}%</strong>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-warning">No location results — run Calculate first.</div>
+  {% endif %}
+</div>
+
+<!-- ── Email modal ────────────────────────────────────────────────── -->
+<div id="email-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeEmailModal()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">✉ Email Report</span>
+      <button class="modal-close" onclick="closeEmailModal()">✕</button>
+    </div>
+    <form method="POST" action="{{ url_for('tp_send_email') }}">
+      <div class="form-group">
+        <label class="form-label">To</label>
+        <input type="text" name="to_emails" class="form-control" placeholder="email1@co.com, email2@co.com" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">CC</label>
+        <input type="text" name="cc_emails" class="form-control" placeholder="optional">
+      </div>
+      <div style="display:flex;gap:10px;margin-top:16px">
+        <button type="submit" class="btn btn-primary">Send</button>
+        <button type="button" class="btn" onclick="closeEmailModal()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function openEmailModal()  { document.getElementById('email-modal').style.display='flex'; }
+function closeEmailModal() { document.getElementById('email-modal').style.display='none'; }
+document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeEmailModal(); });
+</script>
+{% endblock %}

@@ -167,6 +167,94 @@ def fetch_backend_data(from_date, to_date) -> tuple:
         conn.close()
 
 
+# ── RDC-TP: fetch throughput data from same Oracle table ─────────────────────
+
+def get_tp_oracle_cols() -> dict:
+    """
+    Return the Oracle column names used for the TP module.
+    Defaults can be overridden in Settings → RDC-TP → Oracle Column Names.
+    """
+    return {
+        "plant":  (database.get_module_setting("tp", "oracle_plant_col", "PLANT_CODE") or "PLANT_CODE").strip(),
+        "batch":  (database.get_module_setting("tp", "oracle_batch_col", "BATCH_NO")   or "BATCH_NO").strip(),
+        "time":   (database.get_module_setting("tp", "oracle_time_col",  "MIXING_TIME") or "MIXING_TIME").strip(),
+    }
+
+
+def fetch_tp_data(from_date, to_date) -> tuple:
+    """
+    Fetch production rows for RDC-TP from Oracle.
+
+    Returns (DataFrame, warnings_list).
+    DataFrame columns: production_date, plant_col, batch_ref, quantity, time_taken_min
+    """
+    cfg  = get_oracle_config()
+    cols = get_tp_oracle_cols()
+    warnings = []
+
+    _init_thick(cfg["instantclient"])
+    conn = oracledb.connect(user=cfg["user"], password=cfg["password"], dsn=_dsn(cfg))
+    try:
+        cur = conn.cursor()
+        fd, td = str(from_date), str(to_date)
+        params = {"from_date": fd, "to_date": td}
+        status_clause = ""
+        if cfg["status_filter"]:
+            status_clause = "AND STATUS = :status"
+            params["status"] = cfg["status_filter"]
+
+        sql = f"""
+            SELECT
+                PRODDATE                   AS production_date,
+                {cols['plant']}            AS plant_col,
+                {cols['batch']}            AS batch_ref,
+                PRODUCED_QUANTITY          AS quantity,
+                {cols['time']}             AS time_taken_min
+            FROM {_TABLE}
+            WHERE PRODDATE >= :from_date
+              AND PRODDATE <= :to_date
+              {status_clause}
+            ORDER BY PRODDATE, {cols['plant']}
+        """
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+        col_names = [d[0].lower() for d in cur.description]
+
+        if not rows:
+            warnings.append(f"No rows found in Oracle for {from_date} → {to_date}.")
+            return pd.DataFrame(columns=["production_date","plant_col","batch_ref","quantity","time_taken_min"]), warnings
+
+        df = pd.DataFrame(rows, columns=col_names)
+        df["quantity"]      = pd.to_numeric(df["quantity"],      errors="coerce").fillna(0)
+        df["time_taken_min"] = pd.to_numeric(df["time_taken_min"], errors="coerce").fillna(0)
+
+        # Warn about missing batch/plant values
+        blank_batch = df["batch_ref"].isna() | (df["batch_ref"].astype(str).str.strip() == "")
+        if blank_batch.sum():
+            warnings.append(f"{blank_batch.sum()} row(s) have blank batch reference — skipped.")
+        df = df[~blank_batch].reset_index(drop=True)
+
+        return df, warnings
+
+    finally:
+        conn.close()
+
+
+def save_tp_oracle_data(df: pd.DataFrame, from_date, to_date,
+                         parsed_rows: list, replace: bool = True) -> int:
+    """
+    Save parsed TP rows into tp_oracle_data table.
+    parsed_rows is the list of dicts produced by tp_calculator.parse_oracle_df().
+    """
+    now = datetime.now().isoformat(timespec="seconds")
+    for r in parsed_rows:
+        r["fetched_at"] = now
+
+    if replace:
+        return database.replace_table_rows("tp_oracle_data", parsed_rows)
+    return database.insert_rows("tp_oracle_data", parsed_rows)
+
+
 def save_oracle_backend_data(df: pd.DataFrame, from_date, to_date,
                               replace: bool = True) -> int:
     """

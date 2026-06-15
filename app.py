@@ -35,6 +35,7 @@ import email_helper
 import google_sheets
 import oracle_connector
 import report_generator
+import tp_calculator
 import validations
 
 # ── App setup ────────────────────────────────────────────────────────────────
@@ -306,11 +307,294 @@ def page_dashboard():
                            counts=counts,
                            db_path=database.DB_PATH)
 
+# ═══════════════════════════════════════════════════════════════════════════
+# RDC-TP MODULE — Plant Throughput Calculator
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _tp_ctx():
+    """Base context dict for every TP page."""
+    return dict(
+        active_page="",
+        bg_auto=bg_auto(), bg_animate=bg_animate(), bg_theme=bg_theme(),
+    )
+
+
 @app.route("/tp")
 def page_tp():
-    return render_template("module_placeholder.html",
-                           module_name="RDC-TP",
-                           module_desc="Calculates Plant wise Throughput")
+    return redirect(url_for("tp_dashboard"))
+
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+@app.route("/tp/dashboard")
+def tp_dashboard():
+    counts = {
+        "tp_plant_data":  database.get_table_counts().get("tp_plant_data", 0),
+        "tp_oracle_data": database.get_table_counts().get("tp_oracle_data", 0),
+        "tp_results":     database.get_table_counts().get("tp_results", 0),
+    }
+    last_sync  = google_sheets.get_tp_last_sync_info()
+    ora_ready  = oracle_connector.is_configured()
+    ctx = _tp_ctx()
+    ctx["active_page"] = "dashboard"
+    return render_template("tp_dashboard.html", counts=counts,
+                           last_sync=last_sync, ora_ready=ora_ready, **ctx)
+
+
+# ── Data Uploader ─────────────────────────────────────────────────────────────
+@app.route("/tp/data-uploader")
+def tp_data_uploader():
+    ora_ready = oracle_connector.is_configured()
+    last_sync = google_sheets.get_tp_last_sync_info()
+    sheet_id  = database.get_setting("gsheet_id", "")
+    tp_worksheet = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
+    ora_counts = database.get_table_counts().get("tp_oracle_data", 0)
+    ctx = _tp_ctx()
+    ctx["active_page"] = "data_uploader"
+    return render_template("tp_data_uploader.html",
+                           ora_ready=ora_ready, last_sync=last_sync,
+                           sheet_id=sheet_id, tp_worksheet=tp_worksheet,
+                           ora_counts=ora_counts, **ctx)
+
+
+@app.route("/tp/action/fetch-oracle", methods=["POST"])
+def tp_fetch_oracle():
+    from_date = request.form.get("from_date", "")
+    to_date   = request.form.get("to_date", "")
+    if not from_date or not to_date:
+        flash("Please select both From and To dates.", "error")
+        return redirect(url_for("tp_data_uploader"))
+    try:
+        raw_df, ora_warnings = oracle_connector.fetch_tp_data(from_date, to_date)
+        parsed, skip_log     = tp_calculator.parse_oracle_df(raw_df)
+        oracle_connector.save_tp_oracle_data(raw_df, from_date, to_date, parsed, replace=True)
+        _mss("tp", "skip_log", skip_log)
+        _mss("tp", "ora_from", from_date)
+        _mss("tp", "ora_to",   to_date)
+        for w in ora_warnings:
+            flash(w, "warning")
+        flash(f"✅ {len(parsed)} rows fetched & saved ({len(skip_log)} skipped).", "success")
+    except Exception as exc:
+        flash(f"Oracle error: {exc}", "error")
+    return redirect(url_for("tp_data_uploader"))
+
+
+@app.route("/tp/action/sync-sheets", methods=["POST"])
+def tp_sync_sheets():
+    sheet_id    = request.form.get("sheet_id", "").strip() or database.get_setting("gsheet_id", "")
+    worksheet   = request.form.get("worksheet", "Plant Data for TP").strip()
+    result      = google_sheets.sync_tp_plant_data(sheet_id, worksheet)
+    if result["error"]:
+        flash(f"Sync failed: {result['error']}", "error")
+    else:
+        flash(f"✅ {result['rows_synced']} plant rows synced from Google Sheets ({result['mode']} mode).", "success")
+    return redirect(url_for("tp_data_uploader"))
+
+
+# ── Calculate ─────────────────────────────────────────────────────────────────
+@app.route("/tp/calculate", methods=["GET", "POST"])
+def tp_calculate():
+    plant_rows    = _ms("tp", "plant_rows", [])
+    location_rows = _ms("tp", "location_rows", [])
+    warnings      = _ms("tp", "calc_warnings", [])
+    ran           = _ms("tp", "calc_ran", False)
+
+    if request.method == "POST":
+        month_str = request.form.get("month", "")
+        year_str  = request.form.get("year", "")
+        try:
+            month = int(month_str)
+            year  = int(year_str)
+        except (ValueError, TypeError):
+            flash("Please select a valid month and year.", "error")
+            return redirect(url_for("tp_calculate"))
+
+        plant_rows, location_rows, warnings = tp_calculator.run_tp_calculation(month, year)
+        _mss("tp", "plant_rows",    plant_rows)
+        _mss("tp", "location_rows", location_rows)
+        _mss("tp", "calc_warnings", warnings)
+        _mss("tp", "calc_month",    month)
+        _mss("tp", "calc_year",     year)
+        _mss("tp", "calc_ran",      True)
+        ran = True
+
+        if plant_rows:
+            tp_calculator.save_tp_results(plant_rows, month, year)
+            flash(f"✅ Calculated throughput for {month}/{year} — {len(plant_rows)} plants, {len(location_rows)} locations.", "success")
+        else:
+            flash("No results produced — check data and warnings.", "warning")
+        return redirect(url_for("tp_calculate"))
+
+    today = _date.today()
+    ctx = _tp_ctx()
+    ctx["active_page"] = "calculate"
+    return render_template("tp_calculate.html",
+                           plant_rows=plant_rows, location_rows=location_rows,
+                           warnings=warnings, ran=ran,
+                           default_month=today.month, default_year=today.year,
+                           **ctx)
+
+
+# ── Reports ───────────────────────────────────────────────────────────────────
+@app.route("/tp/reports")
+def tp_reports():
+    plant_rows    = _ms("tp", "plant_rows", [])
+    location_rows = _ms("tp", "location_rows", [])
+    calc_month    = _ms("tp", "calc_month", _date.today().month)
+    calc_year     = _ms("tp", "calc_year",  _date.today().year)
+    smtp          = email_helper.get_smtp_settings()
+    email_configured = bool(smtp.get("smtp_host") and smtp.get("smtp_user"))
+    ctx = _tp_ctx()
+    ctx["active_page"] = "reports"
+    return render_template("tp_reports.html",
+                           plant_rows=plant_rows, location_rows=location_rows,
+                           calc_month=calc_month, calc_year=calc_year,
+                           smtp=smtp, email_configured=email_configured, **ctx)
+
+
+@app.route("/tp/download-excel")
+def tp_download_excel():
+    plant_rows    = _ms("tp", "plant_rows", [])
+    location_rows = _ms("tp", "location_rows", [])
+    month = _ms("tp", "calc_month", _date.today().month)
+    year  = _ms("tp", "calc_year",  _date.today().year)
+    if not plant_rows:
+        flash("No data to download — run Calculate first.", "warning")
+        return redirect(url_for("tp_reports"))
+
+    plant_df  = pd.DataFrame(plant_rows)[[
+        "lookup_code","plant_name","exco_location","business_head",
+        "plant_manager","mixer_theo_cap","total_quantity","total_time_hrs",
+        "throughput_pct","batch_count"
+    ]].rename(columns={
+        "lookup_code":"Plant Code","plant_name":"Plant","exco_location":"Exco Location",
+        "business_head":"Business Head","plant_manager":"Plant Manager",
+        "mixer_theo_cap":"Mixer Capacity","total_quantity":"Total Qty",
+        "total_time_hrs":"Total Time (hrs)","throughput_pct":"Throughput %",
+        "batch_count":"Batches",
+    })
+    loc_df = pd.DataFrame(location_rows)[[
+        "exco_location","plant_count","total_quantity","avg_throughput_pct"
+    ]].rename(columns={
+        "exco_location":"Exco Location","plant_count":"Plants",
+        "total_quantity":"Total Qty","avg_throughput_pct":"Avg Throughput %",
+    })
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        plant_df.to_excel(writer, sheet_name="Plant Throughput", index=False)
+        loc_df.to_excel(writer, sheet_name="Location Throughput", index=False)
+    buf.seek(0)
+    fname = f"RDC_TP_{year}_{month:02d}.xlsx"
+    return send_file(buf, as_attachment=True, download_name=fname,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.route("/tp/download-csv")
+def tp_download_csv():
+    plant_rows = _ms("tp", "plant_rows", [])
+    month = _ms("tp", "calc_month", _date.today().month)
+    year  = _ms("tp", "calc_year",  _date.today().year)
+    if not plant_rows:
+        flash("No data to download — run Calculate first.", "warning")
+        return redirect(url_for("tp_reports"))
+    df = pd.DataFrame(plant_rows)
+    buf = io.BytesIO(df.to_csv(index=False).encode("utf-8"))
+    return send_file(buf, as_attachment=True,
+                     download_name=f"RDC_TP_{year}_{month:02d}.csv",
+                     mimetype="text/csv")
+
+
+@app.route("/tp/action/send-email", methods=["POST"])
+def tp_send_email():
+    plant_rows    = _ms("tp", "plant_rows", [])
+    location_rows = _ms("tp", "location_rows", [])
+    month = _ms("tp", "calc_month", _date.today().month)
+    year  = _ms("tp", "calc_year",  _date.today().year)
+    to_addr = request.form.get("to_emails", "").strip()
+    cc_addr = request.form.get("cc_emails", "").strip()
+    if not plant_rows:
+        flash("No results to email — run Calculate first.", "warning")
+        return redirect(url_for("tp_reports"))
+    if not to_addr:
+        flash("Please enter at least one To email address.", "error")
+        return redirect(url_for("tp_reports"))
+
+    plant_df = pd.DataFrame(plant_rows)
+    loc_df   = pd.DataFrame(location_rows)
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        plant_df.to_excel(writer, sheet_name="Plant Throughput", index=False)
+        loc_df.to_excel(writer,  sheet_name="Location Throughput", index=False)
+    buf.seek(0)
+    fname = f"RDC_TP_{year}_{month:02d}.xlsx"
+
+    import calendar
+    month_name = calendar.month_name[month]
+    subject = f"RDC-TP Plant Throughput Report — {month_name} {year}"
+    body    = (f"Dear Team,\n\nPlease find attached the Plant Throughput Report "
+               f"for {month_name} {year}.\n\nRegards,\nRDC Operations")
+
+    result = email_helper.send_email_with_attachment(
+        to_emails=to_addr, cc_emails=cc_addr,
+        subject=subject, body=body,
+        attachment_bytes=buf.read(), attachment_name=fname,
+    )
+    if result.get("success"):
+        flash(f"✅ Report emailed to {to_addr}.", "success")
+    else:
+        flash(f"Email failed: {result.get('error')}", "error")
+    return redirect(url_for("tp_reports"))
+
+
+# ── Validation ────────────────────────────────────────────────────────────────
+@app.route("/tp/validation")
+def tp_validation():
+    skip_log = _ms("tp", "skip_log", [])
+    calc_warnings = _ms("tp", "calc_warnings", [])
+    ctx = _tp_ctx()
+    ctx["active_page"] = "validation"
+    return render_template("tp_validation.html",
+                           skip_log=skip_log, calc_warnings=calc_warnings, **ctx)
+
+
+# ── Settings ──────────────────────────────────────────────────────────────────
+@app.route("/tp/settings", methods=["GET"])
+def tp_settings():
+    sheet_id    = database.get_setting("gsheet_id", "")
+    worksheet   = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
+    plant_col   = database.get_module_setting("tp", "oracle_plant_col", "PLANT_CODE")
+    batch_col   = database.get_module_setting("tp", "oracle_batch_col", "BATCH_NO")
+    time_col    = database.get_module_setting("tp", "oracle_time_col",  "MIXING_TIME")
+    smtp        = email_helper.get_smtp_settings()
+    email_configured = bool(smtp.get("smtp_host") and smtp.get("smtp_user"))
+    ctx = _tp_ctx()
+    ctx["active_page"] = "settings"
+    return render_template("tp_settings.html",
+                           sheet_id=sheet_id, worksheet=worksheet,
+                           plant_col=plant_col, batch_col=batch_col, time_col=time_col,
+                           smtp=smtp, email_configured=email_configured, **ctx)
+
+
+@app.route("/tp/settings/save-oracle-cols", methods=["POST"])
+def tp_save_oracle_cols():
+    database.set_module_settings_bulk("tp", {
+        "oracle_plant_col": request.form.get("plant_col", "PLANT_CODE").strip(),
+        "oracle_batch_col": request.form.get("batch_col", "BATCH_NO").strip(),
+        "oracle_time_col":  request.form.get("time_col",  "MIXING_TIME").strip(),
+    })
+    flash("Oracle column names saved.", "success")
+    return redirect(url_for("tp_settings"))
+
+
+@app.route("/tp/settings/save-worksheet", methods=["POST"])
+def tp_save_worksheet():
+    worksheet = request.form.get("worksheet", "Plant Data for TP").strip()
+    sheet_id  = request.form.get("sheet_id", "").strip()
+    database.set_module_setting("tp", "gsheet_worksheet", worksheet)
+    if sheet_id:
+        database.set_setting("gsheet_id", sheet_id)
+    flash("Sheet settings saved.", "success")
+    return redirect(url_for("tp_settings"))
 
 @app.route("/btrtp")
 def page_btrtp():

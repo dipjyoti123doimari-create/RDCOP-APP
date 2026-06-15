@@ -1,0 +1,73 @@
+{% extends "tp_base.html" %}
+{% block title %}Validation — RDC-TP{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Validation / Skip Log</h1>
+  <p>Rows excluded during data parsing and warnings from calculation</p>
+</div>
+
+<!-- ── Tab bar ────────────────────────────────────────────────────── -->
+<div class="tab-bar" style="margin-bottom:20px">
+  <button class="tab-btn active" data-tabset="val" data-tab="skip"  onclick="switchTab('val','skip')">
+    🚫 Skip Log
+    {% if skip_log %}<span class="badge-count" style="margin-left:6px">{{ skip_log|length }}</span>{% endif %}
+  </button>
+  <button class="tab-btn" data-tabset="val" data-tab="warn" onclick="switchTab('val','warn')">
+    ⚠️ Calc Warnings
+    {% if calc_warnings %}<span class="badge-count" style="margin-left:6px">{{ calc_warnings|length }}</span>{% endif %}
+  </button>
+</div>
+
+<!-- ── Skip Log tab ───────────────────────────────────────────────── -->
+<div data-tabpanel="val" data-tab="skip" class="active">
+  {% if skip_log %}
+  <div class="card" style="padding:0">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Batch</th>
+            <th>Plant Code</th>
+            <th>Date</th>
+            <th>Qty</th>
+            <th>Time (min)</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in skip_log %}
+          <tr class="row-deduction">
+            <td>{{ loop.index }}</td>
+            <td>{{ row.batch_ref }}</td>
+            <td>{{ row.plant_code }}</td>
+            <td>{{ row.production_date }}</td>
+            <td style="text-align:right">{{ row.quantity }}</td>
+            <td style="text-align:right">{{ row.time_taken_min }}</td>
+            <td>{{ row.reason }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-success">✅ No skipped rows — all fetched data passed validation.</div>
+  {% endif %}
+</div>
+
+<!-- ── Calc Warnings tab ──────────────────────────────────────────── -->
+<div data-tabpanel="val" data-tab="warn" style="display:none">
+  {% if calc_warnings %}
+  <div class="card">
+    {% for w in calc_warnings %}
+    <div class="alert alert-warning">{{ w }}</div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="alert alert-success">✅ No calculation warnings.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

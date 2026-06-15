@@ -1,0 +1,85 @@
+{% extends "tp_base.html" %}
+{% block title %}Calculate — RDC-TP{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Calculate Throughput</h1>
+  <p>Select month &amp; year then run the calculation</p>
+</div>
+
+<!-- ── Calculation form ───────────────────────────────────────────── -->
+<div class="card">
+  <div class="section-title">⚡ Run Calculation</div>
+  <form method="POST" action="{{ url_for('tp_calculate') }}">
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Month</label>
+        <select name="month" class="form-control">
+          {% for m in range(1,13) %}
+          <option value="{{ m }}" {% if m == default_month %}selected{% endif %}>
+            {{ ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m] }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Year</label>
+        <select name="year" class="form-control">
+          {% for y in range(default_year - 2, default_year + 2) %}
+          <option value="{{ y }}" {% if y == default_year %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">▶ Calculate Throughput</button>
+  </form>
+</div>
+
+{% if warnings %}
+<div class="card">
+  <div class="section-title">⚠️ Warnings</div>
+  {% for w in warnings %}
+  <div class="alert alert-warning">{{ w }}</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if ran and plant_rows %}
+<!-- ── Plant results preview ──────────────────────────────────────── -->
+<div class="card">
+  <div class="section-title">🏭 Plant Throughput Preview</div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Plant Code</th><th>Plant</th><th>Exco Location</th>
+          <th>Mixer Cap</th><th>Total Qty</th><th>Time (hrs)</th>
+          <th>Throughput %</th><th>Batches</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in plant_rows %}
+        {% set tp = r.throughput_pct %}
+        <tr class="{% if tp < 60 %}row-deduction{% elif tp < 75 %}row-warning{% else %}row-incentive{% endif %}">
+          <td>{{ r.lookup_code }}</td>
+          <td>{{ r.plant_name }}</td>
+          <td>{{ r.exco_location }}</td>
+          <td>{{ r.mixer_theo_cap }}</td>
+          <td>{{ r.total_quantity | round(1) }}</td>
+          <td>{{ r.total_time_hrs | round(2) }}</td>
+          <td><strong>{{ tp }}%</strong></td>
+          <td>{{ r.batch_count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div style="margin-top:12px">
+    <a href="{{ url_for('tp_reports') }}" class="btn btn-primary">📋 View Full Reports →</a>
+  </div>
+</div>
+{% elif ran %}
+<div class="alert alert-warning">No results — ensure Oracle data and Plant Data are loaded first.</div>
+{% endif %}
+
+{% endblock %}

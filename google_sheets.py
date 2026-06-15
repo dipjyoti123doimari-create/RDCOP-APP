@@ -413,7 +413,118 @@ def sync_master_data(sheet_id: str, worksheet_name: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# 7. LAST SYNC INFO
+# 7. RDC-TP: Sync plant data from "Plant Data for TP" sheet tab
+# ---------------------------------------------------------------------------
+# Expected columns (case-insensitive):
+#   Plant Code | Exco Location | Plant | Business Head | Plant Manager/ Asst. PI | Mixer Theo. Capacity
+
+_TP_PLANT_COLS = [
+    "Plant Code",
+    "Exco Location",
+    "Plant",
+    "Business Head",
+    "Plant Manager/ Asst. PI",
+    "Mixer Theo. Capacity",
+]
+
+
+def _clean_tp_plant_data(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Validate and clean the raw 'Plant Data for TP' sheet DataFrame.
+    Returns a clean DataFrame with exactly the 6 required columns.
+    """
+    if raw_df.empty:
+        return pd.DataFrame(columns=_TP_PLANT_COLS)
+
+    raw_df.columns = [str(c).strip() for c in raw_df.columns]
+
+    # Case-insensitive match
+    sheet_lower = {c.lower(): c for c in raw_df.columns}
+    rename_map, missing = {}, []
+    for req in _TP_PLANT_COLS:
+        if req.lower() in sheet_lower:
+            rename_map[sheet_lower[req.lower()]] = req
+        else:
+            missing.append(req)
+
+    if missing:
+        raise ValueError(
+            f"'Plant Data for TP' sheet is missing columns: {missing}\n"
+            f"Columns found: {list(raw_df.columns)}"
+        )
+
+    df = raw_df.rename(columns=rename_map)[_TP_PLANT_COLS].copy()
+    for col in df.columns:
+        df[col] = df[col].astype(str).str.strip()
+
+    # Drop rows where Plant Code is blank
+    df = df[(df["Plant Code"].str.len() > 0) & (df["Plant Code"] != "nan")].reset_index(drop=True)
+
+    # Remove duplicate plant codes — keep last
+    df = df.drop_duplicates(subset="Plant Code", keep="last").reset_index(drop=True)
+
+    return df
+
+
+def sync_tp_plant_data(sheet_id: str, worksheet_name: str = "Plant Data for TP") -> dict:
+    """
+    Fetch the Plant Data for TP sheet and save to tp_plant_data table.
+    Returns {"rows_synced": int, "synced_at": str|None, "error": str|None, "mode": str}
+    """
+    mode = "private" if credentials_exist() else "public"
+    try:
+        clean_id = extract_sheet_id(sheet_id)
+        if credentials_exist():
+            raw_df = _fetch_private(clean_id, worksheet_name)
+        else:
+            raw_df = _fetch_public(clean_id, worksheet_name)
+
+        df = _clean_tp_plant_data(raw_df)
+        now = datetime.now().isoformat(timespec="seconds")
+
+        rows = [
+            {
+                "plant_code":     str(r["Plant Code"]),
+                "exco_location":  str(r["Exco Location"]),
+                "plant_name":     str(r["Plant"]),
+                "business_head":  str(r["Business Head"]),
+                "plant_manager":  str(r["Plant Manager/ Asst. PI"]),
+                "mixer_theo_cap": _to_float(r["Mixer Theo. Capacity"]),
+                "updated_at":     now,
+            }
+            for _, r in df.iterrows()
+        ]
+
+        inserted = database.replace_table_rows("tp_plant_data", rows)
+        database.set_module_setting("tp", "gsheet_last_sync",  now)
+        database.set_module_setting("tp", "gsheet_last_count", str(inserted))
+        database.set_module_setting("tp", "gsheet_worksheet",  worksheet_name)
+
+        return {"rows_synced": inserted, "synced_at": now, "error": None, "mode": mode}
+
+    except Exception as exc:
+        return {"rows_synced": 0, "synced_at": None, "error": str(exc), "mode": mode}
+
+
+def _to_float(val) -> float:
+    """Convert a cell value to float, returning 0.0 on failure."""
+    try:
+        return float(str(val).replace(",", "").strip())
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def get_tp_last_sync_info() -> dict:
+    """Return last TP plant data sync info."""
+    return {
+        "last_sync":  database.get_module_setting("tp", "gsheet_last_sync",  None),
+        "last_count": database.get_module_setting("tp", "gsheet_last_count", "0"),
+        "worksheet":  database.get_module_setting("tp", "gsheet_worksheet",  "Plant Data for TP"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 8. LAST SYNC INFO (RDC-I&D master data)
 # ---------------------------------------------------------------------------
 
 def get_last_sync_info() -> dict:

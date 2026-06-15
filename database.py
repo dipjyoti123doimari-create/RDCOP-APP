@@ -186,6 +186,57 @@ TABLE_SCHEMAS = {
             updated_at TEXT
         )
     """,
+
+    # ── RDC-TP tables ────────────────────────────────────────────────────────
+
+    # Plant reference data synced from "Plant Data for TP" Google Sheet tab
+    "tp_plant_data": """
+        CREATE TABLE IF NOT EXISTS tp_plant_data (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            plant_code     TEXT UNIQUE NOT NULL,
+            exco_location  TEXT,
+            plant_name     TEXT,
+            business_head  TEXT,
+            plant_manager  TEXT,
+            mixer_theo_cap REAL,
+            updated_at     TEXT
+        )
+    """,
+
+    # Raw production rows pulled from Oracle (after cleaning & filtering)
+    "tp_oracle_data": """
+        CREATE TABLE IF NOT EXISTS tp_oracle_data (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            production_date TEXT,
+            plant_code      TEXT,
+            mixer_variant   TEXT,
+            lookup_code     TEXT,
+            batch_ref       TEXT,
+            quantity        REAL,
+            time_taken_min  REAL,
+            fetched_at      TEXT
+        )
+    """,
+
+    # Final calculated throughput results per plant / mixer
+    "tp_results": """
+        CREATE TABLE IF NOT EXISTS tp_results (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            month          INTEGER,
+            year           INTEGER,
+            lookup_code    TEXT,
+            plant_name     TEXT,
+            exco_location  TEXT,
+            business_head  TEXT,
+            plant_manager  TEXT,
+            mixer_theo_cap REAL,
+            total_quantity REAL,
+            total_time_hrs REAL,
+            throughput_pct REAL,
+            batch_count    INTEGER,
+            generated_at   TEXT
+        )
+    """,
 }
 
 
