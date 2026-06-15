@@ -185,7 +185,49 @@
   <span class="legend-item legend-red">🔴 Deduction applied (takes priority if both)</span>
 </div>
 
-<p class="caption" style="margin-bottom:16px">Showing <strong>{{ results | length | format_int }}</strong> of <strong>{{ total_rows | format_int }}</strong> total rows · {{ from_date }} → {{ to_date }}</p>
+<!-- Toolbar: row count left · export actions right -->
+<div class="report-toolbar">
+  <p class="caption" style="margin:0">Showing <strong>{{ results | length | format_int }}</strong> of <strong>{{ total_rows | format_int }}</strong> rows · {{ from_date }} → {{ to_date }}</p>
+  <div class="btn-group">
+    <a href="{{ url_for('download_excel') }}" class="btn btn-primary btn-sm">⬇️ Excel</a>
+    <a href="{{ url_for('download_csv') }}" class="btn btn-secondary btn-sm">⬇️ CSV</a>
+    <button type="button" id="email-toggle-btn" class="btn btn-secondary btn-sm" onclick="toggleEmailPanel()">✉️ Email</button>
+  </div>
+</div>
+
+<!-- Email panel: collapsible, hidden by default -->
+<div id="email-panel" class="card" style="display:none;margin-bottom:16px">
+  <div class="section-title">✉️ Send Report by Email</div>
+  {% if not email_ready %}
+  <div class="alert alert-warning" style="margin-bottom:14px">Email not set up. Configure SMTP on the <strong>Settings</strong> page first.</div>
+  {% endif %}
+  <form method="POST" action="{{ url_for('send_email') }}">
+    <div class="form-grid">
+      <div class="form-group"><label>To (comma-separated)</label><input type="text" name="to" value="{{ email_cfg.default_to or '' }}" placeholder="name@company.com"></div>
+      <div class="form-group"><label>CC (optional)</label><input type="text" name="cc" value="{{ email_cfg.default_cc or '' }}" placeholder="manager@company.com"></div>
+    </div>
+    <div class="form-group"><label>Subject</label><input type="text" name="subject" value="{{ default_subject }}"></div>
+    <div class="form-group"><label>Message</label><textarea name="body" rows="8" style="min-height:180px">{{ default_body }}</textarea></div>
+    <div class="toggle-row" style="margin-bottom:14px">
+      <input type="checkbox" class="toggle" name="include_tables" value="1">
+      <div class="toggle-text">
+        <span class="toggle-label">Also paste report tables inside the email body</span>
+        <span class="toggle-sub">Off by default. Makes the email much larger.</span>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary" {% if not email_ready %}disabled{% endif %}>✉️ Send Report</button>
+  </form>
+  {% if email_log %}
+  <hr class="divider">
+  <div class="section-title" style="font-size:13px">📜 Recent Email Log</div>
+  <div class="table-wrapper" style="max-height:200px">
+    <table>
+      <thead><tr><th>To</th><th>Subject</th><th>Status</th><th>Sent At</th></tr></thead>
+      <tbody>{% for r in email_log %}<tr><td>{{ r.to_emails }}</td><td>{{ r.subject }}</td><td>{{ r.status }}</td><td>{{ r.sent_at }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
 
 <!-- Category tabs (mirrors Calculate page) -->
 <div class="tabs">
@@ -244,85 +286,6 @@
 {% endif %}
 {% endfor %}
 
-<!-- Export & Email -->
-<hr class="divider">
-<div class="section-title">📤 Export &amp; Email</div>
-
-<div class="tabs">
-  <button class="tab-btn active" data-tabset="exp" data-tab="excel">📊 Excel Report</button>
-  <button class="tab-btn" data-tabset="exp" data-tab="csv">📄 CSV</button>
-  <button class="tab-btn" data-tabset="exp" data-tab="email">✉️ Email</button>
-</div>
-
-<!-- Excel -->
-<div class="tab-panel active" data-tabpanel="exp" data-tab="excel">
-  <div class="card">
-    <p class="caption" style="margin-bottom:14px">One workbook: Summary + a sheet per category + Unmapped + Validation Errors. Colour-highlighted, header frozen. Respects the current filters and date range.</p>
-    <a href="{{ url_for('download_excel') }}" class="btn btn-primary">⬇️ Download Excel Report (.xlsx)</a>
-  </div>
-</div>
-
-<!-- CSV -->
-<div class="tab-panel" data-tabpanel="exp" data-tab="csv">
-  <div class="card">
-    <p class="caption" style="margin-bottom:14px">A plain CSV of exactly the filtered table shown above.</p>
-    <a href="{{ url_for('download_csv') }}" class="btn btn-secondary">⬇️ Download Filtered Data (CSV)</a>
-  </div>
-</div>
-
-<!-- Email -->
-<div class="tab-panel" data-tabpanel="exp" data-tab="email">
-  <div class="card">
-    {% if not email_ready %}
-    <div class="alert alert-warning" style="margin-bottom:14px">Email is not set up yet. Add your SMTP settings on the <strong>Settings</strong> page, then come back here.</div>
-    {% endif %}
-
-    <form method="POST" action="{{ url_for('send_email') }}">
-      <div class="form-group">
-        <label>To (comma-separated)</label>
-        <input type="text" name="to" value="{{ email_cfg.default_to or '' }}" placeholder="name@company.com">
-      </div>
-      <div class="form-group">
-        <label>CC (optional)</label>
-        <input type="text" name="cc" value="{{ email_cfg.default_cc or '' }}" placeholder="manager@company.com">
-      </div>
-      <div class="form-group">
-        <label>Subject</label>
-        <input type="text" name="subject" value="{{ default_subject }}">
-      </div>
-      <div class="form-group">
-        <label>Message</label>
-        <textarea name="body" rows="10" style="min-height:220px">{{ default_body }}</textarea>
-      </div>
-      <div class="toggle-row" style="margin-bottom:14px">
-        <input type="checkbox" class="toggle" id="incl-tables" name="include_tables" value="1">
-        <div class="toggle-text">
-          <span class="toggle-label">Also paste report tables inside the email body (optional)</span>
-          <span class="toggle-sub">Off by default. Makes the email much larger.</span>
-        </div>
-      </div>
-      <button type="submit" class="btn btn-primary" {% if not email_ready %}disabled{% endif %}>✉️ Send Report</button>
-    </form>
-
-    {% if email_log %}
-    <hr class="divider">
-    <div class="section-title">📜 Recent Email Log</div>
-    <div class="table-wrapper">
-      <table>
-        <thead><tr><th>File</th><th>To</th><th>CC</th><th>Subject</th><th>Status</th><th>Sent At</th></tr></thead>
-        <tbody>
-          {% for r in email_log %}
-          <tr>
-            <td>{{ r.report_file_name }}</td><td>{{ r.to_emails }}</td><td>{{ r.cc_emails }}</td>
-            <td>{{ r.subject }}</td><td>{{ r.status }}</td><td>{{ r.sent_at }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% endif %}
-  </div>
-</div>
 
 {% endif %}
 {% endif %}
@@ -334,5 +297,13 @@ document.getElementById('filter-form').addEventListener('submit', function() {
   document.getElementById('report-loading').classList.add('active');
   document.getElementById('load-btn').disabled = true;
 });
+function toggleEmailPanel() {
+  var panel = document.getElementById('email-panel');
+  var btn   = document.getElementById('email-toggle-btn');
+  if (!panel) return;
+  var open = panel.style.display !== 'none';
+  panel.style.display = open ? 'none' : 'block';
+  btn.textContent = open ? '✉️ Email' : '✕ Close';
+}
 </script>
 {% endblock %}

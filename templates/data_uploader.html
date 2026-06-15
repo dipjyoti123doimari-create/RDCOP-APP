@@ -61,35 +61,38 @@
     </form>
   </div>
 
-  <!-- Current master data -->
-  <div class="card">
-    <div class="section-title">👥 Current Master Data</div>
-    {% if m_count == 0 %}
-    <div class="glass-card">
-      <h3>No data yet</h3>
-      <p>Enter your Sheet ID above and click <strong>Sync Now</strong> to load employees.</p>
-    </div>
-    {% else %}
-    <p class="caption" style="margin-bottom:10px">Showing first 500 of <strong>{{ m_count | format_int }}</strong> employees</p>
-    <div class="table-wrapper">
-      <table>
-        <thead><tr>{% for c in master_cols %}<th>{{ c }}</th>{% endfor %}</tr></thead>
-        <tbody>
-          {% for row in master_rows %}
-          <tr>{% for c in master_cols %}<td>{{ row[c] }}</td>{% endfor %}</tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% endif %}
-  </div>
+  <!-- Master data + Manage Employees side by side -->
+  <div class="master-split">
 
-  <!-- Manage employees -->
-  <div class="card">
-    <div class="section-title">✏️ Manage Employees</div>
-    <div class="alert alert-warning">Manual changes can be <strong>overwritten</strong> on the next sync.</div>
+    <!-- Left: current master data table -->
+    <div class="card">
+      <div class="section-title">👥 Current Master Data</div>
+      {% if m_count == 0 %}
+      <div class="glass-card">
+        <h3>No data yet</h3>
+        <p>Enter your Sheet ID above and click <strong>Sync Now</strong> to load employees.</p>
+      </div>
+      {% else %}
+      <p class="caption" style="margin-bottom:10px">Showing first 500 of <strong>{{ m_count | format_int }}</strong> employees</p>
+      <div class="table-wrapper">
+        <table>
+          <thead><tr>{% for c in master_cols %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+          <tbody>
+            {% for row in master_rows %}
+            <tr>{% for c in master_cols %}<td>{{ row[c] }}</td>{% endfor %}</tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </div>
 
-    <div class="tabs" style="margin-top:14px">
+    <!-- Right: manage employees panel -->
+    <div class="card" style="align-self:start">
+      <div class="section-title">✏️ Manage Employees</div>
+      <div class="alert alert-warning" style="font-size:13px">Manual changes can be <strong>overwritten</strong> on the next sync.</div>
+
+      <div class="tabs" style="margin-top:14px">
       <button class="tab-btn active" data-tabset="emp" data-tab="add">➕ Add</button>
       <button class="tab-btn" data-tabset="emp" data-tab="edit">✏️ Edit</button>
       <button class="tab-btn" data-tabset="emp" data-tab="delete">🗑️ Delete</button>
@@ -208,7 +211,9 @@
       </div>
       {% endif %}
     </div>
-  </div>
+    </div><!-- end manage employees card -->
+  </div><!-- end master-split -->
+
 </div>
 
 <!-- ── Backend Data ──────────────────────────────── -->
