@@ -454,9 +454,22 @@ def page_reports():
     total_ded  = sum((r.get("deduction_amount") or 0) for r in (results or []))
     elig_count = sum(1 for r in (results or []) if r.get("incentive_eligible") == "Yes")
 
+    # Group filtered rows by category in the canonical CATEGORIES order
+    grouped_results = {}
+    if results:
+        _cat_order = {c: i for i, c in enumerate(config.CATEGORIES)}
+        _groups: dict = {}
+        for row in results:
+            cat = row.get("category") or "Unknown"
+            _groups.setdefault(cat, []).append(row)
+        grouped_results = dict(
+            sorted(_groups.items(), key=lambda x: _cat_order.get(x[0], 999))
+        )
+
     return render_template("reports.html",
                            from_date=str(from_date), to_date=str(to_date),
-                           results=results, unmapped=unmapped,
+                           results=results, grouped_results=grouped_results,
+                           unmapped=unmapped,
                            total_rows=total_rows,
                            result_cols=RESULT_COLS, result_labels=RESULT_LABELS,
                            unique_cats=unique_cats, unique_desigs=unique_desigs,

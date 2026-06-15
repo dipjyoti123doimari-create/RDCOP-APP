@@ -419,6 +419,24 @@ tbody tr.row-red   td { background: rgba(239,68,68,0.10) !important; }
 .step-done     .step-icon { background: rgba(16,185,129,0.22); color: var(--success-text); }
 .step-done     { color: var(--text); }
 
+/* ---- Report category sections ---- */
+.report-cat-section { margin-bottom: 28px; border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--border); box-shadow: var(--shadow); }
+.report-cat-header {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+  padding: 13px 18px;
+  background: linear-gradient(135deg, rgba(99,91,255,0.18) 0%, rgba(0,212,255,0.08) 100%);
+  border-bottom: 1px solid rgba(99,91,255,0.22);
+}
+.report-cat-name {
+  font-size: 14px; font-weight: 800; color: #A5B4FC; letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.report-cat-stats { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.rcs-item { font-size: 12px; font-weight: 600; color: var(--text-faint); }
+.rcs-green { color: var(--success-text); }
+.rcs-red   { color: var(--error-text); }
+.rcs-muted { color: var(--text-faint); }
+
 /* ---- Settings section ---- */
 .settings-section { margin-bottom: 28px; }
 .settings-section + .settings-section { padding-top: 24px; border-top: 1px solid var(--border); }
