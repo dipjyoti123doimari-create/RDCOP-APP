@@ -1,4 +1,13 @@
-/* app.js — RDC Operations App */
+/* app.js — RDC-OP by DJ */
+
+/* ---- Cursor bloom (Stripe-like background glow) ---- */
+(function () {
+  var root = document.documentElement;
+  document.addEventListener('mousemove', function (e) {
+    root.style.setProperty('--cx', e.clientX + 'px');
+    root.style.setProperty('--cy', e.clientY + 'px');
+  });
+}());
 
 /* ---- Toast ---- */
 function showToast(msg, type) {

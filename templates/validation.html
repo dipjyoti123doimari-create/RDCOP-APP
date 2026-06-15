@@ -24,7 +24,7 @@
   <form method="POST" action="{{ url_for('run_validation') }}" id="val-form" style="display:inline">
     <button type="submit" class="btn btn-primary" id="val-btn">▶️ Run Validation Now</button>
   </form>
-  <div class="loading" id="val-loading" style="display:inline-flex;margin-left:12px"><div class="spinner"></div> Running validation…</div>
+  <div class="loading" id="val-loading" style="margin-left:12px"><div class="spinner"></div> Running validation…</div>
 </div>
 
 {% if total_errors > 0 %}

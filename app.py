@@ -529,11 +529,16 @@ def page_settings():
     ora        = oracle_connector.get_oracle_config()
     ora_configured = oracle_connector.is_configured(ora)
 
+    last_cache_clear   = database.get_setting("last_cache_clear_date", "")
+    cache_cleared_today = last_cache_clear == str(_date.today())
+
     return render_template("settings.html",
                            smtp=smtp, email_configured=email_configured,
                            ora=ora, ora_configured=ora_configured,
                            db_size_mb=cache_helpers.get_db_size_mb(),
-                           bg_auto=bg_auto(), bg_animate=bg_animate(), bg_theme=bg_theme())
+                           bg_auto=bg_auto(), bg_animate=bg_animate(), bg_theme=bg_theme(),
+                           last_cache_clear=last_cache_clear,
+                           cache_cleared_today=cache_cleared_today)
 
 
 # ── ACTIONS ───────────────────────────────────────────────────────────────────
@@ -814,11 +819,17 @@ def save_bg_settings():
 
 @app.route("/action/clear-cache", methods=["POST"])
 def clear_cache():
+    today = str(_date.today())
+    last  = database.get_setting("last_cache_clear_date", "")
+    if last == today:
+        flash("Cache already compacted today — come back tomorrow.", "warning")
+        return redirect(url_for("page_settings"))
     try:
         summary = cache_helpers.clear_cache()
         if summary["error"]:
             flash(f"Could not compact database: {summary['error']}", "error")
         else:
+            database.set_setting("last_cache_clear_date", today)
             freed = summary["freed_mb"]
             note  = f"Freed {freed} MB." if freed > 0 else "Database was already compact."
             flash(f"Done! {note} Database size now {summary['after_mb']} MB.", "success")

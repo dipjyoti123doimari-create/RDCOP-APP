@@ -4,6 +4,7 @@
 
 /* ---- Variables ---- */
 :root {
+  --cx: -999px; --cy: -999px; /* cursor bloom origin, updated by JS */
   --purple:       #635BFF;
   --purple-light: #7A73FF;
   --purple-dark:  #5851EA;
@@ -48,6 +49,7 @@ body {
   color: var(--text);
   min-height: 100vh;
   overflow-x: hidden;
+  overflow-y: auto;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -59,8 +61,24 @@ body {
   z-index: 0; pointer-events: none;
 }
 
+/* ---- Cursor bloom (Stripe-like) ---- */
+#cursor-glow {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background: radial-gradient(
+    circle 700px at var(--cx) var(--cy),
+    rgba(99,91,255,0.14) 0%,
+    rgba(0,212,255,0.05) 38%,
+    transparent 65%
+  );
+  will-change: background;
+}
+
 /* ---- App shell ---- */
 .app { display: flex; min-height: 100vh; position: relative; z-index: 1; }
+
+/* ensure flex children don't blow out their container */
+.main   { min-width: 0; }
+.content { min-width: 0; }
 
 /* ---- Sidebar ---- */
 .sidebar {
@@ -241,12 +259,24 @@ input[type="checkbox"].toggle:checked::after { left: 19px; }
 .tab-panel.active { display: block; }
 
 /* ---- Tables ---- */
-.table-wrapper { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+.table-wrapper {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 580px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+.table-wrapper::-webkit-scrollbar { width: 7px; height: 7px; }
+.table-wrapper::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 4px; }
+.table-wrapper::-webkit-scrollbar-thumb { background: rgba(99,91,255,0.35); border-radius: 4px; }
+.table-wrapper::-webkit-scrollbar-thumb:hover { background: rgba(99,91,255,0.60); }
+.table-wrapper::-webkit-scrollbar-corner { background: transparent; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 thead th {
-  background: rgba(255,255,255,0.06); color: var(--text-faint);
+  background: rgba(10,37,64,0.95); color: var(--text-faint);
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
   padding: 11px 13px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap;
+  position: sticky; top: 0; z-index: 10;
 }
 tbody td { padding: 10px 13px; color: var(--text); border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: middle; }
 tbody tr:last-child td { border-bottom: none; }

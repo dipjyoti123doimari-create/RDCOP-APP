@@ -121,23 +121,38 @@
     <div class="kpi-value" style="font-size:22px">{{ db_size_mb }} MB</div>
   </div>
 
+  {% if last_cache_clear %}
+  <p class="caption" style="margin-bottom:10px">Last compacted: <strong>{{ last_cache_clear }}</strong></p>
+  {% endif %}
+
   <p style="color:var(--text-muted);font-size:14px;margin-bottom:14px">
     <strong>Clear Cache</strong> compacts the database file to remove unused empty space.
+    Runs <strong>at most once per day</strong> to avoid unnecessary I/O.
   </p>
 
+  {% if cache_cleared_today %}
+  <div class="alert alert-info" style="margin-bottom:14px">
+    ✅ Already compacted today ({{ last_cache_clear }}). Come back tomorrow for the next run.
+  </div>
+  <button class="btn btn-secondary" disabled>🧹 Clear Cache &amp; Compact Database</button>
+  {% else %}
   <form method="POST" action="{{ url_for('clear_cache') }}" id="cache-form">
     <button type="submit" class="btn btn-primary" id="cache-btn">🧹 Clear Cache &amp; Compact Database</button>
-    <div class="loading" id="cache-loading" style="display:inline-flex;margin-left:12px"><div class="spinner"></div> Compacting…</div>
+    <div class="loading" id="cache-loading" style="margin-left:12px"><div class="spinner"></div> Compacting…</div>
   </form>
+  {% endif %}
 </div>
 
 {% endblock %}
 {% block scripts %}
 <script>
-document.getElementById('cache-form').addEventListener('submit', function() {
-  document.getElementById('cache-btn').disabled = true;
-  document.getElementById('cache-loading').classList.add('active');
-});
+var cacheForm = document.getElementById('cache-form');
+if (cacheForm) {
+  cacheForm.addEventListener('submit', function() {
+    document.getElementById('cache-btn').disabled = true;
+    document.getElementById('cache-loading').classList.add('active');
+  });
+}
 document.getElementById('auto-toggle').addEventListener('change', function() {
   document.getElementById('manual-theme-row').style.display = this.checked ? 'none' : 'flex';
 });
