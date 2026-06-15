@@ -364,6 +364,14 @@ def page_reports():
 
     has_params = "from_date" in request.args
 
+    # Always pre-populate filter dropdowns from the persisted calculation_results table
+    # so filter selects are usable before the user clicks "Load Report"
+    _cr_all = database.read_table("calculation_results")
+    if not _cr_all.empty:
+        unique_cats   = sorted(_cr_all["category"].dropna().unique().tolist())   if "category"    in _cr_all.columns else []
+        unique_desigs = sorted(_cr_all["designation"].dropna().unique().tolist()) if "designation" in _cr_all.columns else []
+        unique_plants = sorted(_cr_all["plant"].dropna().unique().tolist())       if "plant"       in _cr_all.columns else []
+
     if has_params and not no_backend:
         range_key = f"{from_date}|{to_date}"
         if _s("rpt_range_key") != range_key:
@@ -400,9 +408,9 @@ def page_reports():
         ora_note  = _s("rpt_ora_note", "")
         total_rows = len(all_rows)
 
-        unique_cats   = sorted(set(r.get("category", "")    for r in all_rows if r.get("category")))
-        unique_desigs = sorted(set(r.get("designation", "") for r in all_rows if r.get("designation")))
-        unique_plants = sorted(set(r.get("plant", "")       for r in all_rows if r.get("plant")))
+        unique_cats   = sorted({r.get("category", "")    for r in all_rows if r.get("category")})
+        unique_desigs = sorted({r.get("designation", "") for r in all_rows if r.get("designation")})
+        unique_plants = sorted({r.get("plant", "")       for r in all_rows if r.get("plant")})
 
         filtered = _apply_filters(all_rows, cats, desigs, plants, elig, outcome, search)
         filtered = _sort_rows(filtered)

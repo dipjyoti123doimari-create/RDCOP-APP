@@ -76,8 +76,99 @@ function confirmAction(msg, callback) {
   if (window.confirm(msg)) callback();
 }
 
+/* ---- Custom multi-select ---- */
+function msInit() {
+  document.querySelectorAll('.ms-wrap').forEach(function (wrap) {
+    var box      = wrap.querySelector('.ms-box');
+    var panel    = wrap.querySelector('.ms-panel');
+    var allCb    = wrap.querySelector('.ms-all-cb');
+    var searchIn = wrap.querySelector('.ms-search-box input');
+    var opts     = wrap.querySelectorAll('.ms-opts input[type=checkbox]');
+
+    function updateLabel() {
+      var checked = Array.from(opts).filter(function (o) { return o.checked; });
+      var lbl = box.querySelector('.ms-label');
+      if (checked.length === 0) {
+        lbl.textContent = 'All';
+        lbl.classList.add('placeholder');
+      } else if (checked.length === opts.length) {
+        lbl.textContent = 'All (' + opts.length + ')';
+        lbl.classList.remove('placeholder');
+      } else {
+        lbl.textContent = checked.length + ' of ' + opts.length + ' selected';
+        lbl.classList.remove('placeholder');
+      }
+      if (allCb) {
+        allCb.checked       = checked.length === opts.length && opts.length > 0;
+        allCb.indeterminate = checked.length > 0 && checked.length < opts.length;
+      }
+    }
+
+    /* open / close */
+    box.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var wasOpen = panel.classList.contains('open');
+      /* close all other open panels */
+      document.querySelectorAll('.ms-panel.open').forEach(function (p) {
+        p.classList.remove('open');
+        p.closest('.ms-wrap').querySelector('.ms-box').classList.remove('open');
+      });
+      if (!wasOpen) {
+        panel.classList.add('open');
+        box.classList.add('open');
+        if (searchIn) { searchIn.value = ''; msShowAll(wrap); searchIn.focus(); }
+      }
+    });
+
+    /* keep panel open when clicking inside */
+    panel.addEventListener('click', function (e) { e.stopPropagation(); });
+
+    /* select all toggle */
+    if (allCb) {
+      allCb.addEventListener('change', function () {
+        wrap.querySelectorAll('.ms-opts label:not(.ms-hidden) input[type=checkbox]').forEach(function (o) {
+          o.checked = allCb.checked;
+        });
+        updateLabel();
+      });
+    }
+
+    /* search filter */
+    if (searchIn) {
+      searchIn.addEventListener('input', function () {
+        var q = searchIn.value.toLowerCase();
+        wrap.querySelectorAll('.ms-opts label').forEach(function (lbl) {
+          var val = lbl.textContent.trim().toLowerCase();
+          lbl.classList.toggle('ms-hidden', q !== '' && !val.includes(q));
+        });
+        updateLabel();
+      });
+    }
+
+    /* individual checkbox changes */
+    opts.forEach(function (o) { o.addEventListener('change', updateLabel); });
+
+    updateLabel();
+  });
+
+  /* global: click outside closes all panels */
+  document.addEventListener('click', function () {
+    document.querySelectorAll('.ms-panel.open').forEach(function (p) {
+      p.classList.remove('open');
+      p.closest('.ms-wrap').querySelector('.ms-box').classList.remove('open');
+    });
+  });
+}
+
+function msShowAll(wrap) {
+  wrap.querySelectorAll('.ms-opts label').forEach(function (l) { l.classList.remove('ms-hidden'); });
+}
+
 /* ---- On DOM ready ---- */
 document.addEventListener('DOMContentLoaded', function () {
+
+  /* Custom multi-selects */
+  msInit();
 
   /* Tab initialization */
   document.querySelectorAll('.tab-btn[data-tabset]').forEach(function (btn) {

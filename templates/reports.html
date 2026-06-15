@@ -38,35 +38,73 @@
       </div>
     </div>
 
-    <!-- Filters (only shown once data is loaded) -->
-    {% if results is not none %}
+    <!-- Filters — always visible -->
+    {% if unique_cats or unique_desigs or unique_plants %}
     <hr class="divider">
-    <div class="filter-grid">
-      <div class="form-group">
+    <div class="filter-grid filter-grid-3">
+
+      <!-- Category multi-select -->
+      <div class="form-group" style="margin-bottom:0">
         <label>Category</label>
-        <select name="category" multiple>
-          {% for c in unique_cats %}
-          <option value="{{ c }}" {% if c in cats %}selected{% endif %}>{{ c }}</option>
-          {% endfor %}
-        </select>
+        <div class="ms-wrap">
+          <div class="ms-box" tabindex="0">
+            <span class="ms-label {% if not cats %}placeholder{% endif %}">{% if cats %}{{ cats|length }} selected{% else %}All{% endif %}</span>
+            <span class="ms-arrow">▾</span>
+          </div>
+          <div class="ms-panel">
+            <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
+            <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
+            <div class="ms-opts">
+              {% for c in unique_cats %}
+              <label><input type="checkbox" name="category" value="{{ c }}" {% if c in cats %}checked{% endif %}> {{ c }}</label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="form-group">
+
+      <!-- Designation multi-select -->
+      <div class="form-group" style="margin-bottom:0">
         <label>Designation</label>
-        <select name="designation" multiple>
-          {% for d in unique_desigs %}
-          <option value="{{ d }}" {% if d in desigs %}selected{% endif %}>{{ d }}</option>
-          {% endfor %}
-        </select>
+        <div class="ms-wrap">
+          <div class="ms-box" tabindex="0">
+            <span class="ms-label {% if not desigs %}placeholder{% endif %}">{% if desigs %}{{ desigs|length }} selected{% else %}All{% endif %}</span>
+            <span class="ms-arrow">▾</span>
+          </div>
+          <div class="ms-panel">
+            <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
+            <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
+            <div class="ms-opts">
+              {% for d in unique_desigs %}
+              <label><input type="checkbox" name="designation" value="{{ d }}" {% if d in desigs %}checked{% endif %}> {{ d }}</label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="form-group">
+
+      <!-- Plant multi-select -->
+      <div class="form-group" style="margin-bottom:0">
         <label>Plant</label>
-        <select name="plant" multiple>
-          {% for p in unique_plants %}
-          <option value="{{ p }}" {% if p in plants %}selected{% endif %}>{{ p }}</option>
-          {% endfor %}
-        </select>
+        <div class="ms-wrap">
+          <div class="ms-box" tabindex="0">
+            <span class="ms-label {% if not plants %}placeholder{% endif %}">{% if plants %}{{ plants|length }} selected{% else %}All{% endif %}</span>
+            <span class="ms-arrow">▾</span>
+          </div>
+          <div class="ms-panel">
+            <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
+            <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
+            <div class="ms-opts">
+              {% for p in unique_plants %}
+              <label><input type="checkbox" name="plant" value="{{ p }}" {% if p in plants %}checked{% endif %}> {{ p }}</label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="form-group">
+
+      <!-- Incentive Eligibility -->
+      <div class="form-group" style="margin-bottom:0">
         <label>Incentive Eligibility</label>
         <select name="elig">
           <option value="All" {% if elig=='All' %}selected{% endif %}>All</option>
@@ -74,7 +112,9 @@
           <option value="No"  {% if elig=='No'  %}selected{% endif %}>Not eligible (No)</option>
         </select>
       </div>
-      <div class="form-group">
+
+      <!-- Outcome -->
+      <div class="form-group" style="margin-bottom:0">
         <label>Outcome</label>
         <select name="outcome">
           <option value="All"       {% if outcome=='All' %}selected{% endif %}>All</option>
@@ -84,12 +124,20 @@
           <option value="neither"   {% if outcome=='neither' %}selected{% endif %}>Neither</option>
         </select>
       </div>
-      <div class="form-group">
+
+      <!-- Search -->
+      <div class="form-group" style="margin-bottom:0">
         <label>Search Code / Name</label>
         <input type="text" name="search" value="{{ search }}" placeholder="e.g. 1023 or Ramesh">
       </div>
+
     </div>
-    <button type="submit" class="btn btn-secondary btn-sm">Apply Filters</button>
+    <div style="margin-top:14px">
+      <button type="submit" class="btn btn-secondary btn-sm">Apply Filters</button>
+      {% if cats or desigs or plants or elig != 'All' or outcome != 'All' or search %}
+      <a href="{{ url_for('page_reports', from_date=from_date, to_date=to_date) }}" class="btn btn-secondary btn-sm" style="margin-left:8px">✕ Clear Filters</a>
+      {% endif %}
+    </div>
     {% endif %}
   </form>
   <div class="loading" id="report-loading"><div class="spinner"></div> Loading report…</div>
@@ -137,7 +185,7 @@
   <span class="legend-item legend-red">🔴 Deduction applied (takes priority if both)</span>
 </div>
 
-<p class="caption" style="margin-bottom:10px">Showing <strong>{{ results | length | format_int }}</strong> of <strong>{{ total_rows | format_int }}</strong> total rows · Preview: {{ from_date }} → {{ to_date }}</p>
+<p class="caption" style="margin-bottom:10px">Showing <strong>{{ results | length | format_int }}</strong> of <strong>{{ total_rows | format_int }}</strong> total rows · {{ from_date }} → {{ to_date }}</p>
 
 <div class="table-wrapper">
   <table>
