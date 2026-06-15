@@ -158,7 +158,7 @@ RESULT_LABELS = {
     "plant":                "Plant",
     "plant_code":           "Plant Code",
     "total_quantity":       "Total Qty",
-    "ytd_maintenance_cost": "YTD Cost",
+    "ytd_maintenance_cost": "R&M Cost YTD",
     "incentive_eligible":   "Eligible",
     "incentive_rate":       "Inc Rate",
     "incentive_amount":     "Incentive Amount (Rs)",
