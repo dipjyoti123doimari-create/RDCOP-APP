@@ -1037,25 +1037,37 @@ def page_view_reports():
     # View Reports builds the report LIVE for the chosen range from Backend Data,
     # so you can browse any period. It does NOT overwrite the saved calculation
     # (it calls the engine with persist=False). It needs backend data to work.
-    available = calculator.get_available_months()
-    if not available:
-        ui_helpers.render_glass_card(
-            "No backend data",
-            "Upload a Backend Data file on the <b>Data Uploader</b> page first.",
-        )
-        return
+    # When Oracle is configured, we fetch live — no pre-loaded Excel needed.
+    ora_live = oracle_connector.is_configured()
+    if not ora_live:
+        available = calculator.get_available_months()
+        if not available:
+            ui_helpers.render_glass_card(
+                "No backend data",
+                "Upload a Backend Data file on the <b>Data Uploader</b> page first, "
+                "or configure Oracle on the <b>Settings</b> page for live data.",
+            )
+            return
 
-    conn = database.get_connection()
-    try:
-        minmax = pd.read_sql_query(
-            "SELECT MIN(date) AS mn, MAX(date) AS mx FROM backend_data", conn
-        )
-    finally:
-        conn.close()
-    default_from = pd.to_datetime(minmax["mn"].iloc[0]).date()
-    default_to   = pd.to_datetime(minmax["mx"].iloc[0]).date()
+    # Default date range: today's month when Oracle is live, else from stored data.
+    from datetime import date as _date
+    if ora_live:
+        default_from = _date.today().replace(day=1)
+        default_to   = _date.today()
+    else:
+        conn = database.get_connection()
+        try:
+            minmax = pd.read_sql_query(
+                "SELECT MIN(date) AS mn, MAX(date) AS mx FROM backend_data", conn
+            )
+        finally:
+            conn.close()
+        default_from = pd.to_datetime(minmax["mn"].iloc[0]).date()
+        default_to   = pd.to_datetime(minmax["mx"].iloc[0]).date()
 
     st.subheader("📅 Report period")
+    if ora_live:
+        st.caption("🔌 Live data — Oracle will be queried automatically for the selected range.")
     col_f, col_t = st.columns(2)
     with col_f:
         from_date = st.date_input("From Date", value=default_from, key="vr_from")
@@ -1071,11 +1083,29 @@ def page_view_reports():
     range_key = f"{from_date}|{to_date}"
     if (st.session_state.get("vr_range_key") != range_key
             or "vr_results_df" not in st.session_state):
-        with st.spinner("Calculating the report for the selected period…"):
+
+        # Step 1 — if Oracle is configured, fetch live data for this range first.
+        ora_fetch_note = ""
+        if ora_live:
+            with st.spinner("🔌 Fetching live data from Oracle…"):
+                try:
+                    df_ora, ora_warns = oracle_connector.fetch_backend_data(from_date, to_date)
+                    if not df_ora.empty:
+                        oracle_connector.save_oracle_backend_data(
+                            df_ora, from_date, to_date, replace=True
+                        )
+                        ora_fetch_note = f"Oracle: {len(df_ora):,} rows loaded."
+                    else:
+                        ora_fetch_note = "Oracle returned no rows for this range."
+                except Exception as exc:
+                    ora_fetch_note = f"Oracle fetch failed: {exc}"
+
+        # Step 2 — run the calculation on whatever is now in backend_data.
+        with st.spinner("Calculating incentives & deductions…"):
             res = calculator.run_calculation(
                 month=from_date.month, year=from_date.year,
                 start_date=str(from_date), end_date=str(to_date),
-                persist=False,                      # never overwrite saved results
+                persist=False,
             )
         if res["error"]:
             st.session_state["vr_results_df"]  = pd.DataFrame()
@@ -1084,16 +1114,18 @@ def page_view_reports():
         else:
             st.session_state["vr_results_df"]  = pd.DataFrame(res["results_rows"])
             st.session_state["vr_unmapped_df"] = pd.DataFrame(res["unmapped_rows"])
-            st.session_state["vr_range_note"]  = ""
+            st.session_state["vr_range_note"]  = ora_fetch_note
         st.session_state["vr_range_key"] = range_key
 
     results_df = st.session_state["vr_results_df"]
+    range_note = st.session_state.get("vr_range_note", "")
     if results_df.empty:
         ui_helpers.render_warning_message(
-            st.session_state.get("vr_range_note")
-            or "No mapped employees were found for this date range."
+            range_note or "No mapped employees were found for this date range."
         )
         return
+    if range_note:
+        st.caption(f"🔌 {range_note}")
 
     st.caption(
         f"Live report for **{from_date} → {to_date}**  ·  "
