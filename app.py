@@ -1748,4 +1748,4 @@ if __name__ == "__main__":
     print("  RDC Batching Incentive Calculator")
     print("  Flask server starting on http://localhost:2001")
     print("=" * 60)
-    app.run(host="0.0.0.0", port=2001, debug=False)
+    app.run(host="0.0.0.0", port=2001, debug=True, use_reloader=True)
