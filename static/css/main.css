@@ -98,13 +98,17 @@ body {
 .sidebar-icon { font-size: 22px; flex-shrink: 0; }
 
 #app-logo {
-  width: 190px; height: auto;
+  width: 152px; height: auto;
   object-fit: contain; border-radius: 10px; display: block;
 }
 
 .sidebar-name {
-  font-size: 15px; font-weight: 800; letter-spacing: 0.08em;
-  text-align: center; line-height: 1.2;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+}
+
+.sidebar-name-main {
+  font-size: 22px; font-weight: 900; letter-spacing: 0.14em;
+  text-align: center; line-height: 1.1;
   background: linear-gradient(90deg,
     #635BFF 0%, #7A73FF 15%, #00D4FF 35%,
     #ffffff 50%,
@@ -117,9 +121,21 @@ body {
   animation: nameShimmer 3s linear infinite;
 }
 
+.sidebar-name-sub {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.22em;
+  text-align: center; text-transform: uppercase;
+  color: rgba(0, 212, 255, 0.70);
+  animation: subGlow 3s ease-in-out infinite;
+}
+
 @keyframes nameShimmer {
   0%   { background-position:   0% center; }
   100% { background-position: 250% center; }
+}
+
+@keyframes subGlow {
+  0%, 100% { opacity: 0.55; text-shadow: none; }
+  50%       { opacity: 1;    text-shadow: 0 0 12px rgba(0,212,255,0.75); }
 }
 
 .sidebar-tagline {
