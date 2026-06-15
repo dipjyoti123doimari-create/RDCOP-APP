@@ -330,6 +330,60 @@ def replace_table_rows(table, rows):
     return insert_rows(table, rows)
 
 
+# Oracle-sourced tables and the column that holds their production date.
+# Shared by ALL modules — add new modules' Oracle tables here so the rolling
+# retention policy covers them automatically.
+ORACLE_DATA_TABLES = {
+    "backend_data":   "date",             # RDC-I&D
+    "tp_oracle_data": "production_date",   # RDC-TP
+    # "btrtp_oracle_data": "production_date",  # future
+    # "jldc_oracle_data":  "production_date",  # future
+}
+
+
+def _prev_month_first_day(today=None):
+    """First day of the PREVIOUS calendar month (the retention cut-off)."""
+    from datetime import date
+    t = today or date.today()
+    if t.month == 1:
+        return date(t.year - 1, 12, 1)
+    return date(t.year, t.month - 1, 1)
+
+
+def purge_old_oracle_data(today=None):
+    """
+    Rolling retention for ALL modules' Oracle data (shared policy).
+
+    Keeps only rows dated on/after the 1st of the PREVIOUS month and deletes
+    everything older. So in June you keep May + June; when July starts, May is
+    purged and you keep June + July. This caps storage and lowers the load.
+
+    Dates are stored as 'YYYY-MM-DD' strings, so a plain string comparison is
+    correct (ISO dates sort lexicographically). Returns a summary dict.
+    """
+    cutoff = _prev_month_first_day(today).isoformat()
+    deleted = {}
+    conn = get_connection()
+    try:
+        existing = {
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        for table, date_col in ORACLE_DATA_TABLES.items():
+            if table not in existing:
+                continue
+            cur = conn.execute(
+                f"DELETE FROM {table} WHERE {date_col} IS NOT NULL "
+                f"AND {date_col} < ?", (cutoff,)
+            )
+            deleted[table] = cur.rowcount
+        conn.commit()
+    finally:
+        conn.close()
+    return {"cutoff": cutoff, "deleted": deleted}
+
+
 def read_table(table, order_by=None):
     """
     Read a whole table into a pandas DataFrame (a table in memory).

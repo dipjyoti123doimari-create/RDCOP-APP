@@ -70,8 +70,25 @@ def _mss(module: str, key: str, val):
 # ── Boot ─────────────────────────────────────────────────────────────────────
 database.init_db()
 
+# Apply the rolling Oracle-data retention once at startup (covers the case
+# where the app was restarted after a month rolled over).
+try:
+    _purge = database.purge_old_oracle_data()
+    if any(_purge["deleted"].values()):
+        print(f"[retention] purged Oracle data before {_purge['cutoff']}: {_purge['deleted']}")
+except Exception as _exc:
+    print(f"[retention] startup purge skipped: {_exc}")
+
 # ── Monthly email scheduler ───────────────────────────────────────────────────
 _scheduler: BackgroundScheduler | None = None
+
+
+def _retention_job():
+    """Daily: enforce the shared rolling Oracle-data retention for all modules."""
+    try:
+        database.purge_old_oracle_data()
+    except Exception:
+        pass
 
 
 def _scheduled_email_job():
@@ -128,6 +145,10 @@ def _start_scheduler():
     _scheduler.add_job(_scheduled_email_job,
                        CronTrigger(day=1, hour=h, minute=m),
                        id="monthly_report", replace_existing=True)
+    # Daily rolling retention for all modules' Oracle data (runs 00:05 + on 1st).
+    _scheduler.add_job(_retention_job,
+                       CronTrigger(hour=0, minute=5),
+                       id="oracle_retention", replace_existing=True)
     _scheduler.start()
 
 
@@ -368,6 +389,7 @@ def tp_fetch_oracle():
         raw_df, ora_warnings = oracle_connector.fetch_tp_data(from_date, to_date)
         parsed, skip_log     = tp_calculator.parse_oracle_df(raw_df)
         oracle_connector.save_tp_oracle_data(raw_df, from_date, to_date, parsed, replace=True)
+        database.purge_old_oracle_data()   # keep only previous + current month
         _mss("tp", "skip_log", skip_log)
         _mss("tp", "ora_from", from_date)
         _mss("tp", "ora_to",   to_date)
@@ -1120,6 +1142,7 @@ def fetch_oracle():
             flash("Oracle returned no rows for the selected date range.", "warning")
         else:
             saved = oracle_connector.save_oracle_backend_data(df_ora, fd, td, replace=replace)
+            database.purge_old_oracle_data()   # keep only previous + current month
             flash(f"{'Replaced' if replace else 'Appended'} {saved:,} rows from Oracle.", "success")
     except Exception as exc:
         flash(f"Oracle fetch failed: {exc}", "error")
