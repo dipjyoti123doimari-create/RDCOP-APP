@@ -59,6 +59,11 @@
   <!-- ── Main ────────────────────────────────────────── -->
   <div class="main">
     <div class="topbar">
+      <div class="ora-status checking" id="ora-status" title="Checking Oracle…">
+        <span class="ora-dot"></span>
+        <span class="ora-text" id="ora-status-text">Oracle…</span>
+      </div>
+      <span class="topbar-divider"></span>
       <span class="topbar-label">Theme</span>
       {% set _themes = [('Pre-dawn','🌑','ti-predawn'),('Sunrise','🌅','ti-sunrise'),('Daytime','☀️','ti-daytime'),('Dusk','🌆','ti-dusk'),('Sunset','🌇','ti-sunset'),('Night','🌙','')] %}
       <div class="theme-picker" id="theme-picker">

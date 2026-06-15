@@ -215,7 +215,37 @@ document.addEventListener('DOMContentLoaded', function () {
       setTimeout(function () { el.remove(); }, 400);
     }, 6000);
   });
+
+  /* Live Oracle status pill (launcher + every module topbar).
+     Runs async so the page paints instantly and the dot updates when the
+     reachability check returns. Shared connection across all four modules. */
+  initOracleStatus();
 });
+
+/* ---- Live Oracle status (shared across all modules) ---- */
+function initOracleStatus() {
+  var pill = document.getElementById('ora-status');
+  if (!pill) return;
+  var txt = document.getElementById('ora-status-text');
+  fetch('/api/oracle-status', { cache: 'no-store' })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      pill.classList.remove('checking', 'connected', 'unreachable', 'unconfigured');
+      pill.classList.add(d.state);
+      pill.title = d.label;
+      if (txt) {
+        txt.textContent = d.state === 'connected' ? 'Oracle' :
+                          d.state === 'unreachable' ? 'Oracle ✕' :
+                          d.state === 'unconfigured' ? 'Oracle —' : 'Oracle…';
+      }
+    })
+    .catch(function () {
+      pill.classList.remove('checking');
+      pill.classList.add('unreachable');
+      pill.title = 'Oracle status check failed';
+      if (txt) txt.textContent = 'Oracle ✕';
+    });
+}
 
 /* ---- Custom theme picker ---- */
 var _THEME_ICONS = {

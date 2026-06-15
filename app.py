@@ -1294,6 +1294,24 @@ def api_bg_settings():
     return jsonify({"ok": True})
 
 
+# ── Oracle live status (shared by all modules + launcher icon) ───────────────
+@app.route("/api/oracle-status")
+def api_oracle_status():
+    """Live, honest Oracle status. Used by the launcher icon and every module
+    topbar. One shared Oracle connection serves all four modules."""
+    cfg = oracle_connector.get_oracle_config()
+    configured = oracle_connector.is_configured(cfg)
+    reachable  = oracle_connector.is_reachable(cfg) if configured else False
+    if not configured:
+        state, label = "unconfigured", "Oracle not configured"
+    elif reachable:
+        state, label = "connected", f"Oracle connected — {cfg['host']}"
+    else:
+        state, label = "unreachable", "Oracle unreachable (check office network / VPN)"
+    return jsonify({"configured": configured, "reachable": reachable,
+                    "state": state, "label": label})
+
+
 # ── DOWNLOAD ENDPOINTS ────────────────────────────────────────────────────────
 
 def _snapshot_dfs():

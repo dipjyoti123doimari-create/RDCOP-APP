@@ -455,6 +455,26 @@ tbody tr.row-yellow  td { background: rgba(251,191,36,0.10) !important; }
 .legend-red   { background: rgba(239,68,68,0.13);  color: var(--error-text);   border-color: var(--error-bdr); }
 .legend-yellow{ background: rgba(251,191,36,0.13); color: #fbbf24;              border-color: rgba(251,191,36,0.3); }
 
+/* ---- Live Oracle status pill (launcher + every module topbar) ---- */
+.ora-status {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 600; white-space: nowrap;
+}
+.ora-status .ora-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--text-faint); flex: none;
+}
+.ora-status.checking     .ora-dot { background: #fbbf24; animation: oraPulse 1s ease-in-out infinite; }
+.ora-status.connected    .ora-dot { background: #4ade80; box-shadow: 0 0 8px rgba(74,222,128,0.8); }
+.ora-status.unreachable  .ora-dot { background: #f87171; box-shadow: 0 0 8px rgba(248,113,113,0.7); }
+.ora-status.unconfigured .ora-dot { background: var(--text-faint); }
+.ora-status.checking     .ora-text { color: #fbbf24; }
+.ora-status.connected    .ora-text { color: #4ade80; }
+.ora-status.unreachable  .ora-text { color: #f87171; }
+.ora-status.unconfigured .ora-text { color: var(--text-faint); }
+@keyframes oraPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+.topbar-divider { width: 1px; height: 18px; background: var(--border); }
+
 /* ---- Divider ---- */
 .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 

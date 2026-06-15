@@ -20,6 +20,8 @@ Public functions:
     save_oracle_backend_data(df, ..) -> rows_inserted (int)
 """
 
+import socket
+
 import oracledb
 import pandas as pd
 from datetime import datetime
@@ -51,9 +53,30 @@ def get_oracle_config() -> dict:
 
 
 def is_configured(cfg: dict = None) -> bool:
-    """True when host, user and password are all set."""
+    """True when host, user and password are all set (config present only —
+    does NOT mean the server is reachable). Use is_reachable() for that."""
     cfg = cfg or get_oracle_config()
     return bool(cfg["host"] and cfg["user"] and cfg["password"])
+
+
+def is_reachable(cfg: dict = None, timeout: float = 2.0) -> bool:
+    """
+    Fast, honest liveness check: open a raw TCP socket to host:port.
+
+    Returns True only if the Oracle listener actually answers. On the office
+    network this returns in a few milliseconds; off-network it fails after
+    `timeout` seconds. This is NOT a full Oracle login — it just proves the
+    server is reachable, which is what the status indicator needs.
+    """
+    cfg = cfg or get_oracle_config()
+    host, port = cfg.get("host", ""), cfg.get("port", "")
+    if not host or not port:
+        return False
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout):
+            return True
+    except Exception:
+        return False
 
 
 def _init_thick(lib_dir: str):

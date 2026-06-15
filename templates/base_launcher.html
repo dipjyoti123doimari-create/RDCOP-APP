@@ -185,6 +185,7 @@
 .launcher-topbar .topbar-label {
   font-size: 12px; color: var(--text-faint); font-weight: 500;
 }
+.topbar-divider { width: 1px; height: 18px; background: var(--border); }
 </style>
 </head>
 <body>
@@ -195,6 +196,12 @@
 <!-- ── Theme picker (fixed top-right) ───────────────── -->
 {% set _themes = [('Pre-dawn','🌑','ti-predawn'),('Sunrise','🌅','ti-sunrise'),('Daytime','☀️','ti-daytime'),('Dusk','🌆','ti-dusk'),('Sunset','🌇','ti-sunset'),('Night','🌙','')] %}
 <div class="launcher-topbar">
+  <!-- Live Oracle status (shared by all modules) -->
+  <div class="ora-status checking" id="ora-status" title="Checking Oracle…">
+    <span class="ora-dot"></span>
+    <span class="ora-text" id="ora-status-text">Oracle…</span>
+  </div>
+  <span class="topbar-divider"></span>
   <span class="topbar-label">Theme</span>
   <div class="theme-picker" id="theme-picker">
     <div class="theme-picker-btn" id="theme-picker-btn" onclick="toggleThemePicker()">

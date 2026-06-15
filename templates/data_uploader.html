@@ -319,9 +319,9 @@
     <p class="caption" style="margin-bottom:14px">Pulls production data directly from APPSREAD.rdc_batch_trx_headers for any date range — no Excel needed.</p>
 
     {% if ora_ready %}
-    <div class="alert alert-success">✅ Connected to Oracle</div>
+    <div class="alert alert-info">⚙️ Oracle is configured. The dot in the top-right shows the live connection — fetch works only when it's green (on the office network / VPN).</div>
     {% else %}
-    <div class="alert alert-warning">❌ Not connected to Oracle</div>
+    <div class="alert alert-warning">❌ Oracle not configured</div>
     {% endif %}
 
     <form method="POST" action="{{ url_for('fetch_oracle') }}" id="oracle-form">

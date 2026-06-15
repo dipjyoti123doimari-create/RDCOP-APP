@@ -41,7 +41,7 @@
     <div class="settings-tile-info">
       <div class="settings-tile-title">Oracle Database</div>
       <div class="settings-tile-status {% if ora_configured %}status-ok{% else %}status-warn{% endif %}">
-        {% if ora_configured %}✅ Connected to Oracle{% else %}❌ Not connected to Oracle{% endif %}
+        {% if ora_configured %}⚙️ Configured · live status top-right{% else %}❌ Not configured{% endif %}
       </div>
     </div>
     <span class="settings-tile-arrow">›</span>
@@ -177,9 +177,9 @@
     <div class="modal-body">
       <p class="caption" style="margin-bottom:12px">Connection details for the enterprise Oracle database. Used to fetch backend production data directly from Oracle.</p>
       {% if ora_configured %}
-      <div class="alert alert-success" style="margin-bottom:12px">✅ Connected to Oracle</div>
+      <div class="alert alert-info" style="margin-bottom:12px">⚙️ Oracle is configured. Use <strong>Test Oracle Connection</strong> below to verify it's actually reachable (you must be on the office network / VPN).</div>
       {% else %}
-      <div class="alert alert-warning" style="margin-bottom:12px">❌ Not connected to Oracle</div>
+      <div class="alert alert-warning" style="margin-bottom:12px">❌ Oracle not configured</div>
       {% endif %}
       <form method="POST" action="{{ url_for('save_oracle') }}">
         <div class="form-grid">
