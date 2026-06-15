@@ -69,7 +69,7 @@
     <a href="{{ url_for('page_settings') }}">RDC-I&amp;D → Settings</a>.
   </p>
   <div class="alert alert-info" style="margin-top:12px">
-    SMTP Sender: <strong>{{ smtp.smtp_user or 'Not configured' }}</strong>
+    SMTP Sender: <strong>{{ smtp.sender or 'Not configured' }}</strong>
     &nbsp;·&nbsp;
     Status: <strong>{% if email_configured %}Configured{% else %}Not set{% endif %}</strong>
   </div>

@@ -441,8 +441,8 @@ def tp_reports():
     location_rows = _ms("tp", "location_rows", [])
     calc_month    = _ms("tp", "calc_month", _date.today().month)
     calc_year     = _ms("tp", "calc_year",  _date.today().year)
-    smtp          = email_helper.get_smtp_settings()
-    email_configured = bool(smtp.get("smtp_host") and smtp.get("smtp_user"))
+    smtp          = email_helper.get_smtp_config()
+    email_configured = bool(smtp.get("host") and smtp.get("sender"))
     ctx = _tp_ctx()
     ctx["active_page"] = "reports"
     return render_template("tp_reports.html",
@@ -534,7 +534,7 @@ def tp_send_email():
     body    = (f"Dear Team,\n\nPlease find attached the Plant Throughput Report "
                f"for {month_name} {year}.\n\nRegards,\nRDC Operations")
 
-    result = email_helper.send_email_with_attachment(
+    result = email_helper.send_report_email(
         to_emails=to_addr, cc_emails=cc_addr,
         subject=subject, body=body,
         attachment_bytes=buf.read(), attachment_name=fname,
@@ -565,8 +565,8 @@ def tp_settings():
     plant_col   = database.get_module_setting("tp", "oracle_plant_col", "PLANT_CODE")
     batch_col   = database.get_module_setting("tp", "oracle_batch_col", "BATCH_NO")
     time_col    = database.get_module_setting("tp", "oracle_time_col",  "MIXING_TIME")
-    smtp        = email_helper.get_smtp_settings()
-    email_configured = bool(smtp.get("smtp_host") and smtp.get("smtp_user"))
+    smtp        = email_helper.get_smtp_config()
+    email_configured = bool(smtp.get("host") and smtp.get("sender"))
     ctx = _tp_ctx()
     ctx["active_page"] = "settings"
     return render_template("tp_settings.html",
