@@ -34,35 +34,45 @@ import streamlit.components.v1 as components
 # "icon"   -> emoji for the theme picker dropdown
 
 THEME_PALETTES = {
+    # alphaScale multiplies every blob's centre alpha before drawing.
+    # Dark/deep colour themes can handle higher values; bright/saturated
+    # colours (cyan, orange, pink) spike to near-white on screen-blend so
+    # they need a lower scale to stay readable behind content text.
     "Pre-dawn": {
-        "base":   "#050A15",
-        "colors": ["#3B3FA0", "#1A0F6B", "#2D1B8E", "#0D1F5C", "#4B3480"],
-        "icon":   "🌌",
+        "base":       "#050A15",
+        "colors":     ["#3B3FA0", "#1A0F6B", "#2D1B8E", "#0D1F5C", "#4B3480"],
+        "alphaScale": 0.80,   # deep indigo — stays dark, can go strong
+        "icon":       "🌌",
     },
     "Sunrise": {
-        "base":   "#1A0A2E",
-        "colors": ["#FF6B9D", "#FF8C42", "#9B4DFF", "#4D79FF", "#FF4DA6"],
-        "icon":   "🌅",
+        "base":       "#1A0A2E",
+        "colors":     ["#FF6B9D", "#FF8C42", "#9B4DFF", "#4D79FF", "#FF4DA6"],
+        "alphaScale": 0.42,   # hot pink + orange are very bright on screen-blend
+        "icon":       "🌅",
     },
     "Daytime": {
-        "base":   "#0A2540",
-        "colors": ["#635BFF", "#00D4FF", "#7A5AF8", "#0EA5E9", "#8B5CF6"],
-        "icon":   "✨",
+        "base":       "#0A2540",
+        "colors":     ["#635BFF", "#00D4FF", "#7A5AF8", "#0EA5E9", "#8B5CF6"],
+        "alphaScale": 0.45,   # cyan #00D4FF is the brightest Stripe colour
+        "icon":       "✨",
     },
     "Dusk": {
-        "base":   "#0F0820",
-        "colors": ["#8A4FFF", "#FF61AB", "#5B21B6", "#7C3AED", "#DB2777"],
-        "icon":   "🌆",
+        "base":       "#0F0820",
+        "colors":     ["#8A4FFF", "#FF61AB", "#5B21B6", "#7C3AED", "#DB2777"],
+        "alphaScale": 0.55,   # purple + pink, moderate brightness
+        "icon":       "🌆",
     },
     "Sunset": {
-        "base":   "#1A0510",
-        "colors": ["#FF2D6B", "#9B2CFF", "#FF7A3D", "#FF4DA6", "#C041FF"],
-        "icon":   "🌇",
+        "base":       "#1A0510",
+        "colors":     ["#FF2D6B", "#9B2CFF", "#FF7A3D", "#FF4DA6", "#C041FF"],
+        "alphaScale": 0.48,   # red/orange/pink — reduce to avoid wash-out
+        "icon":       "🌇",
     },
     "Night": {
-        "base":   "#05060F",
-        "colors": ["#3A7BFF", "#7C5CFF", "#00D4FF", "#5856D6", "#2563EB"],
-        "icon":   "🌙",
+        "base":       "#05060F",
+        "colors":     ["#3A7BFF", "#7C5CFF", "#00D4FF", "#5856D6", "#2563EB"],
+        "alphaScale": 0.72,   # deep blues — darker overall, can be richer
+        "icon":       "🌙",
     },
 }
 
@@ -250,7 +260,10 @@ _BG_TEMPLATE = """
     // Blobs rendered with 'screen' blending.  Where two blobs overlap the
     // screen formula brightens the result — producing Stripe's signature
     // glowing highlight at blob intersections.
+    // alphaScale is per-theme: bright colours (cyan, orange, pink) are
+    // reduced so they can't blow out to near-white in the content area.
     ctx.globalCompositeOperation = 'screen';
+    var alphaScale = (typeof pal.alphaScale !== 'undefined') ? pal.alphaScale : 0.60;
 
     for (var i = 0; i < GEOM.length; i++) {
       var g     = GEOM[i];
@@ -269,10 +282,13 @@ _BG_TEMPLATE = """
       // Blob radius scales with the screen diagonal for any window size.
       var r = g.r * diag * 0.5;
 
+      // Apply per-theme alpha scale before drawing.
+      var a0 = g.alpha * alphaScale;
+
       // Soft radial gradient: opaque at center, transparent at edge.
       var grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-      grd.addColorStop(0,   hexA(color, g.alpha));
-      grd.addColorStop(0.5, hexA(color, g.alpha * 0.45));
+      grd.addColorStop(0,   hexA(color, a0));
+      grd.addColorStop(0.5, hexA(color, a0 * 0.45));
       grd.addColorStop(1,   hexA(color, 0));
 
       ctx.fillStyle = grd;

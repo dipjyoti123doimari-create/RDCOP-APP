@@ -63,9 +63,11 @@ def inject_custom_css():
         border-bottom: 1px solid rgba(255,255,255,0.06) !important;
     }}
 
-    /* ---- Main content area — dark veil so text stays readable over any blob ---- */
+    /* ---- Main content area — frosted dark veil for readability on all themes ---- */
     section.main {{
-        background: rgba(5, 10, 20, 0.42) !important;
+        background: rgba(5, 10, 20, 0.62) !important;
+        backdrop-filter: blur(10px) !important;
+        -webkit-backdrop-filter: blur(10px) !important;
     }}
 
     /* ---- Main content padding ---- */
