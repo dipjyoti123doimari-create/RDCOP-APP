@@ -221,6 +221,9 @@ document.addEventListener('DOMContentLoaded', function () {
 var _THEME_ICONS = {
   'Pre-dawn':'🌑','Sunrise':'🌅','Daytime':'☀️','Dusk':'🌆','Sunset':'🌇','Night':'🌙'
 };
+var _THEME_CLS = {
+  'Pre-dawn':'ti-predawn','Sunrise':'ti-sunrise','Daytime':'ti-daytime','Dusk':'ti-dusk','Sunset':'ti-sunset','Night':''
+};
 function toggleThemePicker() {
   var panel = document.getElementById('theme-picker-panel');
   if (!panel) return;
@@ -234,7 +237,8 @@ function selectTheme(t) {
   if (panel)  panel.style.display = 'none';
   if (label)  label.textContent = t;
   if (icon) {
-    icon.innerHTML = _THEME_ICONS[t] || '';
+    var cls = _THEME_CLS[t] || '';
+    icon.innerHTML = '<span class="' + cls + '">' + (_THEME_ICONS[t] || '') + '</span>';
     if (t === 'Night') icon.innerHTML += '<span class="star-sparkle">✦</span>';
   }
   /* Update active state in dropdown */

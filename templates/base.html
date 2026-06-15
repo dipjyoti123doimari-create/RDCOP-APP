@@ -58,18 +58,18 @@
   <div class="main">
     <div class="topbar">
       <span class="topbar-label">Theme</span>
-      {% set _themes = [('Pre-dawn','🌑'),('Sunrise','🌅'),('Daytime','☀️'),('Dusk','🌆'),('Sunset','🌇'),('Night','🌙')] %}
-      <!-- Custom theme picker so Night icon can animate -->
+      {% set _themes = [('Pre-dawn','🌑','ti-predawn'),('Sunrise','🌅','ti-sunrise'),('Daytime','☀️','ti-daytime'),('Dusk','🌆','ti-dusk'),('Sunset','🌇','ti-sunset'),('Night','🌙','')] %}
+      <!-- Custom theme picker with per-theme icon animations -->
       <div class="theme-picker" id="theme-picker">
         <div class="theme-picker-btn" id="theme-picker-btn" onclick="toggleThemePicker()">
-          <span id="theme-icon-display">{% for t,i in _themes %}{% if t == bg_theme %}{{ i }}{% if t == 'Night' %}<span class="star-sparkle">✦</span>{% endif %}{% endif %}{% endfor %}</span>
+          <span id="theme-icon-display">{% for t,i,cls in _themes %}{% if t == bg_theme %}<span class="{{ cls }}">{{ i }}</span>{% if t == 'Night' %}<span class="star-sparkle">✦</span>{% endif %}{% endif %}{% endfor %}</span>
           <span id="theme-label-display">{{ bg_theme }}</span>
           <span class="ms-arrow">▾</span>
         </div>
         <div class="theme-picker-panel" id="theme-picker-panel" style="display:none">
-          {% for t, icon in _themes %}
+          {% for t, icon, cls in _themes %}
           <div class="theme-picker-opt {% if t == bg_theme %}active{% endif %}" onclick="selectTheme('{{ t }}')">
-            <span>{{ icon }}{% if t == 'Night' %}<span class="star-sparkle">✦</span>{% endif %}</span>
+            <span><span class="{{ cls }}">{{ icon }}</span>{% if t == 'Night' %}<span class="star-sparkle">✦</span>{% endif %}</span>
             <span>{{ t }}</span>
           </div>
           {% endfor %}
