@@ -243,7 +243,11 @@ body {
 @keyframes tiSunset   { 0%,100%{transform:scale(1)} 50%{transform:scale(1.18)} }
 
 /* ---- Content ---- */
-.content { padding: 26px 26px 52px; flex: 1; }
+@keyframes pageContentIn {
+  from { opacity: 0; filter: blur(14px); transform: scale(1.04); }
+  to   { opacity: 1; filter: blur(0);    transform: scale(1); }
+}
+.content { padding: 26px 26px 52px; flex: 1; animation: pageContentIn 0.5s cubic-bezier(0.22,1,0.36,1) both; }
 
 /* ---- Page header ---- */
 .page-header {

@@ -158,6 +158,13 @@
 .module-launch.active:hover { box-shadow: 0 6px 28px rgba(99,91,255,0.6); transform: translateY(-1px); }
 .module-launch.soon { background: rgba(255,255,255,0.07); color: var(--text-faint); border: 1px solid var(--border); cursor: not-allowed; }
 
+/* ── Card zoom-exit transition ───────────────────────── */
+@keyframes cardZoomExit {
+  0%   { transform: scale(1);    filter: blur(0px);  opacity: 1; box-shadow: 0 0 0 rgba(99,91,255,0); }
+  35%  { transform: scale(1.55); filter: blur(1px);  opacity: 1; box-shadow: 0 0 80px rgba(99,91,255,0.7), 0 0 120px rgba(0,212,255,0.4); }
+  100% { transform: scale(4.5);  filter: blur(28px); opacity: 0; }
+}
+
 /* ── Theme picker (fixed top-right) ─────────────────── */
 .launcher-topbar {
   position: fixed; top: 16px; right: 20px; z-index: 200;
@@ -235,5 +242,36 @@
   initBackground({ animate: {{ 'true' if bg_animate else 'false' }}, autoTheme: {{ 'true' if bg_auto else 'false' }}, theme: '{{ bg_theme }}' });
 </script>
 {% block scripts %}{% endblock %}
+<script>
+/* Module launch zoom-exit transition */
+document.querySelectorAll('.module-launch.active').forEach(function(btn) {
+  btn.addEventListener('click', function(e) {
+    e.preventDefault();
+    var url = btn.href;
+    var card = btn.closest('.module-card');
+
+    /* Fade out header + sibling cards */
+    var header = document.querySelector('.launcher-header');
+    var topbar = document.querySelector('.launcher-topbar');
+    [header, topbar].forEach(function(el) {
+      if (el) { el.style.transition = 'opacity 0.38s ease'; el.style.opacity = '0'; }
+    });
+    document.querySelectorAll('.module-card').forEach(function(c) {
+      if (c !== card) { c.style.transition = 'opacity 0.38s ease'; c.style.opacity = '0'; }
+    });
+
+    /* Zoom the clicked card */
+    if (card) {
+      card.style.animation = 'none';
+      card.offsetHeight; /* force reflow */
+      card.style.zIndex = '50';
+      card.style.position = 'relative';
+      card.style.animation = 'cardZoomExit 0.58s cubic-bezier(0.4,0,0.8,1) forwards';
+    }
+
+    setTimeout(function() { window.location.href = url; }, 560);
+  });
+});
+</script>
 </body>
 </html>
