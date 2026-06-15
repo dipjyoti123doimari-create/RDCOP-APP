@@ -394,6 +394,31 @@ def get_all_settings():
 
 
 # ---------------------------------------------------------------------------
+# 5b. MODULE-SCOPED SETTINGS  (prefix = "{module}.")
+# ---------------------------------------------------------------------------
+# Every module must use these instead of get_setting/set_setting so that keys
+# from different modules never collide in the shared app_settings table.
+# Convention: module IDs are lowercase short codes — "id", "tp", "btrtp", "jldc".
+#
+# Example: database.get_module_setting("tp", "target_qty", 0)
+#          → reads key  "tp.target_qty"
+
+def get_module_setting(module: str, key: str, default=None):
+    """Read one module-scoped setting.  Key stored as '{module}.{key}'."""
+    return get_setting(f"{module}.{key}", default)
+
+
+def set_module_setting(module: str, key: str, value):
+    """Save one module-scoped setting.  Key stored as '{module}.{key}'."""
+    set_setting(f"{module}.{key}", str(value))
+
+
+def set_module_settings_bulk(module: str, mapping: dict):
+    """Save many module-scoped settings at once (one DB round-trip)."""
+    set_settings_bulk({f"{module}.{k}": v for k, v in mapping.items()})
+
+
+# ---------------------------------------------------------------------------
 # 6. LOG HELPERS
 # ---------------------------------------------------------------------------
 def log_master_data_change(action_type, employee_code,

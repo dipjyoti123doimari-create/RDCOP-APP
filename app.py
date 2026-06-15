@@ -53,6 +53,19 @@ def _ss(key, val):
     _S[key] = val
 
 
+# ── Module-scoped session state ───────────────────────────────────────────────
+# New modules MUST use _ms/_mss instead of _s/_ss so keys never collide.
+# Keys are stored as "{module}.{key}" inside the shared _S dict.
+# Example:  _mss("tp", "results", df)  →  _S["tp.results"] = df
+#           _ms("tp", "results")       →  _S.get("tp.results")
+def _ms(module: str, key: str, default=None):
+    return _S.get(f"{module}.{key}", default)
+
+
+def _mss(module: str, key: str, val):
+    _S[f"{module}.{key}"] = val
+
+
 # ── Boot ─────────────────────────────────────────────────────────────────────
 database.init_db()
 
