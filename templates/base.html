@@ -58,7 +58,7 @@
   <div class="main">
     <div class="topbar">
       <span class="topbar-label">Theme</span>
-      {% set _ti = {'Pre-dawn':'🌑','Sunrise':'🌅','Daytime':'☀️','Dusk':'🌆','Sunset':'🌇','Night':'🌙✨⭐💫✨⭐✨'} %}
+      {% set _ti = {'Pre-dawn':'🌑','Sunrise':'🌅','Daytime':'☀️','Dusk':'🌆','Sunset':'🌇','Night':'🌙✨'} %}
       <select id="topbar-theme">
         {% for t in ['Pre-dawn','Sunrise','Daytime','Dusk','Sunset','Night'] %}
         <option value="{{ t }}" {% if t == bg_theme %}selected{% endif %}>{{ _ti[t] }} {{ t }}</option>
