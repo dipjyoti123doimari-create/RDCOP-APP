@@ -134,6 +134,70 @@ def _scheduled_email_job():
             f"ERROR {_dt.now():%Y-%m-%d %H:%M} — {exc}")
 
 
+def _build_tp_excel(plant_rows, location_rows) -> bytes:
+    """Build the RDC-TP report workbook (Plant + Location sheets) as bytes."""
+    plant_df = pd.DataFrame(plant_rows)[[
+        "lookup_code","plant_name","exco_location","business_head",
+        "plant_manager","mixer_theo_cap","total_quantity","total_time_min",
+        "throughput_pct","batch_count"
+    ]].rename(columns={
+        "lookup_code":"Plant Code","plant_name":"Plant","exco_location":"Exco Location",
+        "business_head":"Business Head","plant_manager":"Plant Manager",
+        "mixer_theo_cap":"Mixer Capacity","total_quantity":"Total Qty",
+        "total_time_min":"Total Time (min)","throughput_pct":"Throughput %",
+        "batch_count":"Batches",
+    })
+    loc_df = pd.DataFrame(location_rows)[[
+        "exco_location","plant_count","total_quantity","avg_throughput_pct"
+    ]].rename(columns={
+        "exco_location":"Exco Location","plant_count":"Plants",
+        "total_quantity":"Total Qty","avg_throughput_pct":"Avg Throughput %",
+    })
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        plant_df.to_excel(writer, sheet_name="Plant Throughput", index=False)
+        loc_df.to_excel(writer, sheet_name="Location Throughput", index=False)
+    buf.seek(0)
+    return buf.read()
+
+
+def _tp_scheduled_email_job():
+    """Fires on 1st of each month — emails the previous month's TP report."""
+    if database.get_module_setting("tp", "email_schedule_enabled", "false") != "true":
+        return
+    today      = _date.today()
+    first_this = today.replace(day=1)
+    last_prev  = first_this - timedelta(days=1)
+    first_prev = last_prev.replace(day=1)
+    fd, td     = str(first_prev), str(last_prev)
+    try:
+        month, year = first_prev.month, first_prev.year
+        plant_rows, loc_rows, _w = tp_calculator.run_tp_calculation(
+            month, year, from_date=fd, to_date=td)
+        if not plant_rows:
+            database.set_module_setting("tp", "email_schedule_last_status",
+                f"FAIL {_dt.now():%Y-%m-%d %H:%M} — no data for {fd} → {td}")
+            return
+        import calendar
+        label   = f"{calendar.month_name[month]} {year}"
+        subject = f"RDC-TP Plant Throughput Report — {label}"
+        body    = (f"Dear Team,\n\nPlease find attached the Plant Throughput Report "
+                   f"for {label}.\n\nRegards,\nRDC Operations")
+        res = email_helper.send_report_email(
+            to_emails=database.get_module_setting("tp", "email_schedule_to", ""),
+            cc_emails=database.get_module_setting("tp", "email_schedule_cc", ""),
+            subject=subject, body=body,
+            attachment_bytes=_build_tp_excel(plant_rows, loc_rows),
+            attachment_name=f"RDC_TP_{year}_{month:02d}.xlsx",
+        )
+        status = (f"OK {_dt.now():%Y-%m-%d %H:%M} — sent" if res["success"]
+                  else f"FAIL {_dt.now():%Y-%m-%d %H:%M} — {res.get('error','')}")
+        database.set_module_setting("tp", "email_schedule_last_status", status)
+    except Exception as exc:
+        database.set_module_setting("tp", "email_schedule_last_status",
+            f"ERROR {_dt.now():%Y-%m-%d %H:%M} — {exc}")
+
+
 def _start_scheduler():
     global _scheduler
     sched_time = database.get_setting("email_schedule_time", "08:00")
@@ -149,6 +213,15 @@ def _start_scheduler():
     _scheduler.add_job(_retention_job,
                        CronTrigger(hour=0, minute=5),
                        id="oracle_retention", replace_existing=True)
+    # RDC-TP monthly report (own schedule time).
+    tp_time = database.get_module_setting("tp", "email_schedule_time", "08:00")
+    try:
+        th, tm = map(int, tp_time.split(":"))
+    except Exception:
+        th, tm = 8, 0
+    _scheduler.add_job(_tp_scheduled_email_job,
+                       CronTrigger(day=1, hour=th, minute=tm),
+                       id="tp_monthly_email", replace_existing=True)
     _scheduler.start()
 
 
@@ -704,13 +777,22 @@ def tp_settings():
     email_configured = bool(smtp.get("host") and smtp.get("sender"))
     ora_configured   = oracle_connector.is_configured()
     last_sync        = google_sheets.get_tp_last_sync_info()
+    # Monthly-email schedule (TP-scoped)
+    sched_enabled     = database.get_module_setting("tp", "email_schedule_enabled", "false") == "true"
+    sched_time        = database.get_module_setting("tp", "email_schedule_time", "08:00")
+    sched_to          = database.get_module_setting("tp", "email_schedule_to", "")
+    sched_cc          = database.get_module_setting("tp", "email_schedule_cc", "")
+    sched_last_status = database.get_module_setting("tp", "email_schedule_last_status", "")
     ctx = _tp_ctx()
     ctx["active_page"] = "settings"
     return render_template("tp_settings.html",
                            sheet_id=sheet_id, worksheet=worksheet,
                            plant_col=plant_col, batch_col=batch_col, time_col=time_col,
                            smtp=smtp, email_configured=email_configured,
-                           ora_configured=ora_configured, last_sync=last_sync, **ctx)
+                           ora_configured=ora_configured, last_sync=last_sync,
+                           sched_enabled=sched_enabled, sched_time=sched_time,
+                           sched_to=sched_to, sched_cc=sched_cc,
+                           sched_last_status=sched_last_status, **ctx)
 
 
 @app.route("/tp/settings/save-oracle-cols", methods=["POST"])
@@ -734,6 +816,35 @@ def tp_save_worksheet():
         database.set_module_setting("tp", "gsheet_id", google_sheets.extract_sheet_id(sheet_id))
     flash("Sheet settings saved.", "success")
     return redirect(url_for("tp_settings", m="sheet"))
+
+
+@app.route("/tp/settings/save-schedule", methods=["POST"])
+def tp_save_email_schedule():
+    sched_time = request.form.get("sched_time", "08:00").strip()
+    database.set_module_settings_bulk("tp", {
+        "email_schedule_time": sched_time,
+        "email_schedule_to":   request.form.get("sched_to", "").strip(),
+        "email_schedule_cc":   request.form.get("sched_cc", "").strip(),
+    })
+    if _scheduler:
+        try:
+            h, m = map(int, sched_time.split(":"))
+        except Exception:
+            h, m = 8, 0
+        _scheduler.reschedule_job("tp_monthly_email",
+                                  trigger=CronTrigger(day=1, hour=h, minute=m))
+    flash("TP schedule settings saved.", "success")
+    return redirect(url_for("tp_settings", m="schedule"))
+
+
+@app.route("/tp/settings/toggle-schedule", methods=["POST"])
+def tp_toggle_email_schedule():
+    current = database.get_module_setting("tp", "email_schedule_enabled", "false")
+    new_val = "false" if current == "true" else "true"
+    database.set_module_setting("tp", "email_schedule_enabled", new_val)
+    flash(f"RDC-TP scheduled monthly report {'enabled' if new_val == 'true' else 'disabled'}.", "success")
+    return redirect(url_for("tp_settings", m="schedule"))
+
 
 @app.route("/btrtp")
 def page_btrtp():
@@ -1402,10 +1513,15 @@ def clear_cache():
 @app.route("/api/bg-settings", methods=["POST"])
 def api_bg_settings():
     data = request.get_json(silent=True) or {}
-    database.set_settings_bulk({
-        "bg_auto_theme":   "true" if data.get("auto_theme") else "false",
-        "bg_manual_theme": data.get("manual_theme", "Daytime"),
-    })
+    to_save = {}
+    if "auto_theme" in data:
+        to_save["bg_auto_theme"] = "true" if data.get("auto_theme") else "false"
+    if "manual_theme" in data:
+        to_save["bg_manual_theme"] = data.get("manual_theme", "Daytime")
+    if "animate" in data:
+        to_save["bg_animate"] = "true" if data.get("animate") else "false"
+    if to_save:
+        database.set_settings_bulk(to_save)
     return jsonify({"ok": True})
 
 

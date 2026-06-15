@@ -34,13 +34,25 @@
     <span class="settings-tile-arrow">›</span>
   </div>
 
-  <!-- Email (shared) -->
+  <!-- Email (shared SMTP) -->
   <div class="settings-tile" onclick="openModal('modal-email')">
     <div class="settings-tile-icon">✉️</div>
     <div class="settings-tile-info">
       <div class="settings-tile-title">Email (SMTP)</div>
       <div class="settings-tile-status {% if email_configured %}status-ok{% else %}status-warn{% endif %}">
-        {% if email_configured %}✅ Configured — {{ smtp.sender }}{% else %}⚠️ Not configured{% endif %}
+        {% if email_configured %}✅ Shared sender — {{ smtp.sender }}{% else %}⚠️ Not configured{% endif %}
+      </div>
+    </div>
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
+  <!-- Scheduled Monthly Report (TP-specific receiver) -->
+  <div class="settings-tile" onclick="openModal('modal-schedule')">
+    <div class="settings-tile-icon">📅</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Scheduled Monthly Report</div>
+      <div class="settings-tile-status {% if sched_enabled %}status-ok{% else %}status-warn{% endif %}">
+        {% if sched_enabled %}✅ Enabled · {{ sched_time }} on 1st{% if sched_to %} → {{ sched_to[:30] }}{% if sched_to|length > 30 %}…{% endif %}{% endif %}{% else %}⏸ Disabled{% endif %}
       </div>
     </div>
     <span class="settings-tile-arrow">›</span>
@@ -104,13 +116,58 @@
       <button class="modal-close" onclick="closeModal('modal-email')">✕</button>
     </div>
     <div class="modal-body">
-      <p class="caption" style="margin-bottom:12px">RDC-TP shares the same SMTP setup as RDC-I&amp;D. To change the sender, App Password or schedule, open the RDC-I&amp;D settings.</p>
+      <p class="caption" style="margin-bottom:12px">The <strong>sender mailbox &amp; App Password are shared</strong> across all modules (one company sender). Only the <strong>recipients</strong> differ per module — set RDC-TP's recipients in <em>Scheduled Monthly Report</em> below, or per-send on the Reports page. To change the shared sender, open RDC-I&amp;D settings.</p>
       {% if email_configured %}
-      <div class="alert alert-success" style="margin-bottom:14px">✅ Configured — sending as <strong>{{ smtp.sender }}</strong></div>
+      <div class="alert alert-success" style="margin-bottom:14px">✅ Shared sender configured — <strong>{{ smtp.sender }}</strong></div>
       {% else %}
       <div class="alert alert-warning" style="margin-bottom:14px">⚠️ SMTP not configured yet.</div>
       {% endif %}
-      <a href="{{ url_for('page_settings') }}" class="btn btn-primary">⚙️ Open RDC-I&amp;D Email Settings →</a>
+      <a href="{{ url_for('page_settings') }}" class="btn btn-primary">⚙️ Open shared Email (SMTP) settings →</a>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════
+     MODAL: Scheduled Monthly Report (TP-specific recipients)
+══════════════════════════════════════════════════════════════ -->
+<div id="modal-schedule" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-schedule')">
+  <div class="modal-box" style="max-width:580px">
+    <div class="modal-header">
+      <span>📅 Scheduled Monthly Report — RDC-TP</span>
+      <button class="modal-close" onclick="closeModal('modal-schedule')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="caption" style="margin-bottom:14px">Automatically emails the <strong>previous month's</strong> Plant Throughput report on the <strong>1st of every month</strong>. Recipients here are <strong>specific to RDC-TP</strong> (separate from RDC-I&amp;D); the sender mailbox is the shared one.</p>
+
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px">
+        <form method="POST" action="{{ url_for('tp_toggle_email_schedule') }}" style="display:inline">
+          <button type="submit" class="btn {% if sched_enabled %}btn-primary{% else %}btn-secondary{% endif %}">
+            {% if sched_enabled %}✅ Scheduler ON — click to disable{% else %}⏸ Scheduler OFF — click to enable{% endif %}
+          </button>
+        </form>
+      </div>
+      {% if sched_last_status %}
+      <div class="alert alert-info" style="margin-bottom:14px">Last run: {{ sched_last_status }}</div>
+      {% endif %}
+
+      <form method="POST" action="{{ url_for('tp_save_email_schedule') }}">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Send Time (on 1st of month)</label>
+            <input type="time" name="sched_time" value="{{ sched_time }}">
+          </div>
+          <div class="form-group">
+            <label>To (comma-separated)</label>
+            <input type="text" name="sched_to" value="{{ sched_to }}" placeholder="plant-head@company.com">
+          </div>
+          <div class="form-group">
+            <label>CC (optional)</label>
+            <input type="text" name="sched_cc" value="{{ sched_cc }}" placeholder="ops@company.com">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">💾 Save Schedule Settings</button>
+      </form>
     </div>
   </div>
 </div>

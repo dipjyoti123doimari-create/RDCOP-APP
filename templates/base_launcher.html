@@ -216,6 +216,10 @@
         <span>{{ t }}</span>
       </div>
       {% endfor %}
+      <div class="theme-picker-foot">
+        <label class="theme-toggle"><input type="checkbox" id="bg-auto-cb" {% if bg_auto %}checked{% endif %} onchange="toggleBgAuto(this)"> Auto (by time of day)</label>
+        <label class="theme-toggle"><input type="checkbox" id="bg-animate-cb" {% if bg_animate %}checked{% endif %} onchange="toggleBgAnimate(this)"> Animation</label>
+      </div>
     </div>
   </div>
   <select id="topbar-theme" style="display:none">

@@ -275,6 +275,30 @@ function selectTheme(t) {
   document.querySelectorAll('.theme-picker-opt').forEach(function(o) {
     o.classList.toggle('active', o.getAttribute('onclick') === "selectTheme('" + t + "')");
   });
+  /* Picking a theme means manual mode — turn Auto off. */
+  var autoCb = document.getElementById('bg-auto-cb');
+  if (autoCb) autoCb.checked = false;
   /* Fire the hidden select so existing API call triggers */
   if (sel) { sel.value = t; sel.dispatchEvent(new Event('change')); }
+}
+
+/* Auto-theme + animation toggles — full background control from the top-right
+   picker (replaces the old Settings → Animated Background modal). */
+function toggleBgAuto(cb) {
+  var on = cb.checked;
+  var label = document.getElementById('theme-label-display');
+  var t = label ? label.textContent.trim() : 'Daytime';
+  if (window.setBgTheme) setBgTheme(t, on);
+  fetch('/api/bg-settings', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ auto_theme: on })
+  });
+}
+function toggleBgAnimate(cb) {
+  var on = cb.checked;
+  if (window.setBgAnimate) setBgAnimate(on);
+  fetch('/api/bg-settings', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ animate: on })
+  });
 }

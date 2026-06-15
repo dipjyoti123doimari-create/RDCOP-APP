@@ -10,19 +10,6 @@
 <!-- ── Settings cards grid ─────────────────────────────────────── -->
 <div class="settings-card-grid">
 
-  <!-- Background -->
-  <div class="settings-tile" onclick="openModal('modal-bg')">
-    <div class="settings-tile-icon">🎨</div>
-    <div class="settings-tile-info">
-      <div class="settings-tile-title">Animated Background</div>
-      <div class="settings-tile-status">
-        {% if bg_auto %}Auto theme · {% else %}Manual: {{ bg_theme }} · {% endif %}
-        {% if bg_animate %}Animation ON{% else %}Animation OFF{% endif %}
-      </div>
-    </div>
-    <span class="settings-tile-arrow">›</span>
-  </div>
-
   <!-- SMTP -->
   <div class="settings-tile" onclick="openModal('modal-smtp')">
     <div class="settings-tile-icon">✉️</div>
@@ -76,50 +63,8 @@
 </div>
 
 
-<!-- ══════════════════════════════════════════════════════════════
-     MODAL: Animated Background
-══════════════════════════════════════════════════════════════ -->
-<div id="modal-bg" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-bg')">
-  <div class="modal-box">
-    <div class="modal-header">
-      <span>🎨 Animated Background</span>
-      <button class="modal-close" onclick="closeModal('modal-bg')">✕</button>
-    </div>
-    <div class="modal-body">
-      <p class="caption" style="margin-bottom:14px">Stripe-inspired gradient blob background. Reacts to your mouse and can follow your system clock.</p>
-      <form method="POST" action="{{ url_for('save_bg_settings') }}">
-        <div class="toggle-row">
-          <input type="checkbox" class="toggle" name="auto_theme" id="auto-toggle"
-                 {% if bg_auto %}checked{% endif %}
-                 onchange="document.getElementById('manual-theme-row').style.display=this.checked?'none':'flex'">
-          <div class="toggle-text">
-            <span class="toggle-label">Use automatic theme based on system time</span>
-            <span class="toggle-sub">04–06 Pre-dawn · 06–09 Sunrise · 09–17 Daytime · 17–18:30 Dusk · 18:30–20 Sunset · 20–04 Night</span>
-          </div>
-        </div>
-        <div class="toggle-row" id="manual-theme-row" style="{% if bg_auto %}display:none{% endif %}">
-          <div class="form-group" style="flex:1;margin-bottom:0">
-            <label>Manual Theme</label>
-            {% set _ti = {'Pre-dawn':'🌑','Sunrise':'🌅','Daytime':'☀️','Dusk':'🌆','Sunset':'🌇','Night':'🌙✨'} %}
-            <select name="manual_theme">
-              {% for t in ['Pre-dawn','Sunrise','Daytime','Dusk','Sunset','Night'] %}
-              <option value="{{ t }}" {% if t == bg_theme %}selected{% endif %}>{{ _ti[t] }} {{ t }}</option>
-              {% endfor %}
-            </select>
-          </div>
-        </div>
-        <div class="toggle-row">
-          <input type="checkbox" class="toggle" name="animate" {% if bg_animate %}checked{% endif %}>
-          <div class="toggle-text">
-            <span class="toggle-label">Background animation</span>
-            <span class="toggle-sub">Turn off for a static gradient snapshot (no moving blobs)</span>
-          </div>
-        </div>
-        <button type="submit" class="btn btn-primary btn-sm">💾 Save Background Settings</button>
-      </form>
-    </div>
-  </div>
-</div>
+<!-- Animated Background is now controlled entirely from the top-right theme
+     icon (theme · Auto · Animation) on every page — no Settings tile needed. -->
 
 
 <!-- ══════════════════════════════════════════════════════════════
@@ -323,13 +268,6 @@ if (cacheForm) {
   cacheForm.addEventListener('submit', function() {
     document.getElementById('cache-btn').disabled = true;
     document.getElementById('cache-loading').classList.add('active');
-  });
-}
-
-var autoToggle = document.getElementById('auto-toggle');
-if (autoToggle) {
-  autoToggle.addEventListener('change', function() {
-    document.getElementById('manual-theme-row').style.display = this.checked ? 'none' : 'flex';
   });
 }
 

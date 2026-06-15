@@ -217,6 +217,16 @@ body {
 }
 .theme-picker-opt:hover { background: rgba(99,91,255,0.15); color: var(--text); }
 .theme-picker-opt.active { color: var(--text); font-weight: 600; }
+/* Auto / Animation toggles inside the picker (full background control) */
+.theme-picker-foot {
+  border-top: 1px solid var(--border); padding: 8px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.theme-toggle {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  font-size: 12px; color: var(--text-muted); white-space: nowrap;
+}
+.theme-toggle input { accent-color: var(--accent, #635bff); cursor: pointer; }
 /* theme icon animations */
 .star-sparkle {
   display: inline-block; font-size: 9px; color: #ffe97a;
