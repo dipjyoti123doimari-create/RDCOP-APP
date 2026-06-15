@@ -122,8 +122,8 @@ body {
 }
 
 .sidebar-name-sub {
-  font-family: 'Pinyon Script', cursive;
-  font-size: 19px; font-weight: 400; letter-spacing: 0.04em;
+  font-family: 'Meie Script', cursive;
+  font-size: 18px; font-weight: 400; letter-spacing: 0.03em;
   text-align: center;
   color: rgba(0, 212, 255, 0.80);
   animation: subGlow 3s ease-in-out infinite;
