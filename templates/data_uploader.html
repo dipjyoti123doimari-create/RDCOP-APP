@@ -61,160 +61,163 @@
     </form>
   </div>
 
-  <!-- Master data + Manage Employees side by side -->
-  <div class="master-split">
-
-    <!-- Left: current master data table -->
-    <div class="card">
-      <div class="section-title">👥 Current Master Data</div>
-      {% if m_count == 0 %}
-      <div class="glass-card">
-        <h3>No data yet</h3>
-        <p>Enter your Sheet ID above and click <strong>Sync Now</strong> to load employees.</p>
-      </div>
-      {% else %}
-      <p class="caption" style="margin-bottom:10px">Showing first 500 of <strong>{{ m_count | format_int }}</strong> employees</p>
-      <div class="table-wrapper">
-        <table>
-          <thead><tr>{% for c in master_cols %}<th>{{ c }}</th>{% endfor %}</tr></thead>
-          <tbody>
-            {% for row in master_rows %}
-            <tr>{% for c in master_cols %}<td>{{ row[c] }}</td>{% endfor %}</tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% endif %}
+  <!-- Current Master Data (full width) -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:10px;flex-wrap:wrap">
+      <div class="section-title" style="margin:0">👥 Current Master Data</div>
+      <button type="button" class="btn btn-primary btn-sm" onclick="openManageModal('add')">✏️ Manage Employees</button>
     </div>
-
-    <!-- Right: manage employees panel -->
-    <div class="card" style="align-self:start">
-      <div class="section-title">✏️ Manage Employees</div>
-      <div class="alert alert-warning" style="font-size:13px">Manual changes can be <strong>overwritten</strong> on the next sync.</div>
-
-      <div class="tabs" style="margin-top:14px">
-      <button class="tab-btn active" data-tabset="emp" data-tab="add">➕ Add</button>
-      <button class="tab-btn" data-tabset="emp" data-tab="edit">✏️ Edit</button>
-      <button class="tab-btn" data-tabset="emp" data-tab="delete">🗑️ Delete</button>
-      <button class="tab-btn" data-tabset="emp" data-tab="log">📜 Change Log</button>
+    {% if m_count == 0 %}
+    <div class="glass-card">
+      <h3>No data yet</h3>
+      <p>Enter your Sheet ID above and click <strong>Sync Now</strong> to load employees.</p>
     </div>
+    {% else %}
+    <p class="caption" style="margin-bottom:10px">Showing first 500 of <strong>{{ m_count | format_int }}</strong> employees</p>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr>{% for c in master_cols %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for row in master_rows %}
+          <tr>{% for c in master_cols %}<td>{{ row[c] }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
 
-    <!-- Add -->
-    <div class="tab-panel active" data-tabpanel="emp" data-tab="add">
-      <form method="POST" action="{{ url_for('add_employee') }}">
-        <div class="form-grid">
-          <div class="form-group"><label>Employee Code *</label><input type="text" name="code" required></div>
-          <div class="form-group"><label>Employee Name</label><input type="text" name="name"></div>
-          <div class="form-group"><label>Designation</label><input type="text" name="designation"></div>
-          <div class="form-group">
-            <label>Category</label>
-            <select name="category">
-              {% for c in categories %}<option>{{ c }}</option>{% endfor %}
-            </select>
+  <!-- ── Manage Employees Modal ─────────────────────── -->
+  <div id="manage-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeManageModal()">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span>✏️ Manage Employees</span>
+        <button type="button" class="modal-close" onclick="closeManageModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning" style="margin-bottom:14px;font-size:13px">Manual changes can be <strong>overwritten</strong> on the next Google Sheets sync.</div>
+
+        <div class="tabs">
+          <button class="tab-btn active" data-tabset="emp" data-tab="add">➕ Add</button>
+          <button class="tab-btn" data-tabset="emp" data-tab="edit">✏️ Edit</button>
+          <button class="tab-btn" data-tabset="emp" data-tab="delete">🗑️ Delete</button>
+          <button class="tab-btn" data-tabset="emp" data-tab="log">📜 Change Log</button>
+        </div>
+
+        <!-- Add -->
+        <div class="tab-panel active" data-tabpanel="emp" data-tab="add">
+          <form method="POST" action="{{ url_for('add_employee') }}">
+            <div class="form-grid">
+              <div class="form-group"><label>Employee Code *</label><input type="text" name="code" required></div>
+              <div class="form-group"><label>Employee Name</label><input type="text" name="name"></div>
+              <div class="form-group"><label>Designation</label><input type="text" name="designation"></div>
+              <div class="form-group">
+                <label>Category</label>
+                <select name="category">{% for c in categories %}<option>{{ c }}</option>{% endfor %}</select>
+              </div>
+              <div class="form-group"><label>Plant</label><input type="text" name="plant"></div>
+              <div class="form-group"><label>Plant Code</label><input type="text" name="plant_code"></div>
+            </div>
+            <button type="submit" class="btn btn-primary">➕ Add Employee</button>
+          </form>
+        </div>
+
+        <!-- Edit -->
+        <div class="tab-panel" data-tabpanel="emp" data-tab="edit">
+          {% if not codes %}
+          <div class="glass-card"><h3>No employees</h3><p>Add or sync employees first.</p></div>
+          {% else %}
+          <form method="GET" action="{{ url_for('page_data_uploader') }}" id="edit-select-form">
+            <div class="form-group">
+              <label>Select Employee Code</label>
+              <select name="edit_code" onchange="document.getElementById('edit-select-form').submit()">
+                <option value="">— select —</option>
+                {% for c in codes %}<option value="{{ c }}" {% if edit_emp and edit_emp.employee_code == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+              </select>
+            </div>
+          </form>
+          {% if edit_emp %}
+          <form method="POST" action="{{ url_for('update_employee', code=edit_emp.employee_code) }}" style="margin-top:14px">
+            <div class="form-grid">
+              <div class="form-group"><label>Employee Name</label><input type="text" name="name" value="{{ edit_emp.employee_name or '' }}"></div>
+              <div class="form-group"><label>Designation</label><input type="text" name="designation" value="{{ edit_emp.designation or '' }}"></div>
+              <div class="form-group">
+                <label>Category</label>
+                <select name="category">{% for cat in categories %}<option {% if cat == edit_emp.category %}selected{% endif %}>{{ cat }}</option>{% endfor %}</select>
+              </div>
+              <div class="form-group"><label>Plant</label><input type="text" name="plant" value="{{ edit_emp.plant or '' }}"></div>
+              <div class="form-group"><label>Plant Code</label><input type="text" name="plant_code" value="{{ edit_emp.plant_code or '' }}"></div>
+            </div>
+            <button type="submit" class="btn btn-primary">💾 Save Changes</button>
+          </form>
+          {% endif %}
+          {% endif %}
+        </div>
+
+        <!-- Delete -->
+        <div class="tab-panel" data-tabpanel="emp" data-tab="delete">
+          {% if not codes %}
+          <div class="glass-card"><h3>No employees</h3><p>Nothing to delete yet.</p></div>
+          {% else %}
+          <form method="GET" action="{{ url_for('page_data_uploader') }}" id="del-select-form">
+            <div class="form-group">
+              <label>Select Employee Code</label>
+              <select name="del_code" onchange="document.getElementById('del-select-form').submit()">
+                <option value="">— select —</option>
+                {% for c in codes %}<option value="{{ c }}" {% if del_emp and del_emp.employee_code == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+              </select>
+            </div>
+          </form>
+          {% if del_emp %}
+          <div class="table-wrapper" style="margin:12px 0">
+            <table>
+              <thead><tr><th>Code</th><th>Name</th><th>Designation</th><th>Category</th><th>Plant</th><th>Plant Code</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>{{ del_emp.employee_code }}</td><td>{{ del_emp.employee_name }}</td>
+                  <td>{{ del_emp.designation }}</td><td>{{ del_emp.category }}</td>
+                  <td>{{ del_emp.plant }}</td><td>{{ del_emp.plant_code }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-          <div class="form-group"><label>Plant</label><input type="text" name="plant"></div>
-          <div class="form-group"><label>Plant Code</label><input type="text" name="plant_code"></div>
+          <form method="POST" action="{{ url_for('delete_employee', code=del_emp.employee_code) }}"
+                onsubmit="return confirm('Delete {{ del_emp.employee_code }}? This cannot be undone.')">
+            <button type="submit" class="btn btn-danger">🗑️ Delete Employee</button>
+          </form>
+          {% endif %}
+          {% endif %}
         </div>
-        <button type="submit" class="btn btn-primary">➕ Add Employee</button>
-      </form>
-    </div>
 
-    <!-- Edit -->
-    <div class="tab-panel" data-tabpanel="emp" data-tab="edit">
-      {% if not codes %}
-      <div class="glass-card"><h3>No employees</h3><p>Add or sync employees first.</p></div>
-      {% else %}
-      <form method="GET" action="{{ url_for('page_data_uploader') }}" id="edit-select-form">
-        <div class="form-group">
-          <label>Select Employee Code</label>
-          <select name="edit_code" onchange="document.getElementById('edit-select-form').submit()">
-            <option value="">— select —</option>
-            {% for c in codes %}<option value="{{ c }}" {% if edit_emp and edit_emp.employee_code == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
-          </select>
-        </div>
-      </form>
-      {% if edit_emp %}
-      <form method="POST" action="{{ url_for('update_employee', code=edit_emp.employee_code) }}" style="margin-top:14px">
-        <div class="form-grid">
-          <div class="form-group"><label>Employee Name</label><input type="text" name="name" value="{{ edit_emp.employee_name or '' }}"></div>
-          <div class="form-group"><label>Designation</label><input type="text" name="designation" value="{{ edit_emp.designation or '' }}"></div>
-          <div class="form-group">
-            <label>Category</label>
-            <select name="category">
-              {% for cat in categories %}<option {% if cat == edit_emp.category %}selected{% endif %}>{{ cat }}</option>{% endfor %}
-            </select>
+        <!-- Change log -->
+        <div class="tab-panel" data-tabpanel="emp" data-tab="log">
+          {% if not log_rows %}
+          <div class="glass-card"><h3>No changes yet</h3><p>Add, edit or delete an employee to see the log here.</p></div>
+          {% else %}
+          <p class="caption" style="margin-bottom:10px">{{ log_rows | length }} change(s), newest first</p>
+          <div class="table-wrapper">
+            <table>
+              <thead><tr><th>Action</th><th>Emp Code</th><th>Old Values</th><th>New Values</th><th>When</th><th>By</th></tr></thead>
+              <tbody>
+                {% for r in log_rows %}
+                <tr>
+                  <td>{{ r.action_type }}</td><td>{{ r.employee_code }}</td>
+                  <td style="font-size:11px;max-width:160px;word-break:break-all">{{ r.old_value_json }}</td>
+                  <td style="font-size:11px;max-width:160px;word-break:break-all">{{ r.new_value_json }}</td>
+                  <td>{{ r.changed_at }}</td><td>{{ r.changed_by }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
           </div>
-          <div class="form-group"><label>Plant</label><input type="text" name="plant" value="{{ edit_emp.plant or '' }}"></div>
-          <div class="form-group"><label>Plant Code</label><input type="text" name="plant_code" value="{{ edit_emp.plant_code or '' }}"></div>
+          {% endif %}
         </div>
-        <button type="submit" class="btn btn-primary">💾 Save Changes</button>
-      </form>
-      {% endif %}
-      {% endif %}
-    </div>
 
-    <!-- Delete -->
-    <div class="tab-panel" data-tabpanel="emp" data-tab="delete">
-      {% if not codes %}
-      <div class="glass-card"><h3>No employees</h3><p>Nothing to delete yet.</p></div>
-      {% else %}
-      <form method="GET" action="{{ url_for('page_data_uploader') }}" id="del-select-form">
-        <div class="form-group">
-          <label>Select Employee Code</label>
-          <select name="del_code" onchange="document.getElementById('del-select-form').submit()">
-            <option value="">— select —</option>
-            {% for c in codes %}<option value="{{ c }}" {% if del_emp and del_emp.employee_code == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
-          </select>
-        </div>
-      </form>
-      {% if del_emp %}
-      <div class="table-wrapper" style="margin:12px 0">
-        <table>
-          <thead><tr><th>Code</th><th>Name</th><th>Designation</th><th>Category</th><th>Plant</th><th>Plant Code</th></tr></thead>
-          <tbody>
-            <tr>
-              <td>{{ del_emp.employee_code }}</td><td>{{ del_emp.employee_name }}</td>
-              <td>{{ del_emp.designation }}</td><td>{{ del_emp.category }}</td>
-              <td>{{ del_emp.plant }}</td><td>{{ del_emp.plant_code }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <form method="POST" action="{{ url_for('delete_employee', code=del_emp.employee_code) }}"
-            onsubmit="return confirm('Delete {{ del_emp.employee_code }}? This cannot be undone.')">
-        <button type="submit" class="btn btn-danger">🗑️ Delete Employee</button>
-      </form>
-      {% endif %}
-      {% endif %}
-    </div>
+      </div><!-- modal-body -->
+    </div><!-- modal-box -->
+  </div><!-- manage-modal -->
 
-    <!-- Change log -->
-    <div class="tab-panel" data-tabpanel="emp" data-tab="log">
-      {% if not log_rows %}
-      <div class="glass-card"><h3>No changes yet</h3><p>Add, edit or delete an employee to see the log here.</p></div>
-      {% else %}
-      <p class="caption" style="margin-bottom:10px">{{ log_rows | length }} change(s), newest first</p>
-      <div class="table-wrapper">
-        <table>
-          <thead><tr><th>Action</th><th>Emp Code</th><th>Old Values</th><th>New Values</th><th>When</th><th>By</th></tr></thead>
-          <tbody>
-            {% for r in log_rows %}
-            <tr>
-              <td>{{ r.action_type }}</td><td>{{ r.employee_code }}</td>
-              <td style="font-size:11px;max-width:160px;word-break:break-all">{{ r.old_value_json }}</td>
-              <td style="font-size:11px;max-width:160px;word-break:break-all">{{ r.new_value_json }}</td>
-              <td>{{ r.changed_at }}</td><td>{{ r.changed_by }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% endif %}
-    </div>
-    </div><!-- end manage employees card -->
-  </div><!-- end master-split -->
-
-</div>
+</div><!-- master tab-panel -->
 
 <!-- ── Backend Data ──────────────────────────────── -->
 <div class="tab-panel" data-tabpanel="main" data-tab="backend">
@@ -377,9 +380,25 @@
   var hash = location.hash.replace('#','');
   if (['master','backend','maintenance','oracle'].includes(hash)) switchTab('main', hash);
 
-  // If edit_code or del_code in URL query params, switch to edit/delete tab
+  // Modal open/close
+  function openManageModal(tab) {
+    var modal = document.getElementById('manage-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    if (tab) switchTab('emp', tab);
+  }
+  function closeManageModal() {
+    var modal = document.getElementById('manage-modal');
+    if (!modal) return;
+    modal.style.display = 'none';
+    document.body.style.overflow = '';
+  }
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeManageModal(); });
+
+  // Auto-open modal if edit_code or del_code in URL
   var params = new URLSearchParams(location.search);
-  if (params.get('edit_code')) switchTab('emp', 'edit');
-  if (params.get('del_code'))  switchTab('emp', 'delete');
+  if (params.get('edit_code')) { openManageModal('edit'); }
+  if (params.get('del_code'))  { openManageModal('delete'); }
 </script>
 {% endblock %}
