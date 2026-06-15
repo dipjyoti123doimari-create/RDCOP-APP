@@ -65,7 +65,7 @@ body {
 #cursor-glow {
   position: fixed; inset: 0; pointer-events: none; z-index: 0;
   background: radial-gradient(
-    circle 700px at var(--cx) var(--cy),
+    circle 100px at var(--cx) var(--cy),
     rgba(99,91,255,0.14) 0%,
     rgba(0,212,255,0.05) 38%,
     transparent 65%
