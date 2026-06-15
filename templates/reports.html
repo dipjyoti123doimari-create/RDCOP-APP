@@ -187,27 +187,49 @@
 
 <p class="caption" style="margin-bottom:16px">Showing <strong>{{ results | length | format_int }}</strong> of <strong>{{ total_rows | format_int }}</strong> total rows · {{ from_date }} → {{ to_date }}</p>
 
-{% for cat, cat_rows in grouped_results.items() %}
-{% set cat_inc = cat_rows | sum(attribute='incentive_amount') | int %}
-{% set cat_ded = cat_rows | sum(attribute='deduction_amount') | int %}
-{% set cat_elig = cat_rows | selectattr('incentive_eligible','eq','Yes') | list | length %}
-<div class="report-cat-section">
-  <div class="report-cat-header">
-    <span class="report-cat-name">{{ cat }}</span>
-    <div class="report-cat-stats">
-      <span class="rcs-item">{{ cat_rows | length }} employee{{ 's' if cat_rows | length != 1 else '' }}</span>
-      <span class="rcs-item rcs-muted">{{ cat_elig }} eligible</span>
-      {% if cat_inc > 0 %}<span class="rcs-item rcs-green">↑ ₹{{ cat_inc | format_int }}</span>{% endif %}
-      {% if cat_ded > 0 %}<span class="rcs-item rcs-red">↓ ₹{{ cat_ded | format_int }}</span>{% endif %}
+<!-- Category tabs (mirrors Calculate page) -->
+<div class="tabs">
+  {% set ns = namespace(first=true) %}
+  {% for label in cat_tabs.keys() %}
+  {% if cat_results[label] %}
+  <button class="tab-btn {% if ns.first %}active{% endif %}" data-tabset="rpt-cats" data-tab="{{ label | replace(' ','_') }}">{{ label }}</button>
+  {% set ns.first = false %}
+  {% endif %}
+  {% endfor %}
+</div>
+
+{% set ns2 = namespace(first=true) %}
+{% for label, _cats in cat_tabs.items() %}
+{% if cat_results[label] %}
+{% set grp = cat_results[label] %}
+<div class="tab-panel {% if ns2.first %}active{% endif %}" data-tabpanel="rpt-cats" data-tab="{{ label | replace(' ','_') }}">
+
+  <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+    <div class="kpi-card" style="padding:14px 16px">
+      <div class="kpi-label">Employees</div>
+      <div class="kpi-value" style="font-size:22px">{{ grp | length | format_int }}</div>
+    </div>
+    <div class="kpi-card" style="padding:14px 16px">
+      <div class="kpi-label">Eligible</div>
+      <div class="kpi-value" style="font-size:22px">{{ grp | selectattr('incentive_eligible','eq','Yes') | list | length | format_int }}</div>
+    </div>
+    <div class="kpi-card" style="padding:14px 16px">
+      <div class="kpi-label">Incentive</div>
+      <div class="kpi-value" style="font-size:18px">₹{{ grp | sum(attribute='incentive_amount') | int | format_int }}</div>
+    </div>
+    <div class="kpi-card" style="padding:14px 16px">
+      <div class="kpi-label">Deduction</div>
+      <div class="kpi-value" style="font-size:18px">₹{{ grp | sum(attribute='deduction_amount') | int | format_int }}</div>
     </div>
   </div>
-  <div class="table-wrapper" style="border-top:none;border-radius:0 0 10px 10px">
+
+  <div class="table-wrapper">
     <table>
       <thead>
         <tr>{% for col in result_cols %}<th>{{ result_labels[col] }}</th>{% endfor %}</tr>
       </thead>
       <tbody>
-        {% for row in cat_rows %}
+        {% for row in grp %}
         <tr class="{{ row._cls }}">
           {% for col in result_cols %}
           <td>{% if row[col] is number and col in ['incentive_amount','deduction_amount','incentive_rate','deduction_target','shortfall_quantity','total_quantity','ytd_maintenance_cost'] %}{{ row[col] | round(2) }}{% else %}{{ row[col] }}{% endif %}</td>
@@ -218,6 +240,8 @@
     </table>
   </div>
 </div>
+{% set ns2.first = false %}
+{% endif %}
 {% endfor %}
 
 <!-- Export & Email -->

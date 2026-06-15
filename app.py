@@ -454,21 +454,15 @@ def page_reports():
     total_ded  = sum((r.get("deduction_amount") or 0) for r in (results or []))
     elig_count = sum(1 for r in (results or []) if r.get("incentive_eligible") == "Yes")
 
-    # Group filtered rows by category in the canonical CATEGORIES order
-    grouped_results = {}
-    if results:
-        _cat_order = {c: i for i, c in enumerate(config.CATEGORIES)}
-        _groups: dict = {}
-        for row in results:
-            cat = row.get("category") or "Unknown"
-            _groups.setdefault(cat, []).append(row)
-        grouped_results = dict(
-            sorted(_groups.items(), key=lambda x: _cat_order.get(x[0], 999))
-        )
+    # Group filtered rows by CAT_TABS for the tab UI (mirrors calculate page)
+    cat_results = {}
+    for label, cats in CAT_TABS.items():
+        cat_results[label] = [r for r in (results or []) if r.get("category") in cats]
 
     return render_template("reports.html",
                            from_date=str(from_date), to_date=str(to_date),
-                           results=results, grouped_results=grouped_results,
+                           results=results,
+                           cat_tabs=CAT_TABS, cat_results=cat_results,
                            unmapped=unmapped,
                            total_rows=total_rows,
                            result_cols=RESULT_COLS, result_labels=RESULT_LABELS,
