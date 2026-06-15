@@ -1,0 +1,13 @@
+# .streamlit/config.toml
+# Streamlit theme — sets all native widgets (inputs, selects, tabs, etc.)
+# to match Stripe's dark palette. Our canvas and custom CSS build on top.
+
+[server]
+port = 2001
+
+[theme]
+base                   = "dark"
+primaryColor           = "#635BFF"
+backgroundColor        = "#0A2540"
+secondaryBackgroundColor = "#0D2B4B"
+textColor              = "#FFFFFF"

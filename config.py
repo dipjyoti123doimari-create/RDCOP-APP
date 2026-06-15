@@ -187,14 +187,14 @@ REPORT_OUTPUT_COLUMNS = [
 # These follow the "Modern light SaaS dashboard" direction.
 
 THEME = {
-    "bg":            "#F6F9FC",                  # main background
-    "card_bg":       "rgba(255, 255, 255, 0.78)",# card background (glassy)
-    "card_border":   "rgba(255, 255, 255, 0.45)",# card border
-    "text_primary":  "#0A2540",                  # main text
-    "text_secondary":"#425466",                  # secondary text
-    "accent_purple": "#635BFF",                  # accent purple
-    "accent_blue":   "#00D4FF",                  # accent blue
-    "success":       "#DDF8E8",                  # success green
-    "error":         "#FFE3E3",                  # error red
-    "warning":       "#FFF4CC",                  # warning yellow
+    "bg":            "#0A2540",                          # dark navy — Stripe's main bg
+    "card_bg":       "rgba(255, 255, 255, 0.04)",        # frosted glass card
+    "card_border":   "rgba(255, 255, 255, 0.08)",        # subtle card border
+    "text_primary":  "#FFFFFF",                          # white text
+    "text_secondary":"#8898AA",                          # muted blue-grey
+    "accent_purple": "#635BFF",                          # Stripe purple
+    "accent_blue":   "#00D4FF",                          # Stripe cyan
+    "success":       "rgba(16, 185, 129, 0.12)",         # dark green tint
+    "error":         "rgba(239, 68, 68, 0.12)",          # dark red tint
+    "warning":       "rgba(245, 158, 11, 0.12)",         # dark amber tint
 }

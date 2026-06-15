@@ -1,31 +1,23 @@
 """
 utils/animated_background.py
 ============================
-A reusable, ORIGINAL animated background for the whole app, inspired (visually
-only) by the ray-burst hero on stripe.com — no Stripe code/assets are used.
+Stripe-style gradient blob background for the whole app.
 
-What it draws:
-- A fan of thin rays bursting upward from the bottom-center of the screen,
-  each tipped with a small dot, over a soft radial gradient.
-- The burst gently reacts to the mouse (rays tilt/parallax toward the cursor and
-  ease back when the mouse leaves).
-- Six time-of-day themes (Pre-dawn, Sunrise, Daytime, Dusk, Sunset, Night) that
-  can be picked automatically from the user's local system time, or manually.
-- A small theme-toggle button (top-right) to cycle themes by hand.
+Five large, soft radial gradient blobs drift slowly across a dark base,
+overlapping with 'screen' blending to produce Stripe's signature glowing
+gradient mesh.  Six themes swap the color palette.  The default "Daytime"
+theme matches stripe.com's hero: dark navy (#0A2540) + purple + cyan blobs.
 
-HOW IT WORKS (important Streamlit detail):
-Streamlit's st.markdown() strips <script>, and a components.html() iframe is an
-inline element that can't sit *behind* your widgets. So this component renders a
-tiny (0-height) iframe whose JavaScript "breaks out" into the PARENT page
-(window.parent.document) and appends a fixed, full-screen <canvas> there with
-`pointer-events: none`. That makes it a true app-wide background that never
-blocks buttons, forms, uploads, filters or tables, while a global mousemove
-listener on the parent drives the reactivity.
+HOW IT WORKS:
+A 0-height components.html() iframe runs JS that breaks into the parent
+Streamlit page (window.parent.document) and appends a fixed full-screen
+<canvas> behind all content (pointer-events:none), exactly as before.
 
-Public API:
-- THEME_NAMES                      -> list of the six theme names
-- get_theme_from_time(now=None)    -> Python fallback theme picker
-- render_interactive_background(...) -> render the background (call once in app.py)
+Public API (unchanged — keeps full backwards compatibility):
+- THEME_NAMES                          -> list of six theme names
+- INTENSITY_RAYS                       -> kept for API compat; ignored
+- get_theme_from_time(now=None)        -> Python fallback theme picker
+- render_interactive_background(...)   -> render the background (call once)
 """
 
 import json
@@ -37,88 +29,71 @@ import streamlit.components.v1 as components
 # ---------------------------------------------------------------------------
 # 1. THEME PALETTES
 # ---------------------------------------------------------------------------
-# For each theme:
-#   "base" -> [inner glow colour (at the burst origin), outer fill colour]
-#   "rays" -> a list of colours the rays are randomly picked from
-#   "icon" -> the emoji shown for that theme in the dropdown
+# "base"   -> dark fill drawn first each frame (single hex string)
+# "colors" -> hex colors for the 5 blobs (list, left-to-right order)
+# "icon"   -> emoji for the theme picker dropdown
+
 THEME_PALETTES = {
     "Pre-dawn": {
-        "base": ["#2a2150", "#0e1030"],
-        "rays": ["#7c5cff", "#3aa0ff", "#ff7cc8"],
-        "icon": "🌌",
+        "base":   "#050A15",
+        "colors": ["#3B3FA0", "#1A0F6B", "#2D1B8E", "#0D1F5C", "#4B3480"],
+        "icon":   "🌌",
     },
     "Sunrise": {
-        "base": ["#ffd9a8", "#fff4e6"],
-        "rays": ["#ff8fab", "#ff9e3d", "#ffd23d", "#9b6bff"],
-        "icon": "🌅",
+        "base":   "#1A0A2E",
+        "colors": ["#FF6B9D", "#FF8C42", "#9B4DFF", "#4D79FF", "#FF4DA6"],
+        "icon":   "🌅",
     },
     "Daytime": {
-        "base": ["#cfe8ff", "#ffffff"],
-        "rays": ["#3aa0ff", "#00d4ff", "#9b8bff"],
-        "icon": "☀️",
+        "base":   "#0A2540",
+        "colors": ["#635BFF", "#00D4FF", "#7A5AF8", "#0EA5E9", "#8B5CF6"],
+        "icon":   "✨",
     },
     "Dusk": {
-        "base": ["#c9b8ff", "#ffe0bf"],
-        "rays": ["#8a6bff", "#ff8fc8", "#ffb24d"],
-        "icon": "🌆",
+        "base":   "#0F0820",
+        "colors": ["#8A4FFF", "#FF61AB", "#5B21B6", "#7C3AED", "#DB2777"],
+        "icon":   "🌆",
     },
     "Sunset": {
-        "base": ["#ff8a5c", "#b5179e"],
-        "rays": ["#ff2d95", "#9b2cff", "#ff7a3d"],
-        "icon": "🌇",
+        "base":   "#1A0510",
+        "colors": ["#FF2D6B", "#9B2CFF", "#FF7A3D", "#FF4DA6", "#C041FF"],
+        "icon":   "🌇",
     },
     "Night": {
-        "base": ["#101a3a", "#05060f"],
-        "rays": ["#3a7bff", "#7c5cff", "#00d4ff", "#ff5cc8"],
-        "icon": "🌙",
+        "base":   "#05060F",
+        "colors": ["#3A7BFF", "#7C5CFF", "#00D4FF", "#5856D6", "#2563EB"],
+        "icon":   "🌙",
     },
 }
 
-# A fixed order used when the toggle button cycles through themes.
 THEME_NAMES = list(THEME_PALETTES.keys())
 
-# How many rays each intensity uses.
+# Kept for backwards API compatibility — blobs don't use ray counts.
 INTENSITY_RAYS = {"low": 70, "medium": 120, "high": 180}
 
 
 # ---------------------------------------------------------------------------
-# 2. PYTHON FALLBACK: pick a theme from the time of day
+# 2. PYTHON FALLBACK THEME PICKER
 # ---------------------------------------------------------------------------
 def get_theme_from_time(now=None):
-    """
-    Return a theme name based on the given time (defaults to now).
-
-    This is a Python fallback. The component normally detects the user's LOCAL
-    browser time in JavaScript, which is more accurate, but this keeps a sane
-    default if JavaScript time is ever unavailable.
-
-    Mapping:
-        04:00-05:59 Pre-dawn | 06:00-08:59 Sunrise | 09:00-16:59 Daytime
-        17:00-18:29 Dusk     | 18:30-20:00 Sunset  | 20:01-03:59 Night
-    """
+    """Return a theme name based on the current time of day."""
     if now is None:
         now = datetime.now()
-    minutes = now.hour * 60 + now.minute  # minutes since midnight
+    minutes = now.hour * 60 + now.minute
 
-    if 240 <= minutes <= 359:      # 04:00 - 05:59
-        return "Pre-dawn"
-    if 360 <= minutes <= 539:      # 06:00 - 08:59
-        return "Sunrise"
-    if 540 <= minutes <= 1019:     # 09:00 - 16:59
-        return "Daytime"
-    if 1020 <= minutes <= 1109:    # 17:00 - 18:29
-        return "Dusk"
-    if 1110 <= minutes <= 1200:    # 18:30 - 20:00
-        return "Sunset"
-    return "Night"                 # 20:01 - 03:59
+    if 240 <= minutes <= 359:   return "Pre-dawn"
+    if 360 <= minutes <= 539:   return "Sunrise"
+    if 540 <= minutes <= 1019:  return "Daytime"
+    if 1020 <= minutes <= 1109: return "Dusk"
+    if 1110 <= minutes <= 1200: return "Sunset"
+    return "Night"
 
 
 # ---------------------------------------------------------------------------
-# 3. THE BROWSER CODE (HTML + JS that runs inside the tiny iframe)
+# 3. HTML + JS TEMPLATE
 # ---------------------------------------------------------------------------
-# We keep the JavaScript as a normal string with literal { } braces and then
-# swap in a few __TOKENS__ with .replace(). (Using .replace instead of an
-# f-string avoids having to escape every brace in the JS.)
+# Token substitution keeps JS braces literal — no f-string escaping needed.
+
 _BG_TEMPLATE = """
 <!doctype html>
 <html>
@@ -126,72 +101,81 @@ _BG_TEMPLATE = """
 <body style="margin:0;padding:0;overflow:hidden;background:transparent;">
 <script>
 (function () {
-  // ---- Settings sent from Python ----
   var CONFIG = {
-    mode: "__MODE__",            // "auto" or "manual"
-    theme: "__THEME__",          // used when mode === "manual"
-    intensity: "__INTENSITY__",  // "low" | "medium" | "high"
-    animate: __ANIMATE__         // true / false
+    mode:    "__MODE__",
+    theme:   "__THEME__",
+    animate: __ANIMATE__
   };
-  var PALETTES = __PALETTES__;
+  var PALETTES    = __PALETTES__;
   var THEME_ORDER = __THEME_ORDER__;
-  var RAY_COUNTS = __RAY_COUNTS__;
 
-  // We must reach the PARENT page to draw a true full-app background.
+  // Blob geometry — fixed across all themes; only colors change.
+  // bx/by  = base center as fraction of (W, H)
+  // ox/oy  = orbital amplitude (fraction of W, H)
+  // r      = blob radius as fraction of screen diagonal
+  // speed  = orbital angular speed (radians/second)
+  //          0.28 rad/s → one full orbit in ~22 seconds (Stripe-speed drift)
+  // phase  = initial angle offset so blobs don't all start at the same point
+  // alpha  = gradient opacity at the centre
+  var GEOM = [
+    {bx:0.25, by:0.35, ox:0.18, oy:0.14, r:0.55, speed:0.28, phase:0.00, alpha:0.65},
+    {bx:0.72, by:0.28, ox:0.14, oy:0.18, r:0.50, speed:0.22, phase:2.09, alpha:0.60},
+    {bx:0.50, by:0.70, ox:0.12, oy:0.10, r:0.58, speed:0.25, phase:4.19, alpha:0.60},
+    {bx:0.18, by:0.65, ox:0.09, oy:0.14, r:0.48, speed:0.32, phase:1.05, alpha:0.55},
+    {bx:0.82, by:0.72, ox:0.07, oy:0.10, r:0.45, speed:0.19, phase:3.49, alpha:0.50}
+  ];
+
+  // Reach into the parent Streamlit page.
   var doc, win;
   try {
     win = window.parent;
     doc = window.parent.document;
-    // Touch it to make sure we are allowed (throws if cross-origin).
-    var _probe = doc.body;
-  } catch (e) {
-    // If we cannot reach the parent, give up quietly (app still works fine).
-    return;
-  }
+    var _probe = doc.body;  // throws if cross-origin
+  } catch (e) { return; }
 
   var reduceMotion = win.matchMedia &&
       win.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  // Cap the animation to ~40 frames/sec. The eye barely notices the difference
-  // from 60fps for this slow drift, but it cuts the CPU work by a third and
-  // keeps the page smooth on modest laptops.
-  var FRAME_MS = 1000 / 40;
+  // Blobs drift so slowly that 30 fps looks identical to 60 fps.
+  var FRAME_MS = 1000 / 30;
 
   function pickThemeByTime() {
     var d = new Date();
     var m = d.getHours() * 60 + d.getMinutes();
-    if (m >= 240 && m <= 359)  return "Pre-dawn";
-    if (m >= 360 && m <= 539)  return "Sunrise";
-    if (m >= 540 && m <= 1019) return "Daytime";
+    if (m >= 240  && m <= 359)  return "Pre-dawn";
+    if (m >= 360  && m <= 539)  return "Sunrise";
+    if (m >= 540  && m <= 1019) return "Daytime";
     if (m >= 1020 && m <= 1109) return "Dusk";
     if (m >= 1110 && m <= 1200) return "Sunset";
     return "Night";
   }
 
-  // ---- If the background already exists (Streamlit re-ran), just update it ----
-  if (win.__RDC_BG__) {
-    win.__RDC_BG__.update(CONFIG);
-    return;
-  }
+  // On Streamlit re-runs (page switch, widget change) just update CONFIG.
+  if (win.__RDC_BG__) { win.__RDC_BG__.update(CONFIG); return; }
 
-  // ---- One-time setup ----
-  // CSS: make Streamlit transparent so the canvas shows through, place the
-  // canvas behind everything, and style the toggle button.
+  // ---- One-time DOM setup ------------------------------------------------
   var style = doc.createElement('style');
   style.id = 'rdc-bg-style';
   style.textContent =
+    // Let the canvas show through Streamlit's wrapper.
     '.stApp{background:transparent !important;}' +
     '[data-testid="stHeader"]{background:transparent !important;}' +
+    // Canvas: full-page, behind everything, never blocks clicks.
     '#rdc-bg-canvas{position:fixed;top:0;left:0;width:100vw;height:100vh;' +
-    'z-index:-1;pointer-events:none;}' +
+      'z-index:-1;pointer-events:none;}' +
+    // Theme picker dropdown — dark glass look.
     '#rdc-bg-select{position:fixed;top:62px;right:16px;z-index:9999;' +
-    'padding:7px 12px;border-radius:12px;border:1px solid rgba(10,37,64,0.14);' +
-    'background:rgba(255,255,255,0.80);color:#0A2540;cursor:pointer;' +
-    'font-size:13px;font-weight:600;font-family:inherit;outline:none;' +
-    'box-shadow:0 4px 14px rgba(10,37,64,0.14);' +
-    '-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);' +
-    'transition:background .2s ease;}' +
-    '#rdc-bg-select:hover{background:rgba(255,255,255,0.96);}';
+      'padding:6px 12px;border-radius:8px;' +
+      'border:1px solid rgba(255,255,255,0.10);' +
+      'background:rgba(10,37,64,0.80);' +
+      'color:rgba(255,255,255,0.85);cursor:pointer;' +
+      'font-size:12px;font-weight:600;font-family:inherit;outline:none;' +
+      'box-shadow:0 4px 20px rgba(0,0,0,0.40);' +
+      '-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);' +
+      'transition:background .2s ease;' +
+      'appearance:none;-webkit-appearance:none;}' +
+    '#rdc-bg-select:hover{background:rgba(10,37,64,0.96);}' +
+    '#rdc-bg-select option{background:#0A2540;color:#fff;}';
   doc.head.appendChild(style);
 
   var canvas = doc.createElement('canvas');
@@ -199,13 +183,13 @@ _BG_TEMPLATE = """
   doc.body.appendChild(canvas);
   var ctx = canvas.getContext('2d');
 
-  // Theme LOV (list-of-values dropdown): "Auto" + the six themes.
+  // Theme picker: Auto + six named themes.
   var sel = doc.createElement('select');
   sel.id = 'rdc-bg-select';
   sel.title = 'Background theme';
   var optAuto = doc.createElement('option');
   optAuto.value = 'auto';
-  optAuto.textContent = '🕒 Auto theme';
+  optAuto.textContent = '🕒 Auto';
   sel.appendChild(optAuto);
   for (var ti = 0; ti < THEME_ORDER.length; ti++) {
     var oName = THEME_ORDER[ti];
@@ -216,27 +200,18 @@ _BG_TEMPLATE = """
   }
   doc.body.appendChild(sel);
 
-  // Keep the dropdown showing the theme that is actually active.
-  function syncSelect() {
-    if (state.manualOverride) sel.value = state.manualOverride;
-    else if (state.cfg.mode === 'auto') sel.value = 'auto';
-    else sel.value = state.cfg.theme;
-  }
-
+  // ---- State -------------------------------------------------------------
   var state = {
-    cfg: CONFIG,
-    manualOverride: null,        // set when the user clicks the toggle button
-    rays: [],
-    mouse: { x: 0.5, y: 0.5 },   // eased position (normalised 0..1)
-    target: { x: 0.5, y: 0.5 },  // where the cursor actually is
+    cfg:           CONFIG,
+    manualOverride: null,
+    mouse:  { x: 0.5, y: 0.5 },   // eased (smooth) mouse position 0..1
+    target: { x: 0.5, y: 0.5 },   // raw mouse position
     W: 0, H: 0, dpr: 1,
-    running: false,
-    rafId: null,
-    lastSig: JSON.stringify(CONFIG),
-    lastAuto: null,
-    grad: null,        // cached background gradient (rebuilt only on resize/theme)
-    baseFill: '#000',  // cached outer fill colour
-    lastFrame: 0       // timestamp of the last painted frame (for the FPS cap)
+    running:   false,
+    rafId:     null,
+    lastSig:   JSON.stringify(CONFIG),
+    lastAuto:  null,
+    lastFrame: 0
   };
 
   function currentTheme() {
@@ -245,10 +220,13 @@ _BG_TEMPLATE = """
     return state.cfg.theme;
   }
 
-  function rayCount() {
-    return RAY_COUNTS[state.cfg.intensity] || 120;
+  function syncSelect() {
+    if (state.manualOverride)     sel.value = state.manualOverride;
+    else if (state.cfg.mode === 'auto') sel.value = 'auto';
+    else                          sel.value = state.cfg.theme;
   }
 
+  // Convert "#RRGGBB" + alpha (0-1) to "rgba(r,g,b,a)".
   function hexA(hex, a) {
     var h = hex.replace('#', '');
     var r = parseInt(h.substring(0, 2), 16);
@@ -257,107 +235,71 @@ _BG_TEMPLATE = """
     return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
   }
 
-  function buildRays() {
-    var pal = PALETTES[currentTheme()] || PALETTES['Daytime'];
-    var n = rayCount();
-    var rays = [];
-    var spread = Math.PI * 1.1;          // ~198 degree fan
-    var start = -Math.PI / 2 - spread / 2;
-    for (var i = 0; i < n; i++) {
-      var t = n > 1 ? i / (n - 1) : 0.5;
-      var angle = start + spread * t + (Math.random() - 0.5) * 0.02;
-      var color = pal.rays[Math.floor(Math.random() * pal.rays.length)];
-      var op = 0.22 + Math.random() * 0.5;               // opacity
-      rays.push({
-        baseAngle: angle,
-        len: 0.55 + Math.random() * 0.45,                // fraction of max length
-        speed: 0.2 + Math.random() * 0.6,                // idle drift speed
-        phase: Math.random() * Math.PI * 2,
-        // Pre-compute the rgba colour strings ONCE here, so paint() does not
-        // have to parse the hex (3x parseInt) for every ray on every frame.
-        stroke: hexA(color, op),
-        dot: hexA(color, Math.min(1, op + 0.25))
-      });
-    }
-    state.rays = rays;
-    buildGradient();   // theme may have changed, so refresh the cached gradient
-  }
+  // ---- Core paint --------------------------------------------------------
+  function paint(time) {
+    var W = state.W, H = state.H;
+    var diag = Math.sqrt(W * W + H * H);
+    var pal    = PALETTES[currentTheme()] || PALETTES['Daytime'];
+    var colors = pal.colors;
 
-  // Build the full-screen radial gradient ONCE (per resize / theme change)
-  // instead of recreating it on every animation frame — this was the main
-  // source of the lag. The origin is fixed at the bottom-centre, so the
-  // gradient only needs rebuilding when the size or theme actually changes.
-  function buildGradient() {
-    var pal = PALETTES[currentTheme()] || PALETTES['Daytime'];
-    var ox = state.W / 2, oy = state.H;
-    var g = ctx.createRadialGradient(ox, oy, 0, ox, oy, state.H * 1.15);
-    g.addColorStop(0, pal.base[0]);
-    g.addColorStop(1, pal.base[1]);
-    state.grad = g;
-    state.baseFill = pal.base[1];
+    // Dark base fill.
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = pal.base;
+    ctx.fillRect(0, 0, W, H);
+
+    // Blobs rendered with 'screen' blending.  Where two blobs overlap the
+    // screen formula brightens the result — producing Stripe's signature
+    // glowing highlight at blob intersections.
+    ctx.globalCompositeOperation = 'screen';
+
+    for (var i = 0; i < GEOM.length; i++) {
+      var g     = GEOM[i];
+      var color = colors[i % colors.length];
+
+      // Orbital drift: each blob follows its own slow sine/cosine path.
+      var cx = (g.bx + Math.sin(time * g.speed + g.phase) * g.ox) * W;
+      var cy = (g.by + Math.cos(time * g.speed * 0.8 + g.phase) * g.oy) * H;
+
+      // Subtle mouse parallax — alternating direction per blob for depth.
+      var pxDir = (i % 2 === 0) ? 1 : -1;
+      var pyDir = (i % 3 === 0) ? -1 : 1;
+      cx += (state.mouse.x - 0.5) * W * 0.05 * pxDir * (i + 1) / GEOM.length;
+      cy += (state.mouse.y - 0.5) * H * 0.03 * pyDir * (i + 1) / GEOM.length;
+
+      // Blob radius scales with the screen diagonal for any window size.
+      var r = g.r * diag * 0.5;
+
+      // Soft radial gradient: opaque at center, transparent at edge.
+      var grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      grd.addColorStop(0,   hexA(color, g.alpha));
+      grd.addColorStop(0.5, hexA(color, g.alpha * 0.45));
+      grd.addColorStop(1,   hexA(color, 0));
+
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   function resize() {
-    // Cap the pixel ratio at 2: on 3x phone screens drawing 9x the pixels every
-    // frame is needlessly heavy and adds no visible quality for soft rays.
     state.dpr = Math.min(win.devicePixelRatio || 1, 2);
-    state.W = win.innerWidth;
-    state.H = win.innerHeight;
-    canvas.width = state.W * state.dpr;
+    state.W   = win.innerWidth;
+    state.H   = win.innerHeight;
+    canvas.width  = state.W * state.dpr;
     canvas.height = state.H * state.dpr;
     ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
-    buildGradient();   // the gradient depends on size, so refresh it here
-  }
-
-  function paint(time) {
-    var W = state.W, H = state.H;
-
-    // Soft radial gradient base (cached — see buildGradient). One full-screen
-    // fill covers everything, so we no longer need a separate flat fill first.
-    if (!state.grad) buildGradient();
-    ctx.fillStyle = state.grad;
-    ctx.fillRect(0, 0, W, H);
-
-    // Rays.
-    var maxLen = Math.sqrt(W * W + H * H) * 0.62;
-    var tilt = state.mouse.x - 0.5;      // -0.5 .. 0.5
-    var lift = 0.5 - state.mouse.y;      // rays reach higher when cursor is high
-    var origX = W / 2 + tilt * 42;       // gentle parallax of the origin
-    var origY = H + 8;
-    ctx.lineWidth = 1;                   // constant for every ray — set once
-
-    for (var i = 0; i < state.rays.length; i++) {
-      var r = state.rays[i];
-      var idle = Math.sin(time * r.speed + r.phase) * 0.015;
-      var a = r.baseAngle + idle + tilt * 0.28 * Math.cos(r.baseAngle);
-      var len = maxLen * r.len * (1 + lift * 0.18);
-      var ex = origX + Math.cos(a) * len;
-      var ey = origY + Math.sin(a) * len;
-
-      ctx.beginPath();
-      ctx.moveTo(origX, origY);
-      ctx.lineTo(ex, ey);
-      ctx.strokeStyle = r.stroke;        // pre-computed in buildRays
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(ex, ey, 1.5, 0, Math.PI * 2);
-      ctx.fillStyle = r.dot;             // pre-computed in buildRays
-      ctx.fill();
-    }
   }
 
   function frame(ts) {
     if (!state.running) return;
-    // Queue the next frame first, then skip the heavy paint if we are ahead of
-    // our ~40fps budget. This throttles CPU use without ever stalling.
     state.rafId = win.requestAnimationFrame(frame);
-    if (ts - state.lastFrame < FRAME_MS) return;
+    if (ts - state.lastFrame < FRAME_MS) return;   // 30 fps cap
     state.lastFrame = ts;
-
-    state.mouse.x += (state.target.x - state.mouse.x) * 0.10;  // smooth easing
-    state.mouse.y += (state.target.y - state.mouse.y) * 0.10;
-    paint(ts * 0.001);
+    // Ease mouse toward target — prevents jittery movement.
+    state.mouse.x += (state.target.x - state.mouse.x) * 0.08;
+    state.mouse.y += (state.target.y - state.mouse.y) * 0.08;
+    paint(ts * 0.001);  // pass seconds to paint()
   }
 
   function applyRunning() {
@@ -365,15 +307,15 @@ _BG_TEMPLATE = """
     if (shouldRun) {
       if (!state.running) {
         state.running = true;
-        state.rafId = win.requestAnimationFrame(frame);
+        state.rafId   = win.requestAnimationFrame(frame);
       }
     } else {
       state.running = false;
-      paint(0);   // draw a single static frame
+      paint(0);   // static frame when animation is off
     }
   }
 
-  // ---- Event listeners (attached once) ----
+  // ---- Event listeners ---------------------------------------------------
   doc.addEventListener('mousemove', function (e) {
     state.target.x = e.clientX / state.W;
     state.target.y = e.clientY / state.H;
@@ -389,44 +331,40 @@ _BG_TEMPLATE = """
   sel.addEventListener('change', function () {
     if (sel.value === 'auto') {
       state.manualOverride = null;
-      state.cfg.mode = 'auto';        // follow system time again
+      state.cfg.mode = 'auto';
     } else {
       state.manualOverride = sel.value;
     }
-    buildRays();
     if (!state.running) paint(0);
   });
 
-  // ---- Re-check the auto theme every minute so it changes on its own ----
+  // Auto-switch theme every minute when in auto mode.
   win.setInterval(function () {
     if (state.cfg.mode === 'auto' && !state.manualOverride) {
       var th = pickThemeByTime();
       if (th !== state.lastAuto) {
         state.lastAuto = th;
         syncSelect();
-        buildRays();
         if (!state.running) paint(0);
       }
     }
   }, 60000);
 
-  // ---- Controller used by later Streamlit re-runs ----
+  // ---- Controller (called by Streamlit re-runs via win.__RDC_BG__) -------
   win.__RDC_BG__ = {
     update: function (cfg) {
       var sig = JSON.stringify(cfg);
-      if (sig === state.lastSig) return;   // nothing changed (e.g. page switch)
-      state.lastSig = sig;
-      state.cfg = cfg;
-      state.manualOverride = null;          // Settings choices win over the dropdown
-      buildRays();
+      if (sig === state.lastSig) return;   // nothing changed
+      state.lastSig      = sig;
+      state.cfg          = cfg;
+      state.manualOverride = null;
       syncSelect();
       applyRunning();
     }
   };
 
-  // ---- Go ----
+  // ---- Go ----------------------------------------------------------------
   resize();
-  buildRays();
   state.lastAuto = pickThemeByTime();
   syncSelect();
   applyRunning();
@@ -443,36 +381,27 @@ _BG_TEMPLATE = """
 def render_interactive_background(mode="auto", theme="Daytime",
                                   intensity="medium", animate=True):
     """
-    Render the app-wide animated background. Call this ONCE near the top of
-    app.py, on every run (it is safe to call repeatedly — it updates the
-    existing background instead of stacking new ones).
+    Render the app-wide animated gradient blob background.
 
     Parameters
     ----------
-    mode      : "auto" (theme follows the user's system time) or "manual".
-    theme     : which theme to use when mode == "manual"
-                (one of THEME_NAMES).
-    intensity : "low", "medium" or "high" (controls how many rays are drawn).
-    animate   : True to animate; False shows a static gradient + rays.
+    mode      : "auto" (follows local time) or "manual".
+    theme     : active theme when mode == "manual" (one of THEME_NAMES).
+    intensity : kept for API compatibility — ignored by the blob animation.
+    animate   : True animates; False shows a static gradient snapshot.
     """
-    # Make sure the values we inject are clean / expected.
-    mode = "auto" if mode == "auto" else "manual"
-    if theme not in THEME_PALETTES:
-        theme = "Daytime"
-    intensity = intensity if intensity in INTENSITY_RAYS else "medium"
+    mode       = "auto" if mode == "auto" else "manual"
+    theme      = theme if theme in THEME_PALETTES else "Daytime"
     animate_js = "true" if animate else "false"
 
     html = (
         _BG_TEMPLATE
-        .replace("__MODE__", mode)
-        .replace("__THEME__", theme)
-        .replace("__INTENSITY__", intensity)
-        .replace("__ANIMATE__", animate_js)
-        .replace("__PALETTES__", json.dumps(THEME_PALETTES))
+        .replace("__MODE__",        mode)
+        .replace("__THEME__",       theme)
+        .replace("__ANIMATE__",     animate_js)
+        .replace("__PALETTES__",    json.dumps(THEME_PALETTES))
         .replace("__THEME_ORDER__", json.dumps(THEME_NAMES))
-        .replace("__RAY_COUNTS__", json.dumps(INTENSITY_RAYS))
     )
 
-    # height=0 -> the iframe itself is invisible; the real canvas lives in the
-    # parent page. We render it so its JavaScript runs.
+    # height=0  -> iframe is invisible; canvas lives in the parent page.
     components.html(html, height=0, width=0)

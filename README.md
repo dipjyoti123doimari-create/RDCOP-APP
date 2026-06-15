@@ -140,14 +140,18 @@ Incentive_Calculator/
 ├── credentials/          # Google service_account.json (if used) — not in git
 ├── assets/               # Optional app_logo.png
 └── utils/
-    └── animated_background.py   # Stripe-inspired animated ray-burst background
+    └── animated_background.py   # Stripe gradient blob animation (dark navy + purple/cyan)
 ```
 
 ---
 
 ## 8. Animated background
 
-A Stripe-inspired fan of thin rays that reacts to your mouse.
+Stripe-exact gradient mesh: five large soft radial gradient blobs
+(`#635BFF` purple · `#00D4FF` cyan · `#7A5AF8` violet · `#0EA5E9` blue · `#8B5CF6` lilac)
+drift and pulse slowly across a dark `#0A2540` base with 'screen' blending,
+producing Stripe's signature glowing highlights where blobs overlap.
+Mouse movement triggers subtle parallax — each blob shifts at a different depth.
 
 **6 themes:** Pre-dawn · Sunrise · Daytime · Dusk · Sunset · Night
 
@@ -156,10 +160,9 @@ A Stripe-inspired fan of thin rays that reacts to your mouse.
 17:00–18:29 Dusk · 18:30–20:00 Sunset · 20:01–03:59 Night`
 
 **Manual mode:** Settings page → turn off Auto → pick any theme.
-A quick-select dropdown also lives in the top-right corner of the page.
+Quick-select dropdown in the top-right corner of every page.
 
-**Performance:** FPS capped at 40, DPR capped at 2, gradient cached.
-Settings: **Animation On/Off** and **Intensity** (Low 70 / Medium 120 / High 180 rays).
+**Performance:** 30 fps cap, DPR capped at 2 — smooth on any laptop.
 
 ---
 
