@@ -481,15 +481,17 @@ def _tp_band(pct):
     return "green"
 
 
-def _apply_tp_filters(plant_rows, excos, bheads, band, search):
-    """Filter plant rows by Exco Location, Business Head, throughput band and a
-    free-text search over plant code / plant name."""
+def _apply_tp_filters(plant_rows, excos, bheads, plants, band, search):
+    """Filter plant rows by Exco Location, Business Head, Plant, throughput band
+    and a free-text search over plant code / plant name."""
     out = []
     s = (search or "").strip().lower()
     for r in plant_rows:
         if excos and r.get("exco_location") not in excos:
             continue
         if bheads and r.get("business_head") not in bheads:
+            continue
+        if plants and r.get("plant_name") not in plants:
             continue
         if band and band != "All" and _tp_band(r.get("throughput_pct", 0)) != band:
             continue
@@ -534,15 +536,17 @@ def tp_reports():
     # Filter inputs
     excos  = request.args.getlist("exco")
     bheads = request.args.getlist("bhead")
+    plants = request.args.getlist("plant")
     band   = request.args.get("band", "All")
     search = request.args.get("search", "")
 
     # Distinct filter options (from the full, unfiltered set)
     unique_excos  = sorted({r.get("exco_location", "") for r in all_plants if r.get("exco_location")})
     unique_bheads = sorted({r.get("business_head", "") for r in all_plants if r.get("business_head")})
+    unique_plants = sorted({r.get("plant_name", "")    for r in all_plants if r.get("plant_name")})
 
     # Apply filters → plant rows, then rebuild location rows from the filtered set
-    plant_rows = _apply_tp_filters(all_plants, excos, bheads, band, search)
+    plant_rows = _apply_tp_filters(all_plants, excos, bheads, plants, band, search)
     location_rows = tp_calculator.build_location_rows(plant_rows, fd.month, fd.year)
 
     # Keep a filtered snapshot for downloads / email
@@ -568,7 +572,9 @@ def tp_reports():
                            total_plants=len(all_plants),
                            from_date=str(fd), to_date=str(td),
                            unique_excos=unique_excos, unique_bheads=unique_bheads,
-                           excos=excos, bheads=bheads, band=band, search=search,
+                           unique_plants=unique_plants,
+                           excos=excos, bheads=bheads, plants=plants,
+                           band=band, search=search,
                            month_label=month_label, email_cfg=smtp,
                            email_ready=email_ready,
                            default_subject=default_subject,

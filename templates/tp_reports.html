@@ -70,6 +70,26 @@
         </div>
       </div>
 
+      <!-- Plant multi-select -->
+      <div class="form-group" style="margin-bottom:0">
+        <label>Plant</label>
+        <div class="ms-wrap">
+          <div class="ms-box" tabindex="0">
+            <span class="ms-label {% if not plants %}placeholder{% endif %}">{% if plants %}{{ plants|length }} selected{% else %}All{% endif %}</span>
+            <span class="ms-arrow">▾</span>
+          </div>
+          <div class="ms-panel">
+            <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
+            <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
+            <div class="ms-opts">
+              {% for p in unique_plants %}
+              <label><input type="checkbox" name="plant" value="{{ p }}" {% if p in plants %}checked{% endif %}> {{ p }}</label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Throughput band -->
       <div class="form-group" style="margin-bottom:0">
         <label>Throughput Band</label>
@@ -90,7 +110,7 @@
     </div>
     <div style="margin-top:14px">
       <button type="submit" class="btn btn-secondary btn-sm">Apply Filters</button>
-      {% if excos or bheads or band != 'All' or search %}
+      {% if excos or bheads or plants or band != 'All' or search %}
       <a href="{{ url_for('tp_reports', from_date=from_date, to_date=to_date) }}" class="btn btn-secondary btn-sm" style="margin-left:8px">✕ Clear Filters</a>
       {% endif %}
     </div>
