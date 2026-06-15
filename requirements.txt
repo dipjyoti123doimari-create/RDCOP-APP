@@ -15,3 +15,4 @@ xlsxwriter           # Writes nicely formatted Excel reports (colors, freeze, et
 requests             # Reliable HTTP fetching (used for public Google Sheets access)
 gspread              # Talks to Google Sheets (private sheets via service account)
 google-auth          # Handles Google service-account login for Google Sheets
+oracledb             # Connects to Oracle database (thick mode via Instant Client)

@@ -31,6 +31,7 @@ import data_loader
 import database
 import email_helper
 import google_sheets
+import oracle_connector
 import report_generator
 import ui_helpers
 import validations
@@ -150,11 +151,12 @@ def page_data_uploader():
         "Sync master data and upload backend & maintenance cost files in one place",
     )
 
-    tab_master, tab_backend, tab_maintenance = st.tabs(
+    tab_master, tab_backend, tab_maintenance, tab_oracle = st.tabs(
         [
             "🧑‍💼 Master Data Sync & Management",
             "📦 Backend Data",
             "🛠️ Maintenance Cost Data",
+            "🔌 Oracle (Live Data)",
         ]
     )
 
@@ -618,6 +620,113 @@ def page_data_uploader():
                      > config.MAINTENANCE_COST_THRESHOLD).sum()),
             )
             st.dataframe(maint_df.drop(columns=["id"], errors="ignore"),
+                         hide_index=True, use_container_width=True)
+
+    # ── Oracle Live Data tab ─────────────────────────────────────────────────
+    with tab_oracle:
+        st.subheader("🔌 Fetch Backend Data from Oracle")
+        st.caption(
+            "Pulls production data directly from the enterprise Oracle database "
+            "(APPSREAD.rdc_batch_trx_headers) for any date range — no Excel upload needed."
+        )
+
+        ora_cfg = oracle_connector.get_oracle_config()
+        ora_ready = oracle_connector.is_configured(ora_cfg)
+
+        if not ora_ready:
+            ui_helpers.render_warning_message(
+                "Oracle connection is not configured. "
+                "Go to <b>Settings → Oracle Database</b> and save your credentials first."
+            )
+        else:
+            ui_helpers.render_success_message(
+                f"Connected to <b>{ora_cfg['host']}:{ora_cfg['port']}/{ora_cfg['service']}</b> "
+                f"as <b>{ora_cfg['user']}</b>"
+            )
+
+        st.divider()
+
+        # Date range picker
+        from datetime import date as _date
+        ora_col1, ora_col2 = st.columns(2)
+        with ora_col1:
+            ora_from = st.date_input("From Date", value=_date.today().replace(day=1),
+                                     key="ora_from")
+        with ora_col2:
+            ora_to = st.date_input("To Date", value=_date.today(), key="ora_to")
+
+        if ora_from > ora_to:
+            ui_helpers.render_error_message("'From Date' must be on or before 'To Date'.")
+        else:
+            ora_replace = st.radio(
+                "Load mode",
+                ["Replace existing backend data", "Append to existing backend data"],
+                index=0, horizontal=True,
+                key="ora_replace_mode",
+            )
+
+            if st.button("🔌 Fetch from Oracle", type="primary",
+                         key="ora_fetch_btn", disabled=not ora_ready):
+                tracker = ui_helpers.ProgressTracker([
+                    "🔌 Connecting to Oracle",
+                    "📥 Fetching rows",
+                    "💾 Saving to database",
+                ])
+                tracker.start(0)
+                try:
+                    test = oracle_connector.test_connection()
+                    if not test["success"]:
+                        tracker.fail(0, "Failed")
+                        ui_helpers.render_error_message(
+                            f"Oracle connection failed:<br><code>{test['error']}</code>"
+                        )
+                        st.stop()
+                    tracker.complete(0, "Connected")
+                except Exception as exc:
+                    tracker.fail(0, "Failed")
+                    ui_helpers.render_error_message(str(exc))
+                    st.stop()
+
+                tracker.start(1)
+                try:
+                    df_ora, ora_warns = oracle_connector.fetch_backend_data(ora_from, ora_to)
+                    tracker.complete(1, f"{len(df_ora):,} rows")
+                except Exception as exc:
+                    tracker.fail(1, "Failed")
+                    ui_helpers.render_error_message(
+                        f"Fetch failed:<br><code>{exc}</code>"
+                    )
+                    st.stop()
+
+                for w in ora_warns:
+                    ui_helpers.render_warning_message(w)
+
+                if df_ora.empty:
+                    tracker.fail(2, "No data")
+                    st.stop()
+
+                tracker.start(2)
+                replace_flag = (ora_replace == "Replace existing backend data")
+                saved = oracle_connector.save_oracle_backend_data(
+                    df_ora, ora_from, ora_to, replace=replace_flag
+                )
+                tracker.complete(2, f"{saved:,} rows {'replaced' if replace_flag else 'appended'}")
+
+                time.sleep(0.8)
+                st.rerun()
+
+        # Current backend data summary
+        st.divider()
+        st.subheader("📋 Current Backend Data (all sources)")
+        _b_count = database.get_table_counts().get("backend_data", 0)
+        if _b_count == 0:
+            ui_helpers.render_glass_card(
+                "No data yet", "Fetch from Oracle above to populate backend data."
+            )
+        else:
+            _b_prev = database.read_table_limited("backend_data", order_by="date DESC", limit=10)
+            st.caption(f"**{_b_count:,}** total rows — showing latest 10")
+            st.dataframe(_b_prev.drop(columns=["id"], errors="ignore"),
                          hide_index=True, use_container_width=True)
 
 
@@ -1530,6 +1639,74 @@ def page_settings():
                 )
             else:
                 ui_helpers.render_error_message(f"Test failed: {res['error']}")
+
+    st.divider()
+
+    # ---- Oracle Database settings ----
+    st.subheader("🔌 Oracle Database")
+    st.caption(
+        "Connection details for the enterprise Oracle database. Used to fetch "
+        "backend production data directly from Oracle (Data Uploader → Oracle tab)."
+    )
+
+    ora_cfg = oracle_connector.get_oracle_config()
+    ora_ready = oracle_connector.is_configured(ora_cfg)
+    if ora_ready:
+        ui_helpers.render_success_message("Oracle connection is configured.")
+    else:
+        ui_helpers.render_warning_message("Oracle connection is not fully configured yet.")
+
+    with st.form("oracle_form"):
+        o1, o2 = st.columns(2)
+        with o1:
+            o_host     = st.text_input("Host (IP)", value=ora_cfg["host"],
+                                       placeholder="192.168.100.11")
+            o_service  = st.text_input("Service Name", value=ora_cfg["service"],
+                                       placeholder="RDCAZPRD")
+            o_user     = st.text_input("Username", value=ora_cfg["user"],
+                                       placeholder="RDCREAD")
+        with o2:
+            o_port     = st.text_input("Port", value=ora_cfg["port"],
+                                       placeholder="1528")
+            o_password = st.text_input("Password", value="", type="password",
+                                       help="Leave blank to keep the saved password.")
+            o_status   = st.text_input("Status filter", value=ora_cfg["status_filter"],
+                                       placeholder="Processed",
+                                       help="Only fetch rows where STATUS = this value. Leave blank for all.")
+        o_instant = st.text_input(
+            "Oracle Instant Client path",
+            value=ora_cfg["instantclient"],
+            help="Folder containing oci.dll (e.g. D:\\AI Project\\Incentive Calculator\\instantclient)",
+        )
+        o_saved = st.form_submit_button("💾 Save Oracle settings", type="primary")
+
+    if o_saved:
+        to_save = {
+            "oracle_host":             o_host.strip(),
+            "oracle_port":             o_port.strip(),
+            "oracle_service":          o_service.strip(),
+            "oracle_user":             o_user.strip(),
+            "oracle_status_filter":    o_status.strip(),
+            "oracle_instantclient_dir": o_instant.strip(),
+        }
+        if o_password:
+            to_save["oracle_password"] = o_password
+        database.set_settings_bulk(to_save)
+        ui_helpers.render_success_message("Oracle settings saved.")
+        st.rerun()
+
+    if ora_ready:
+        if st.button("🔌 Test Oracle connection", key="ora_test_btn"):
+            with st.spinner("Connecting to Oracle…"):
+                result = oracle_connector.test_connection()
+            if result["success"]:
+                ui_helpers.render_success_message(
+                    f"Connection successful!<br><code>{result['version']}</code>"
+                )
+            else:
+                ui_helpers.render_error_message(
+                    f"Connection failed:<br><code>{result['error']}</code>"
+                )
 
     st.divider()
 

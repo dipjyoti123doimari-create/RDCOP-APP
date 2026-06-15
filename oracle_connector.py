@@ -1,0 +1,199 @@
+"""
+oracle_connector.py
+===================
+Connects to the RDC enterprise Oracle database and fetches backend production
+data directly from rdc_batch_trx_headers — no Excel upload needed.
+
+Uses python-oracledb in THICK mode (requires Oracle Instant Client).
+The Instant Client folder path is stored in app_settings.
+
+Column mapping (Oracle → app):
+    CREATED_BY        -> created_by  (employee code)
+    PRODDATE          -> date        (production date, YYYY-MM-DD)
+    PRODUCED_QUANTITY -> quantity    (quantity produced)
+    STATUS filter     -> 'Processed' by default
+
+Public functions:
+    get_oracle_config()              -> dict of connection settings from DB
+    test_connection()                -> {"success": bool, "error": str, "version": str}
+    fetch_backend_data(from, to)     -> (DataFrame, warnings_list)
+    save_oracle_backend_data(df, ..) -> rows_inserted (int)
+"""
+
+import oracledb
+import pandas as pd
+from datetime import datetime
+
+import database
+
+# Schema + table in Oracle that holds the production data.
+_TABLE = "APPSREAD.rdc_batch_trx_headers"
+
+# Default path to Oracle Instant Client — overridden by app_settings.
+_DEFAULT_INSTANTCLIENT = r"D:\AI Project\Incentive Calculator\instantclient"
+
+# oracledb thick mode can only be initialised once per Python process.
+_thick_initialized = False
+
+
+def get_oracle_config() -> dict:
+    """Read Oracle connection settings from app_settings (single DB call)."""
+    s = database.get_all_settings()
+    return {
+        "host":          (s.get("oracle_host", "192.168.100.11") or "").strip(),
+        "port":          (s.get("oracle_port", "1528") or "1528").strip(),
+        "service":       (s.get("oracle_service", "RDCAZPRD") or "").strip(),
+        "user":          (s.get("oracle_user", "RDCREAD") or "").strip(),
+        "password":      (s.get("oracle_password", "") or ""),
+        "instantclient": (s.get("oracle_instantclient_dir", _DEFAULT_INSTANTCLIENT) or _DEFAULT_INSTANTCLIENT).strip(),
+        "status_filter": (s.get("oracle_status_filter", "Processed") or "").strip(),
+    }
+
+
+def is_configured(cfg: dict = None) -> bool:
+    """True when host, user and password are all set."""
+    cfg = cfg or get_oracle_config()
+    return bool(cfg["host"] and cfg["user"] and cfg["password"])
+
+
+def _init_thick(lib_dir: str):
+    """Initialise oracledb thick mode — safe to call multiple times."""
+    global _thick_initialized
+    if not _thick_initialized:
+        oracledb.init_oracle_client(lib_dir=lib_dir)
+        _thick_initialized = True
+
+
+def _dsn(cfg: dict) -> str:
+    return f"{cfg['host']}:{cfg['port']}/{cfg['service']}"
+
+
+def test_connection() -> dict:
+    """
+    Try to open a connection and return basic Oracle version info.
+    Returns {"success": bool, "error": str|None, "version": str}.
+    """
+    cfg = get_oracle_config()
+    try:
+        _init_thick(cfg["instantclient"])
+        conn = oracledb.connect(
+            user=cfg["user"], password=cfg["password"], dsn=_dsn(cfg)
+        )
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM v$version WHERE rownum = 1")
+        version = cur.fetchone()[0]
+        conn.close()
+        return {"success": True, "error": None, "version": version}
+    except Exception as exc:
+        return {"success": False, "error": str(exc), "version": ""}
+
+
+def fetch_backend_data(from_date, to_date) -> tuple:
+    """
+    Fetch production rows from Oracle for the given date range.
+
+    Returns:
+        (DataFrame, warnings_list)
+
+    The DataFrame has columns:
+        created_by, date (YYYY-MM-DD string), quantity
+    ready to be passed straight to save_oracle_backend_data().
+    """
+    cfg = get_oracle_config()
+    warnings = []
+
+    _init_thick(cfg["instantclient"])
+    conn = oracledb.connect(
+        user=cfg["user"], password=cfg["password"], dsn=_dsn(cfg)
+    )
+    try:
+        cur = conn.cursor()
+
+        # Build status filter clause only when a filter value is configured.
+        # PRODDATE is VARCHAR2 stored as 'YYYY-MM-DD' strings, so plain
+        # string comparison works correctly for date ranges.
+        fd = str(from_date)
+        td = str(to_date)
+
+        status_clause = ""
+        params = {"from_date": fd, "to_date": td}
+        if cfg["status_filter"]:
+            status_clause = "AND STATUS = :status"
+            params["status"] = cfg["status_filter"]
+
+        sql = f"""
+            SELECT
+                CREATED_BY        AS created_by,
+                PRODDATE          AS prod_date,
+                PRODUCED_QUANTITY AS quantity
+            FROM {_TABLE}
+            WHERE PRODDATE >= :from_date
+              AND PRODDATE <= :to_date
+              {status_clause}
+            ORDER BY PRODDATE, CREATED_BY
+        """
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+        cols = [d[0].lower() for d in cur.description]
+
+        if not rows:
+            warnings.append(
+                f"No rows found in Oracle for {from_date} → {to_date}"
+                + (f" with STATUS = '{cfg['status_filter']}'." if cfg["status_filter"] else ".")
+            )
+            return pd.DataFrame(columns=["created_by", "date", "quantity"]), warnings
+
+        df = pd.DataFrame(rows, columns=cols)
+        df = df.rename(columns={"prod_date": "date"})
+        df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0)
+
+        # Drop rows with blank employee code.
+        before = len(df)
+        df["created_by"] = df["created_by"].fillna("").astype(str).str.strip()
+        df = df[df["created_by"] != ""].reset_index(drop=True)
+        dropped = before - len(df)
+        if dropped:
+            warnings.append(f"{dropped} row(s) skipped — empty CREATED_BY.")
+
+        # Drop zero/negative quantity rows.
+        bad_qty = df["quantity"] <= 0
+        if bad_qty.sum():
+            warnings.append(f"{bad_qty.sum()} row(s) skipped — zero or negative PRODUCED_QUANTITY.")
+        df = df[~bad_qty].reset_index(drop=True)
+
+        return df, warnings
+
+    finally:
+        conn.close()
+
+
+def save_oracle_backend_data(df: pd.DataFrame, from_date, to_date,
+                              replace: bool = True) -> int:
+    """
+    Save a DataFrame returned by fetch_backend_data() into the backend_data table.
+
+    Args:
+        df         – DataFrame with columns: created_by, date, quantity
+        from_date  – start of the fetched range (used as source label)
+        to_date    – end of the fetched range (used as source label)
+        replace    – True = clear existing data first; False = append
+
+    Returns the number of rows saved.
+    """
+    now = datetime.now().isoformat(timespec="seconds")
+    source_label = f"Oracle {from_date} to {to_date}"
+
+    rows = [
+        {
+            "created_by":  str(row["created_by"]),
+            "quantity":    float(row["quantity"]),
+            "date":        str(row["date"]),
+            "source_file": source_label,
+            "uploaded_at": now,
+        }
+        for _, row in df.iterrows()
+    ]
+
+    if replace:
+        return database.replace_table_rows("backend_data", rows)
+    return database.insert_rows("backend_data", rows)
