@@ -32,41 +32,62 @@
   0%,100% { opacity: 0.45; transform: scale(1); }
   50%     { opacity: 0.75; transform: scale(1.05); }
 }
-
-/* ── Launcher layout ─────────────────────────────────── */
-.launcher-wrap {
-  min-height: 100vh; display: flex; flex-direction: column;
-  align-items: center; padding: 0 24px 64px; /* top-padding handled by header */
+@keyframes cardZoomExit {
+  0%   { transform: scale(1);    filter: blur(0px);  opacity: 1; }
+  35%  { transform: scale(1.55); filter: blur(1px);  opacity: 1; box-shadow: 0 0 80px rgba(99,91,255,0.7), 0 0 120px rgba(0,212,255,0.4); }
+  100% { transform: scale(4.5);  filter: blur(28px); opacity: 0; }
 }
 
-/* Sticky header — freezes while cards scroll under it */
+/* ── Launcher wrap — stretch so header spans full width ─ */
+.launcher-wrap {
+  min-height: 100vh;
+  display: flex; flex-direction: column;
+  align-items: stretch;      /* children stretch full width */
+  padding: 0 0 80px;
+}
+
+/* ── Sticky header ───────────────────────────────────── */
 .launcher-header {
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  position: sticky; top: 0; z-index: 100;
   display: flex; flex-direction: column; align-items: center;
   gap: 8px;
-  padding: 28px 48px 22px;
-  margin-bottom: 40px;
-  /* full-width frosted glass background */
+  padding: 36px 24px 28px;
+  margin-bottom: 0;
+
+  /* Transparent at top — glass when scrolled */
+  background: rgba(7, 8, 18, 0);
+  backdrop-filter: blur(0px);
+  -webkit-backdrop-filter: blur(0px);
+  border-bottom: 1px solid rgba(255,255,255,0);
+  transition:
+    background      0.45s ease,
+    backdrop-filter 0.45s ease,
+    border-color    0.45s ease,
+    box-shadow      0.45s ease;
 }
-.launcher-header::after {
+.launcher-header.is-scrolled {
+  background: rgba(7, 8, 18, 0.88);
+  backdrop-filter: blur(26px);
+  -webkit-backdrop-filter: blur(26px);
+  border-bottom-color: rgba(255,255,255,0.07);
+  box-shadow: 0 8px 48px rgba(0,0,0,0.65), 0 1px 0 rgba(99,91,255,0.15);
+}
+
+/* Fade gradient that extends BELOW the sticky header —
+   cards dissolve into it as they scroll under */
+.launcher-header::before {
   content: '';
-  position: absolute; top: 0; bottom: 0;
-  left: 50%; transform: translateX(-50%);
-  width: 100vw;
-  background: rgba(8, 9, 20, 0.86);
-  backdrop-filter: blur(22px);
-  -webkit-backdrop-filter: blur(22px);
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-  box-shadow: 0 4px 0 rgba(0,0,0,0);
-  z-index: -1;
-  transition: box-shadow 0.35s ease;
+  position: absolute;
+  top: 100%; left: 0; right: 0;
+  height: 100px;
+  background: linear-gradient(to bottom,
+    rgba(7,8,18,0.72) 0%,
+    rgba(7,8,18,0)    100%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.45s ease;
 }
-/* Deeper shadow once user has scrolled */
-.launcher-header.is-scrolled::after {
-  box-shadow: 0 6px 40px rgba(0,0,0,0.65), 0 1px 0 rgba(99,91,255,0.18);
-}
+.launcher-header.is-scrolled::before { opacity: 1; }
 
 /* ── Logo ────────────────────────────────────────────── */
 .launcher-logo-wrap {
@@ -75,29 +96,23 @@
   width: 136px; height: 136px;
   animation: launchLogoIn 0.85s cubic-bezier(0.22,1,0.36,1) 0.1s both;
 }
-/* Soft animated glow ring behind the logo */
 .launcher-logo-ring {
   position: absolute; inset: -10px; border-radius: 50%;
   background: conic-gradient(from 0deg,
-    rgba(99,91,255,0) 0%,
-    rgba(99,91,255,0.9) 20%,
-    rgba(0,212,255,0.9) 40%,
-    rgba(99,91,255,0) 60%);
+    rgba(99,91,255,0) 0%, rgba(99,91,255,0.9) 20%,
+    rgba(0,212,255,0.9) 40%, rgba(99,91,255,0) 60%);
   animation: logoRingSpin 3.5s linear infinite, logoRingPulse 2.5s ease-in-out infinite;
   filter: blur(5px);
 }
 .launcher-logo-ring-inner {
   position: absolute; inset: 0; border-radius: 50%;
   background: conic-gradient(from 180deg,
-    rgba(122,115,255,0) 0%,
-    rgba(122,115,255,0.7) 30%,
-    rgba(0,212,255,0.5) 50%,
-    rgba(122,115,255,0) 70%);
+    rgba(122,115,255,0) 0%, rgba(122,115,255,0.7) 30%,
+    rgba(0,212,255,0.5) 50%, rgba(122,115,255,0) 70%);
   animation: logoRingSpin 5s linear infinite reverse;
   filter: blur(3px); opacity: 0.7;
 }
 @keyframes logoRingSpin { to { transform: rotate(360deg); } }
-
 .launcher-logo-wrap img {
   position: relative; z-index: 1;
   width: 120px; height: 120px; border-radius: 20px; object-fit: contain;
@@ -116,7 +131,7 @@
   -webkit-text-fill-color: transparent; color: transparent;
   animation:
     launchBrandIn 0.55s cubic-bezier(0.22,1,0.36,1) 0.85s both,
-    nameShimmer   3s   linear                         1.5s infinite;
+    nameShimmer   3s   linear                         1.5s  infinite;
 }
 
 /* ── Signature byline ────────────────────────────────── */
@@ -124,8 +139,8 @@
   font-family: 'Meie Script', cursive; font-size: 19px; font-weight: 400;
   color: rgba(0,212,255,0.9);
   animation:
-    launchSubIn 0.45s ease 1.25s both,
-    subGlow     3s    ease-in-out 1.7s infinite;
+    launchSubIn 0.45s ease          1.25s both,
+    subGlow     3s    ease-in-out   1.7s  infinite;
 }
 
 /* ── Tagline ─────────────────────────────────────────── */
@@ -134,10 +149,14 @@
   animation: launchSubIn 0.45s ease 1.5s both;
 }
 
-/* ── Module grid ─────────────────────────────────────── */
+/* ── Module grid — centred inside the stretched wrap ─── */
 .module-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 24px; width: 100%; max-width: 1100px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 24px;
+  max-width: 1100px; width: 100%;
+  margin: 40px auto 0;
+  padding: 0 24px;
 }
 .module-card {
   background: var(--card); border: 1px solid var(--border); border-radius: 18px;
@@ -170,9 +189,12 @@
 .module-badge.soon   { background: rgba(251,191,36,0.12); color: #fbbf24; border: 1px solid rgba(251,191,36,0.25); }
 .module-name  { font-size: 26px; font-weight: 900; color: var(--text); letter-spacing: 0.06em; }
 .module-desc  { font-size: 14px; color: var(--text-muted); line-height: 1.55; flex: 1; }
+
+/* Full-width buttons */
 .module-launch {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 11px 22px; border-radius: 10px; font-size: 14px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%;
+  padding: 13px 22px; border-radius: 10px; font-size: 14px; font-weight: 700;
   text-decoration: none; transition: all .18s; border: none; cursor: pointer;
   font-family: var(--font);
 }
@@ -182,13 +204,6 @@
 }
 .module-launch.active:hover { box-shadow: 0 6px 28px rgba(99,91,255,0.6); transform: translateY(-1px); }
 .module-launch.soon { background: rgba(255,255,255,0.07); color: var(--text-faint); border: 1px solid var(--border); cursor: not-allowed; }
-
-/* ── Card zoom-exit transition ───────────────────────── */
-@keyframes cardZoomExit {
-  0%   { transform: scale(1);    filter: blur(0px);  opacity: 1; box-shadow: 0 0 0 rgba(99,91,255,0); }
-  35%  { transform: scale(1.55); filter: blur(1px);  opacity: 1; box-shadow: 0 0 80px rgba(99,91,255,0.7), 0 0 120px rgba(0,212,255,0.4); }
-  100% { transform: scale(4.5);  filter: blur(28px); opacity: 0; }
-}
 
 /* ── Theme picker (fixed top-right) ─────────────────── */
 .launcher-topbar {
@@ -238,7 +253,7 @@
 
 <!-- ── Main launcher content ─────────────────────────── -->
 <div class="launcher-wrap">
-  <div class="launcher-header">
+  <div class="launcher-header" id="launcher-header">
 
     <!-- Logo with dual spinning glow rings -->
     <div class="launcher-logo-wrap">
@@ -268,44 +283,44 @@
 </script>
 {% block scripts %}{% endblock %}
 <script>
-/* Sticky header scroll shadow */
 (function() {
-  var hdr = document.querySelector('.launcher-header');
-  if (!hdr) return;
-  window.addEventListener('scroll', function() {
-    hdr.classList.toggle('is-scrolled', window.scrollY > 8);
-  }, { passive: true });
-}());
+  /* Sticky header: transparent → frosted glass + fade veil on scroll */
+  var hdr = document.getElementById('launcher-header');
+  if (hdr) {
+    window.addEventListener('scroll', function() {
+      hdr.classList.toggle('is-scrolled', window.scrollY > 10);
+    }, { passive: true });
+  }
 
-/* Module launch zoom-exit transition */
-document.querySelectorAll('.module-launch.active').forEach(function(btn) {
-  btn.addEventListener('click', function(e) {
-    e.preventDefault();
-    var url = btn.href;
-    var card = btn.closest('.module-card');
+  /* Module launch zoom-exit transition */
+  document.querySelectorAll('.module-launch.active').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      var url = btn.href;
+      var card = btn.closest('.module-card');
 
-    /* Fade out header + sibling cards */
-    var header = document.querySelector('.launcher-header');
-    var topbar = document.querySelector('.launcher-topbar');
-    [header, topbar].forEach(function(el) {
-      if (el) { el.style.transition = 'opacity 0.38s ease'; el.style.opacity = '0'; }
+      /* Fade out header + topbar + sibling cards */
+      var topbar = document.querySelector('.launcher-topbar');
+      [hdr, topbar].forEach(function(el) {
+        if (el) { el.style.transition = 'opacity 0.38s ease'; el.style.opacity = '0'; }
+      });
+      document.querySelectorAll('.module-card').forEach(function(c) {
+        if (c !== card) { c.style.transition = 'opacity 0.38s ease'; c.style.opacity = '0'; }
+      });
+
+      /* Zoom the clicked card */
+      if (card) {
+        card.style.animation = 'none';
+        card.offsetHeight;
+        card.style.zIndex = '50';
+        card.style.position = 'relative';
+        card.style.animation = 'cardZoomExit 0.58s cubic-bezier(0.4,0,0.8,1) forwards';
+      }
+
+      setTimeout(function() { window.location.href = url; }, 560);
     });
-    document.querySelectorAll('.module-card').forEach(function(c) {
-      if (c !== card) { c.style.transition = 'opacity 0.38s ease'; c.style.opacity = '0'; }
-    });
-
-    /* Zoom the clicked card */
-    if (card) {
-      card.style.animation = 'none';
-      card.offsetHeight; /* force reflow */
-      card.style.zIndex = '50';
-      card.style.position = 'relative';
-      card.style.animation = 'cardZoomExit 0.58s cubic-bezier(0.4,0,0.8,1) forwards';
-    }
-
-    setTimeout(function() { window.location.href = url; }, 560);
   });
-});
+}());
 </script>
 </body>
 </html>
