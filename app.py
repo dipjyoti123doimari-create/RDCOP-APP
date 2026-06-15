@@ -15,6 +15,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import subprocess
 import sys
 import threading
 from datetime import date as _date, datetime as _dt, timedelta
@@ -1044,7 +1045,10 @@ def restart_server():
     def _restart():
         import time
         time.sleep(1)
-        os.execv(sys.executable, [sys.executable] + sys.argv)
+        # Spawn a new process first, then exit this one (works on Windows)
+        subprocess.Popen([sys.executable] + sys.argv,
+                         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0)
+        os._exit(0)
     threading.Thread(target=_restart, daemon=True).start()
     return jsonify({"ok": True})
 
