@@ -63,9 +63,26 @@ def inject_custom_css():
         border-bottom: 1px solid rgba(255,255,255,0.06) !important;
     }}
 
+    /* ---- Main content area — dark veil so text stays readable over any blob ---- */
+    section.main {{
+        background: rgba(5, 10, 20, 0.42) !important;
+    }}
+
     /* ---- Main content padding ---- */
     .block-container {{
         padding-top: 2rem !important;
+    }}
+
+    /* ---- Force white text on all native Streamlit elements ---- */
+    .stMarkdown p, .stMarkdown li, .stMarkdown h1, .stMarkdown h2,
+    .stMarkdown h3, .stMarkdown h4,
+    [data-testid="stText"], label, .stSelectbox label,
+    .stTextInput label, .stNumberInput label, .stTextArea label,
+    .stMultiSelect label, .stRadio label, .stCheckbox label,
+    .stToggle label, .stDateInput label,
+    [data-baseweb="form-control-label"],
+    .stSubheader, .stHeader, p {{
+        color: rgba(255,255,255,0.92) !important;
     }}
 
     /* ---- Sidebar — dark frosted glass ---- */
@@ -247,8 +264,15 @@ def inject_custom_css():
     }}
 
     /* ---- Caption / helper text ---- */
-    .stCaption, [data-testid="stCaptionContainer"] p {{
-        color: {t['text_secondary']} !important;
+    .stCaption, [data-testid="stCaptionContainer"] p,
+    [data-testid="stCaptionContainer"] {{
+        color: rgba(255,255,255,0.65) !important;
+    }}
+
+    /* ---- Info / status text inside st.success / st.info / st.warning ---- */
+    [data-testid="stNotification"] p,
+    [data-testid="stAlert"] p {{
+        color: rgba(255,255,255,0.92) !important;
     }}
 
     /* ---- Divider ---- */

@@ -191,7 +191,7 @@ THEME = {
     "card_bg":       "rgba(255, 255, 255, 0.04)",        # frosted glass card
     "card_border":   "rgba(255, 255, 255, 0.08)",        # subtle card border
     "text_primary":  "#FFFFFF",                          # white text
-    "text_secondary":"#8898AA",                          # muted blue-grey
+    "text_secondary":"rgba(255, 255, 255, 0.70)",            # soft white — readable over any blob
     "accent_purple": "#635BFF",                          # Stripe purple
     "accent_blue":   "#00D4FF",                          # Stripe cyan
     "success":       "rgba(16, 185, 129, 0.12)",         # dark green tint
