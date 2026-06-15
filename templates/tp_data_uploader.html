@@ -43,6 +43,178 @@
     </div>
     {% endif %}
   </div>
+
+  <!-- Current Plant Data -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:10px;flex-wrap:wrap">
+      <div class="section-title" style="margin:0">🏭 Current Plant Data</div>
+      <button type="button" class="btn btn-primary btn-sm" onclick="openManageModal('add')">✏️ Manage Plants</button>
+    </div>
+    {% if plant_count == 0 %}
+    <div class="glass-card">
+      <h3>No plant data yet</h3>
+      <p>Enter your Sheet ID above and click <strong>Sync Now</strong> to load plant data.</p>
+    </div>
+    {% else %}
+    <p class="caption" style="margin-bottom:10px">Showing <strong>{{ plant_count }}</strong> plants</p>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Plant Code</th>
+            <th>Exco Location</th>
+            <th>Plant</th>
+            <th>Business Head</th>
+            <th>Plant Manager</th>
+            <th>Mixer Cap.</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in plant_rows %}
+          <tr>
+            <td>{{ row.plant_code }}</td>
+            <td>{{ row.exco_location }}</td>
+            <td>{{ row.plant_name }}</td>
+            <td>{{ row.business_head }}</td>
+            <td>{{ row.plant_manager }}</td>
+            <td>{{ row.mixer_theo_cap }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ── Manage Plants Modal ──────────────────────────── -->
+  <div id="manage-plant-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeManageModal()">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span>✏️ Manage Plants</span>
+        <button type="button" class="modal-close" onclick="closeManageModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning" style="margin-bottom:14px;font-size:13px">Manual changes can be <strong>overwritten</strong> on the next Google Sheets sync.</div>
+
+        <div class="tabs">
+          <button class="tab-btn active" data-tabset="plant" data-tab="add">➕ Add</button>
+          <button class="tab-btn" data-tabset="plant" data-tab="edit">✏️ Edit</button>
+          <button class="tab-btn" data-tabset="plant" data-tab="delete">🗑️ Delete</button>
+          <button class="tab-btn" data-tabset="plant" data-tab="log">📜 Change Log</button>
+        </div>
+
+        <!-- Add -->
+        <div class="tab-panel active" data-tabpanel="plant" data-tab="add">
+          <form method="POST" action="{{ url_for('tp_add_plant') }}">
+            <div class="form-grid">
+              <div class="form-group"><label>Plant Code *</label><input type="text" name="plant_code" required></div>
+              <div class="form-group"><label>Exco Location</label><input type="text" name="exco_location"></div>
+              <div class="form-group"><label>Plant Name</label><input type="text" name="plant_name"></div>
+              <div class="form-group"><label>Business Head</label><input type="text" name="business_head"></div>
+              <div class="form-group"><label>Plant Manager</label><input type="text" name="plant_manager"></div>
+              <div class="form-group"><label>Mixer Theo. Capacity</label><input type="number" step="0.01" name="mixer_theo_cap" placeholder="0.00"></div>
+            </div>
+            <button type="submit" class="btn btn-primary">➕ Add Plant</button>
+          </form>
+        </div>
+
+        <!-- Edit -->
+        <div class="tab-panel" data-tabpanel="plant" data-tab="edit">
+          {% if not tp_codes %}
+          <div class="glass-card"><h3>No plants</h3><p>Add or sync plants first.</p></div>
+          {% else %}
+          <form method="GET" action="{{ url_for('tp_data_uploader') }}" id="edit-plant-select-form">
+            <div class="form-group">
+              <label>Select Plant Code</label>
+              <select name="edit_code" onchange="document.getElementById('edit-plant-select-form').submit()">
+                <option value="">— select —</option>
+                {% for c in tp_codes %}<option value="{{ c }}" {% if edit_plant and edit_plant.plant_code == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+              </select>
+            </div>
+          </form>
+          {% if edit_plant %}
+          <form method="POST" action="{{ url_for('tp_update_plant', code=edit_plant.plant_code) }}" style="margin-top:14px">
+            <div class="form-grid">
+              <div class="form-group"><label>Exco Location</label><input type="text" name="exco_location" value="{{ edit_plant.exco_location or '' }}"></div>
+              <div class="form-group"><label>Plant Name</label><input type="text" name="plant_name" value="{{ edit_plant.plant_name or '' }}"></div>
+              <div class="form-group"><label>Business Head</label><input type="text" name="business_head" value="{{ edit_plant.business_head or '' }}"></div>
+              <div class="form-group"><label>Plant Manager</label><input type="text" name="plant_manager" value="{{ edit_plant.plant_manager or '' }}"></div>
+              <div class="form-group"><label>Mixer Theo. Capacity</label><input type="number" step="0.01" name="mixer_theo_cap" value="{{ edit_plant.mixer_theo_cap or '' }}"></div>
+            </div>
+            <button type="submit" class="btn btn-primary">💾 Save Changes</button>
+          </form>
+          {% endif %}
+          {% endif %}
+        </div>
+
+        <!-- Delete -->
+        <div class="tab-panel" data-tabpanel="plant" data-tab="delete">
+          {% if not tp_codes %}
+          <div class="glass-card"><h3>No plants</h3><p>Nothing to delete yet.</p></div>
+          {% else %}
+          <form method="GET" action="{{ url_for('tp_data_uploader') }}" id="del-plant-select-form">
+            <div class="form-group">
+              <label>Select Plant Code</label>
+              <select name="del_code" onchange="document.getElementById('del-plant-select-form').submit()">
+                <option value="">— select —</option>
+                {% for c in tp_codes %}<option value="{{ c }}" {% if del_plant and del_plant.plant_code == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+              </select>
+            </div>
+          </form>
+          {% if del_plant %}
+          <div class="table-wrapper" style="margin:12px 0">
+            <table>
+              <thead><tr><th>Plant Code</th><th>Exco Location</th><th>Plant</th><th>Business Head</th><th>Plant Manager</th><th>Mixer Cap.</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td>{{ del_plant.plant_code }}</td>
+                  <td>{{ del_plant.exco_location }}</td>
+                  <td>{{ del_plant.plant_name }}</td>
+                  <td>{{ del_plant.business_head }}</td>
+                  <td>{{ del_plant.plant_manager }}</td>
+                  <td>{{ del_plant.mixer_theo_cap }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <form method="POST" action="{{ url_for('tp_delete_plant', code=del_plant.plant_code) }}"
+                onsubmit="return confirm('Delete plant {{ del_plant.plant_code }}? This cannot be undone.')">
+            <button type="submit" class="btn btn-danger">🗑️ Delete Plant</button>
+          </form>
+          {% endif %}
+          {% endif %}
+        </div>
+
+        <!-- Change Log -->
+        <div class="tab-panel" data-tabpanel="plant" data-tab="log">
+          {% if not log_rows %}
+          <div class="glass-card"><h3>No changes yet</h3><p>Add, edit or delete a plant to see the log here.</p></div>
+          {% else %}
+          <p class="caption" style="margin-bottom:10px">{{ log_rows | length }} change(s), newest first</p>
+          <div class="table-wrapper">
+            <table>
+              <thead><tr><th>Action</th><th>Plant Code</th><th>Old Values</th><th>New Values</th><th>When</th><th>By</th></tr></thead>
+              <tbody>
+                {% for r in log_rows %}
+                <tr>
+                  <td>{{ r.action_type }}</td>
+                  <td>{{ r.plant_code }}</td>
+                  <td style="font-size:11px;max-width:160px;word-break:break-all">{{ r.old_value_json }}</td>
+                  <td style="font-size:11px;max-width:160px;word-break:break-all">{{ r.new_value_json }}</td>
+                  <td>{{ r.changed_at }}</td>
+                  <td>{{ r.changed_by }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endif %}
+        </div>
+
+      </div><!-- modal-body -->
+    </div><!-- modal-box -->
+  </div><!-- manage-plant-modal -->
+
 </div>
 
 <!-- ── Oracle (Live) ───────────────────────────────── -->
@@ -89,5 +261,24 @@
   });
   var hash = location.hash.replace('#','');
   if (['sheets','oracle'].includes(hash)) switchTab('main', hash);
+
+  function openManageModal(tab) {
+    var modal = document.getElementById('manage-plant-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    if (tab) switchTab('plant', tab);
+  }
+  function closeManageModal() {
+    var modal = document.getElementById('manage-plant-modal');
+    if (!modal) return;
+    modal.style.display = 'none';
+    document.body.style.overflow = '';
+  }
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeManageModal(); });
+
+  var params = new URLSearchParams(location.search);
+  if (params.get('edit_code')) { openManageModal('edit'); }
+  if (params.get('del_code'))  { openManageModal('delete'); }
 </script>
 {% endblock %}

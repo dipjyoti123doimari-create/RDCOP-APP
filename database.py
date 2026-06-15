@@ -203,6 +203,19 @@ TABLE_SCHEMAS = {
         )
     """,
 
+    # Audit trail for manual add/edit/delete of TP plant rows
+    "tp_plant_change_log": """
+        CREATE TABLE IF NOT EXISTS tp_plant_change_log (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            action_type     TEXT,
+            plant_code      TEXT,
+            old_value_json  TEXT,
+            new_value_json  TEXT,
+            changed_at      TEXT,
+            changed_by      TEXT
+        )
+    """,
+
     # Raw production rows pulled from Oracle (after cleaning & filtering)
     "tp_oracle_data": """
         CREATE TABLE IF NOT EXISTS tp_oracle_data (
@@ -668,3 +681,132 @@ def delete_employee(employee_code, changed_by="Admin"):
 
     log_master_data_change("DELETE", code, old_value=_employee_snapshot(old),
                            new_value=None, changed_by=changed_by)
+
+
+# ---------------------------------------------------------------------------
+# 8. TP PLANT DATA SINGLE-ROW HELPERS
+# ---------------------------------------------------------------------------
+_TP_PLANT_FIELDS = ["exco_location", "plant_name", "business_head",
+                    "plant_manager", "mixer_theo_cap"]
+
+
+def get_tp_plants():
+    """Return all rows from tp_plant_data as list of dicts, ordered by plant_code."""
+    df = read_table("tp_plant_data", order_by="plant_code")
+    if df.empty:
+        return []
+    df = df.drop(columns=["id"], errors="ignore")
+    return [dict(r) for _, r in df.iterrows()]
+
+
+def get_tp_plant(plant_code):
+    """Return one plant as a dict, or None if not found."""
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "SELECT * FROM tp_plant_data WHERE plant_code = ?",
+            (str(plant_code).strip(),),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_tp_plant_codes():
+    """Return sorted list of all plant codes."""
+    conn = get_connection()
+    try:
+        cur = conn.execute("SELECT plant_code FROM tp_plant_data ORDER BY plant_code")
+        return [r[0] for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def _tp_plant_snapshot(plant):
+    if plant is None:
+        return None
+    return {f: plant.get(f) for f in _TP_PLANT_FIELDS}
+
+
+def log_tp_plant_change(action_type, plant_code, old_value=None,
+                        new_value=None, changed_by="Admin"):
+    insert_rows("tp_plant_change_log", [{
+        "action_type":    action_type,
+        "plant_code":     plant_code,
+        "old_value_json": json.dumps(old_value) if old_value is not None else None,
+        "new_value_json": json.dumps(new_value) if new_value is not None else None,
+        "changed_at":     _now(),
+        "changed_by":     changed_by,
+    }])
+
+
+def get_tp_plant_log():
+    """Return change log rows newest-first."""
+    df = read_table("tp_plant_change_log", order_by="id DESC")
+    if df.empty:
+        return []
+    return [dict(r) for _, r in df.drop(columns=["id"], errors="ignore").iterrows()]
+
+
+def add_tp_plant(plant_code, exco_location, plant_name, business_head,
+                 plant_manager, mixer_theo_cap, changed_by="Admin"):
+    code = str(plant_code).strip()
+    if not code:
+        raise ValueError("Plant Code cannot be blank.")
+    if get_tp_plant(code) is not None:
+        raise ValueError(f"Plant Code '{code}' already exists.")
+    new_values = {
+        "exco_location":  str(exco_location).strip(),
+        "plant_name":     str(plant_name).strip(),
+        "business_head":  str(business_head).strip(),
+        "plant_manager":  str(plant_manager).strip(),
+        "mixer_theo_cap": float(mixer_theo_cap) if mixer_theo_cap else 0.0,
+    }
+    insert_rows("tp_plant_data", [{"plant_code": code, **new_values, "updated_at": _now()}])
+    log_tp_plant_change("ADD", code, old_value=None, new_value=new_values,
+                        changed_by=changed_by)
+
+
+def update_tp_plant(plant_code, exco_location, plant_name, business_head,
+                    plant_manager, mixer_theo_cap, changed_by="Admin"):
+    code = str(plant_code).strip()
+    old = get_tp_plant(code)
+    if old is None:
+        raise ValueError(f"Plant Code '{code}' was not found.")
+    new_values = {
+        "exco_location":  str(exco_location).strip(),
+        "plant_name":     str(plant_name).strip(),
+        "business_head":  str(business_head).strip(),
+        "plant_manager":  str(plant_manager).strip(),
+        "mixer_theo_cap": float(mixer_theo_cap) if mixer_theo_cap else 0.0,
+    }
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE tp_plant_data SET exco_location=?, plant_name=?, business_head=?, "
+            "plant_manager=?, mixer_theo_cap=?, updated_at=? WHERE plant_code=?",
+            (new_values["exco_location"], new_values["plant_name"],
+             new_values["business_head"], new_values["plant_manager"],
+             new_values["mixer_theo_cap"], _now(), code),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    log_tp_plant_change("EDIT", code, old_value=_tp_plant_snapshot(old),
+                        new_value=new_values, changed_by=changed_by)
+
+
+def delete_tp_plant(plant_code, changed_by="Admin"):
+    code = str(plant_code).strip()
+    old = get_tp_plant(code)
+    if old is None:
+        raise ValueError(f"Plant Code '{code}' was not found.")
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM tp_plant_data WHERE plant_code = ?", (code,))
+        conn.commit()
+    finally:
+        conn.close()
+    log_tp_plant_change("DELETE", code, old_value=_tp_plant_snapshot(old),
+                        new_value=None, changed_by=changed_by)

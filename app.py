@@ -437,18 +437,77 @@ def tp_dashboard():
 # ── Data Uploader ─────────────────────────────────────────────────────────────
 @app.route("/tp/data-uploader")
 def tp_data_uploader():
-    ora_ready = oracle_connector.is_configured()
-    last_sync = google_sheets.get_tp_last_sync_info()
-    sheet_id  = database.get_module_setting("tp", "gsheet_id",
-                                            database.get_setting("gsheet_id", ""))
+    ora_ready    = oracle_connector.is_configured()
+    last_sync    = google_sheets.get_tp_last_sync_info()
+    sheet_id     = database.get_module_setting("tp", "gsheet_id",
+                                               database.get_setting("gsheet_id", ""))
     tp_worksheet = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
-    ora_counts = database.get_table_counts().get("tp_oracle_data", 0)
+    ora_counts   = database.get_table_counts().get("tp_oracle_data", 0)
+
+    plant_rows  = database.get_tp_plants()
+    plant_count = len(plant_rows)
+    tp_codes    = database.get_tp_plant_codes()
+    log_rows    = database.get_tp_plant_log()
+
+    edit_code  = request.args.get("edit_code", "").strip()
+    del_code   = request.args.get("del_code", "").strip()
+    edit_plant = database.get_tp_plant(edit_code) if edit_code else None
+    del_plant  = database.get_tp_plant(del_code)  if del_code  else None
+
     ctx = _tp_ctx()
     ctx["active_page"] = "data_uploader"
     return render_template("tp_data_uploader.html",
                            ora_ready=ora_ready, last_sync=last_sync,
                            sheet_id=sheet_id, tp_worksheet=tp_worksheet,
-                           ora_counts=ora_counts, **ctx)
+                           ora_counts=ora_counts,
+                           plant_rows=plant_rows, plant_count=plant_count,
+                           tp_codes=tp_codes, log_rows=log_rows,
+                           edit_plant=edit_plant, del_plant=del_plant,
+                           **ctx)
+
+
+@app.route("/tp/action/add-plant", methods=["POST"])
+def tp_add_plant():
+    try:
+        database.add_tp_plant(
+            plant_code     = request.form.get("plant_code", ""),
+            exco_location  = request.form.get("exco_location", ""),
+            plant_name     = request.form.get("plant_name", ""),
+            business_head  = request.form.get("business_head", ""),
+            plant_manager  = request.form.get("plant_manager", ""),
+            mixer_theo_cap = request.form.get("mixer_theo_cap", 0),
+        )
+        flash("✅ Plant added successfully.", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("tp_data_uploader") + "#sheets")
+
+
+@app.route("/tp/action/update-plant/<code>", methods=["POST"])
+def tp_update_plant(code):
+    try:
+        database.update_tp_plant(
+            plant_code     = code,
+            exco_location  = request.form.get("exco_location", ""),
+            plant_name     = request.form.get("plant_name", ""),
+            business_head  = request.form.get("business_head", ""),
+            plant_manager  = request.form.get("plant_manager", ""),
+            mixer_theo_cap = request.form.get("mixer_theo_cap", 0),
+        )
+        flash("✅ Plant updated successfully.", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("tp_data_uploader") + "#sheets")
+
+
+@app.route("/tp/action/delete-plant/<code>", methods=["POST"])
+def tp_delete_plant(code):
+    try:
+        database.delete_tp_plant(code)
+        flash(f"✅ Plant '{code}' deleted.", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("tp_data_uploader") + "#sheets")
 
 
 @app.route("/tp/action/fetch-oracle", methods=["POST"])
