@@ -128,7 +128,7 @@
 .module-card {
   background: var(--card); border: 1px solid var(--border); border-radius: 18px;
   padding: 32px 28px; display: flex; flex-direction: column; gap: 14px;
-  transition: border-color .2s, box-shadow .2s, transform .18s;
+  transition: border-color .2s, box-shadow .2s, transform .18s, filter .22s ease, opacity .22s ease;
   position: relative; overflow: hidden;
 }
 .module-card:nth-child(1) { animation: launchCardIn 0.5s cubic-bezier(0.22,1,0.36,1) 1.75s both; }
@@ -253,27 +253,34 @@
 (function() {
   var hdr = document.getElementById('launcher-header');
 
-  /* Cards blur + fade as they scroll up toward the header —
-     header itself never changes appearance */
+  /* Cards blur only after 80% of the card has scrolled past the header.
+     On scroll-down they fully restore. Header never changes. */
   function updateCardBlur() {
     if (!hdr) return;
     var headerBottom = hdr.getBoundingClientRect().bottom;
-    var fadeZone = 140; /* px below header where blur begins */
 
     document.querySelectorAll('.module-card').forEach(function(card) {
-      var top = card.getBoundingClientRect().top;
-      var dist = top - headerBottom; /* positive = card below header */
+      var rect = card.getBoundingClientRect();
+      /* How many px of the card are above the header bottom (positive = scrolled under) */
+      var under = headerBottom - rect.top;
 
-      if (dist >= fadeZone) {
+      if (under <= 0) {
+        /* Card top is still below/at header — fully visible */
         card.style.filter  = '';
         card.style.opacity = '';
-      } else if (dist <= 0) {
-        card.style.filter  = 'blur(18px)';
-        card.style.opacity = '0';
       } else {
-        var t = 1 - dist / fadeZone; /* 0→1 as card approaches header */
-        card.style.filter  = 'blur(' + (t * 18).toFixed(1) + 'px)';
-        card.style.opacity = String(Math.max(0, 1 - t).toFixed(2));
+        var cardH = rect.height || 1;
+        /* Blur starts only after 80% of the card has passed the header */
+        var blurStart = cardH * 0.8;
+        if (under < blurStart) {
+          card.style.filter  = '';
+          card.style.opacity = '';
+        } else {
+          /* Remaining 20% of card → blur 0→18px, opacity 1→0 */
+          var t = Math.min(1, (under - blurStart) / (cardH * 0.2));
+          card.style.filter  = 'blur(' + (t * 18).toFixed(1) + 'px)';
+          card.style.opacity = String((1 - t).toFixed(2));
+        }
       }
     });
   }
