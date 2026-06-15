@@ -4,189 +4,319 @@
 
 <div class="page-header">
   <h1>Settings</h1>
-  <p>Animated background · SMTP email · Oracle database · Cache &amp; storage</p>
+  <p>Click any card to configure that section</p>
 </div>
 
-<!-- ── Animated Background ─────────────────────────── -->
-<div class="card settings-section">
-  <div class="section-title">🎨 Animated Background</div>
-  <p class="caption" style="margin-bottom:14px">Stripe-inspired gradient blob background. Reacts to your mouse and can follow your system clock.</p>
+<!-- ── Settings cards grid ─────────────────────────────────────── -->
+<div class="settings-card-grid">
 
-  <form method="POST" action="{{ url_for('save_bg_settings') }}">
-    <div class="toggle-row">
-      <input type="checkbox" class="toggle" name="auto_theme" id="auto-toggle"
-             {% if bg_auto %}checked{% endif %}
-             onchange="document.getElementById('manual-theme-row').style.display=this.checked?'none':'flex'">
-      <div class="toggle-text">
-        <span class="toggle-label">Use automatic theme based on system time</span>
-        <span class="toggle-sub">04–06 Pre-dawn · 06–09 Sunrise · 09–17 Daytime · 17–18:30 Dusk · 18:30–20 Sunset · 20–04 Night</span>
+  <!-- Background -->
+  <div class="settings-tile" onclick="openModal('modal-bg')">
+    <div class="settings-tile-icon">🎨</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Animated Background</div>
+      <div class="settings-tile-status">
+        {% if bg_auto %}Auto theme · {% else %}Manual: {{ bg_theme }} · {% endif %}
+        {% if bg_animate %}Animation ON{% else %}Animation OFF{% endif %}
       </div>
     </div>
-    <div class="toggle-row" id="manual-theme-row" style="{% if bg_auto %}display:none{% endif %}">
-      <div class="form-group" style="flex:1;margin-bottom:0">
-        <label>Manual Theme</label>
-        <select name="manual_theme">
-          {% for t in ['Pre-dawn','Sunrise','Daytime','Dusk','Sunset','Night'] %}
-          <option {% if t == bg_theme %}selected{% endif %}>{{ t }}</option>
-          {% endfor %}
-        </select>
-      </div>
-    </div>
-    <div class="toggle-row">
-      <input type="checkbox" class="toggle" name="animate" {% if bg_animate %}checked{% endif %}>
-      <div class="toggle-text">
-        <span class="toggle-label">Background animation</span>
-        <span class="toggle-sub">Turn off for a static gradient snapshot (no moving blobs)</span>
-      </div>
-    </div>
-    <button type="submit" class="btn btn-primary btn-sm">💾 Save Background Settings</button>
-  </form>
-</div>
-
-<!-- ── SMTP Email ──────────────────────────────────── -->
-<div class="card settings-section">
-  <div class="section-title">✉️ Email (SMTP) Settings</div>
-  <p class="caption" style="margin-bottom:12px">Used to email the Excel report from the View Reports page. For Gmail, create an <strong>App Password</strong> — not your regular password.</p>
-
-  {% if email_configured %}
-  <div class="alert alert-success" style="margin-bottom:12px">✅ SMTP is configured and ready to send.</div>
-  {% else %}
-  <div class="alert alert-warning" style="margin-bottom:12px">⚠️ SMTP is not fully configured yet.</div>
-  {% endif %}
-
-  <form method="POST" action="{{ url_for('save_smtp') }}">
-    <div class="form-grid">
-      <div class="form-group"><label>SMTP Host</label><input type="text" name="host" value="{{ smtp.host }}" placeholder="smtp.gmail.com"></div>
-      <div class="form-group"><label>Port</label><input type="number" name="port" value="{{ smtp.port }}" min="1" max="65535"></div>
-      <div class="form-group"><label>Sender Email</label><input type="text" name="sender" value="{{ smtp.sender }}" placeholder="you@company.com"></div>
-      <div class="form-group"><label>Password / App Password</label><input type="password" name="password" value="" placeholder="Leave blank to keep saved password"></div>
-      <div class="form-group"><label>Default To (comma-separated)</label><input type="text" name="default_to" value="{{ smtp.default_to }}"></div>
-      <div class="form-group"><label>Default CC (optional)</label><input type="text" name="default_cc" value="{{ smtp.default_cc }}"></div>
-    </div>
-    <div class="form-group"><label>Default Subject</label><input type="text" name="subject" value="{{ smtp.subject }}"></div>
-    <div class="toggle-row">
-      <input type="checkbox" class="toggle" name="use_tls" {% if smtp.use_tls %}checked{% endif %}>
-      <div class="toggle-text"><span class="toggle-label">Use TLS (recommended)</span></div>
-    </div>
-    <button type="submit" class="btn btn-primary">💾 Save Email Settings</button>
-  </form>
-
-  {% if email_configured %}
-  <hr class="divider">
-  <form method="POST" action="{{ url_for('test_smtp') }}">
-    <button type="submit" class="btn btn-secondary">✉️ Send a test email to {{ smtp.sender }}</button>
-  </form>
-  {% endif %}
-</div>
-
-<!-- ── Oracle Database ────────────────────────────── -->
-<div class="card settings-section">
-  <div class="section-title">🔌 Oracle Database</div>
-  <p class="caption" style="margin-bottom:12px">Connection details for the enterprise Oracle database. Used to fetch backend production data directly from Oracle.</p>
-
-  {% if ora_configured %}
-  <div class="alert alert-success" style="margin-bottom:12px">✅ Oracle connection is configured.</div>
-  {% else %}
-  <div class="alert alert-warning" style="margin-bottom:12px">⚠️ Oracle connection is not fully configured yet.</div>
-  {% endif %}
-
-  <form method="POST" action="{{ url_for('save_oracle') }}">
-    <div class="form-grid">
-      <div class="form-group"><label>Host (IP)</label><input type="text" name="host" value="{{ ora.host }}" placeholder="192.168.100.11"></div>
-      <div class="form-group"><label>Port</label><input type="text" name="port" value="{{ ora.port }}" placeholder="1528"></div>
-      <div class="form-group"><label>Service Name</label><input type="text" name="service" value="{{ ora.service }}" placeholder="RDCAZPRD"></div>
-      <div class="form-group"><label>Username</label><input type="text" name="user" value="{{ ora.user }}" placeholder="RDCREAD"></div>
-      <div class="form-group"><label>Password</label><input type="password" name="password" value="" placeholder="Leave blank to keep saved password"></div>
-      <div class="form-group"><label>Status Filter</label><input type="text" name="status_filter" value="{{ ora.status_filter }}" placeholder="Processed" title="Only fetch rows where STATUS = this value. Leave blank for all."></div>
-    </div>
-    <div class="form-group"><label>Oracle Instant Client Path</label><input type="text" name="instantclient" value="{{ ora.instantclient }}" placeholder="D:\AI Project\Incentive Calculator\instantclient"></div>
-    <button type="submit" class="btn btn-primary">💾 Save Oracle Settings</button>
-  </form>
-
-  {% if ora_configured %}
-  <hr class="divider">
-  <form method="POST" action="{{ url_for('test_oracle') }}">
-    <button type="submit" class="btn btn-secondary">🔌 Test Oracle Connection</button>
-  </form>
-  {% endif %}
-</div>
-
-<!-- ── Scheduled Monthly Report ───────────────────── -->
-<div class="card settings-section">
-  <div class="section-title">📅 Scheduled Monthly Report</div>
-  <p class="caption" style="margin-bottom:14px">Automatically emails the <strong>previous month's</strong> incentive report to the configured recipients on the <strong>1st of every month</strong> at the chosen time.</p>
-
-  <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px">
-    <form method="POST" action="{{ url_for('toggle_email_schedule') }}" style="display:inline">
-      <button type="submit" class="btn {% if sched_enabled %}btn-primary{% else %}btn-secondary{% endif %}">
-        {% if sched_enabled %}✅ Scheduler ON — click to disable{% else %}⏸ Scheduler OFF — click to enable{% endif %}
-      </button>
-    </form>
-    {% if sched_last_status %}
-    <span class="caption">Last run: <strong>{{ sched_last_status }}</strong></span>
-    {% endif %}
+    <span class="settings-tile-arrow">›</span>
   </div>
 
-  <form method="POST" action="{{ url_for('save_email_schedule') }}">
-    <div class="form-grid">
-      <div class="form-group">
-        <label>Send Time (on 1st of month)</label>
-        <input type="time" name="sched_time" value="{{ sched_time }}">
-      </div>
-      <div class="form-group">
-        <label>To (comma-separated)</label>
-        <input type="text" name="sched_to" value="{{ sched_to }}" placeholder="manager@company.com, director@company.com">
-      </div>
-      <div class="form-group">
-        <label>CC (optional)</label>
-        <input type="text" name="sched_cc" value="{{ sched_cc }}" placeholder="hr@company.com">
+  <!-- SMTP -->
+  <div class="settings-tile" onclick="openModal('modal-smtp')">
+    <div class="settings-tile-icon">✉️</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Email (SMTP)</div>
+      <div class="settings-tile-status {% if email_configured %}status-ok{% else %}status-warn{% endif %}">
+        {% if email_configured %}✅ Configured — {{ smtp.sender }}{% else %}⚠️ Not configured{% endif %}
       </div>
     </div>
-    <button type="submit" class="btn btn-primary btn-sm">💾 Save Schedule Settings</button>
-  </form>
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
+  <!-- Oracle -->
+  <div class="settings-tile" onclick="openModal('modal-oracle')">
+    <div class="settings-tile-icon">🔌</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Oracle Database</div>
+      <div class="settings-tile-status {% if ora_configured %}status-ok{% else %}status-warn{% endif %}">
+        {% if ora_configured %}✅ Connected to Oracle{% else %}❌ Not connected to Oracle{% endif %}
+      </div>
+    </div>
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
+  <!-- Schedule -->
+  <div class="settings-tile" onclick="openModal('modal-schedule')">
+    <div class="settings-tile-icon">📅</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Scheduled Monthly Report</div>
+      <div class="settings-tile-status {% if sched_enabled %}status-ok{% else %}status-warn{% endif %}">
+        {% if sched_enabled %}✅ Enabled · {{ sched_time }} on 1st{% else %}⏸ Disabled{% endif %}
+        {% if sched_to %} → {{ sched_to[:30] }}{% if sched_to|length > 30 %}…{% endif %}{% endif %}
+      </div>
+    </div>
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
+  <!-- Cache -->
+  <div class="settings-tile" onclick="openModal('modal-cache')">
+    <div class="settings-tile-icon">🧹</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Cache &amp; Storage</div>
+      <div class="settings-tile-status">
+        {{ db_size_mb }} MB
+        {% if last_cache_clear %} · Last compacted {{ last_cache_clear }}{% endif %}
+      </div>
+    </div>
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
 </div>
 
-<!-- ── Cache & Storage ────────────────────────────── -->
-<div class="card settings-section">
-  <div class="section-title">🧹 Cache &amp; Storage</div>
-  <p class="caption" style="margin-bottom:12px">Housekeeping tools. Your Master Data, uploads, calculation results and settings are <strong>NOT</strong> deleted.</p>
 
-  <div class="kpi-card" style="max-width:200px;margin-bottom:16px">
-    <div class="kpi-label">Database File Size</div>
-    <div class="kpi-value" style="font-size:22px">{{ db_size_mb }} MB</div>
+<!-- ══════════════════════════════════════════════════════════════
+     MODAL: Animated Background
+══════════════════════════════════════════════════════════════ -->
+<div id="modal-bg" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-bg')">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span>🎨 Animated Background</span>
+      <button class="modal-close" onclick="closeModal('modal-bg')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="caption" style="margin-bottom:14px">Stripe-inspired gradient blob background. Reacts to your mouse and can follow your system clock.</p>
+      <form method="POST" action="{{ url_for('save_bg_settings') }}">
+        <div class="toggle-row">
+          <input type="checkbox" class="toggle" name="auto_theme" id="auto-toggle"
+                 {% if bg_auto %}checked{% endif %}
+                 onchange="document.getElementById('manual-theme-row').style.display=this.checked?'none':'flex'">
+          <div class="toggle-text">
+            <span class="toggle-label">Use automatic theme based on system time</span>
+            <span class="toggle-sub">04–06 Pre-dawn · 06–09 Sunrise · 09–17 Daytime · 17–18:30 Dusk · 18:30–20 Sunset · 20–04 Night</span>
+          </div>
+        </div>
+        <div class="toggle-row" id="manual-theme-row" style="{% if bg_auto %}display:none{% endif %}">
+          <div class="form-group" style="flex:1;margin-bottom:0">
+            <label>Manual Theme</label>
+            <select name="manual_theme">
+              {% for t in ['Pre-dawn','Sunrise','Daytime','Dusk','Sunset','Night'] %}
+              <option {% if t == bg_theme %}selected{% endif %}>{{ t }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="toggle-row">
+          <input type="checkbox" class="toggle" name="animate" {% if bg_animate %}checked{% endif %}>
+          <div class="toggle-text">
+            <span class="toggle-label">Background animation</span>
+            <span class="toggle-sub">Turn off for a static gradient snapshot (no moving blobs)</span>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">💾 Save Background Settings</button>
+      </form>
+    </div>
   </div>
+</div>
 
-  {% if last_cache_clear %}
-  <p class="caption" style="margin-bottom:10px">Last compacted: <strong>{{ last_cache_clear }}</strong></p>
-  {% endif %}
 
-  <p style="color:var(--text-muted);font-size:14px;margin-bottom:14px">
-    <strong>Clear Cache</strong> compacts the database file to remove unused empty space.
-    Runs <strong>at most once per day</strong> to avoid unnecessary I/O.
-  </p>
-
-  {% if cache_cleared_today %}
-  <div class="alert alert-info" style="margin-bottom:14px">
-    ✅ Already compacted today ({{ last_cache_clear }}). Come back tomorrow for the next run.
+<!-- ══════════════════════════════════════════════════════════════
+     MODAL: Email SMTP
+══════════════════════════════════════════════════════════════ -->
+<div id="modal-smtp" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-smtp')">
+  <div class="modal-box" style="max-width:640px">
+    <div class="modal-header">
+      <span>✉️ Email (SMTP) Settings</span>
+      <button class="modal-close" onclick="closeModal('modal-smtp')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="caption" style="margin-bottom:12px">Used to email the Excel report from the View Reports page. For Gmail, create an <strong>App Password</strong> — not your regular password.</p>
+      {% if email_configured %}
+      <div class="alert alert-success" style="margin-bottom:12px">✅ SMTP is configured and ready to send.</div>
+      {% else %}
+      <div class="alert alert-warning" style="margin-bottom:12px">⚠️ SMTP is not fully configured yet.</div>
+      {% endif %}
+      <form method="POST" action="{{ url_for('save_smtp') }}">
+        <div class="form-grid">
+          <div class="form-group"><label>SMTP Host</label><input type="text" name="host" value="{{ smtp.host }}" placeholder="smtp.gmail.com"></div>
+          <div class="form-group"><label>Port</label><input type="number" name="port" value="{{ smtp.port }}" min="1" max="65535"></div>
+          <div class="form-group"><label>Sender Email</label><input type="text" name="sender" value="{{ smtp.sender }}" placeholder="you@company.com"></div>
+          <div class="form-group"><label>Password / App Password</label><input type="password" name="password" value="" placeholder="Leave blank to keep saved password"></div>
+          <div class="form-group"><label>Default To (comma-separated)</label><input type="text" name="default_to" value="{{ smtp.default_to }}"></div>
+          <div class="form-group"><label>Default CC (optional)</label><input type="text" name="default_cc" value="{{ smtp.default_cc }}"></div>
+        </div>
+        <div class="form-group"><label>Default Subject</label><input type="text" name="subject" value="{{ smtp.subject }}"></div>
+        <div class="toggle-row">
+          <input type="checkbox" class="toggle" name="use_tls" {% if smtp.use_tls %}checked{% endif %}>
+          <div class="toggle-text"><span class="toggle-label">Use TLS (recommended)</span></div>
+        </div>
+        <button type="submit" class="btn btn-primary">💾 Save Email Settings</button>
+      </form>
+      {% if email_configured %}
+      <hr class="divider">
+      <form method="POST" action="{{ url_for('test_smtp') }}">
+        <button type="submit" class="btn btn-secondary">✉️ Send test email to {{ smtp.sender }}</button>
+      </form>
+      {% endif %}
+    </div>
   </div>
-  <button class="btn btn-secondary" disabled>🧹 Clear Cache &amp; Compact Database</button>
-  {% else %}
-  <form method="POST" action="{{ url_for('clear_cache') }}" id="cache-form">
-    <button type="submit" class="btn btn-primary" id="cache-btn">🧹 Clear Cache &amp; Compact Database</button>
-    <div class="loading" id="cache-loading" style="margin-left:12px"><div class="spinner"></div> Compacting…</div>
-  </form>
-  {% endif %}
+</div>
 
-  <hr class="divider">
-  <p style="color:var(--text-muted);font-size:14px;margin-bottom:10px">
-    <strong>Hard Refresh</strong> forces the browser to reload all CSS, JS and fonts fresh — useful after app updates.
-  </p>
-  <button class="btn btn-secondary btn-sm" onclick="hardRefresh()">🔄 Hard Refresh Browser</button>
+
+<!-- ══════════════════════════════════════════════════════════════
+     MODAL: Oracle Database
+══════════════════════════════════════════════════════════════ -->
+<div id="modal-oracle" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-oracle')">
+  <div class="modal-box" style="max-width:640px">
+    <div class="modal-header">
+      <span>🔌 Oracle Database</span>
+      <button class="modal-close" onclick="closeModal('modal-oracle')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="caption" style="margin-bottom:12px">Connection details for the enterprise Oracle database. Used to fetch backend production data directly from Oracle.</p>
+      {% if ora_configured %}
+      <div class="alert alert-success" style="margin-bottom:12px">✅ Connected to Oracle</div>
+      {% else %}
+      <div class="alert alert-warning" style="margin-bottom:12px">❌ Not connected to Oracle</div>
+      {% endif %}
+      <form method="POST" action="{{ url_for('save_oracle') }}">
+        <div class="form-grid">
+          <div class="form-group"><label>Host (IP)</label><input type="text" name="host" value="{{ ora.host }}" placeholder="192.168.100.11"></div>
+          <div class="form-group"><label>Port</label><input type="text" name="port" value="{{ ora.port }}" placeholder="1528"></div>
+          <div class="form-group"><label>Service Name</label><input type="text" name="service" value="{{ ora.service }}" placeholder="RDCAZPRD"></div>
+          <div class="form-group"><label>Username</label><input type="text" name="user" value="{{ ora.user }}" placeholder="RDCREAD"></div>
+          <div class="form-group"><label>Password</label><input type="password" name="password" value="" placeholder="Leave blank to keep saved password"></div>
+          <div class="form-group"><label>Status Filter</label><input type="text" name="status_filter" value="{{ ora.status_filter }}" placeholder="Processed"></div>
+        </div>
+        <div class="form-group"><label>Oracle Instant Client Path</label><input type="text" name="instantclient" value="{{ ora.instantclient }}" placeholder="D:\AI Project\Incentive Calculator\instantclient"></div>
+        <button type="submit" class="btn btn-primary">💾 Save Oracle Settings</button>
+      </form>
+      {% if ora_configured %}
+      <hr class="divider">
+      <form method="POST" action="{{ url_for('test_oracle') }}">
+        <button type="submit" class="btn btn-secondary">🔌 Test Oracle Connection</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════
+     MODAL: Scheduled Monthly Report
+══════════════════════════════════════════════════════════════ -->
+<div id="modal-schedule" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-schedule')">
+  <div class="modal-box" style="max-width:580px">
+    <div class="modal-header">
+      <span>📅 Scheduled Monthly Report</span>
+      <button class="modal-close" onclick="closeModal('modal-schedule')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="caption" style="margin-bottom:14px">Automatically emails the <strong>previous month's</strong> incentive report on the <strong>1st of every month</strong> at the chosen time.</p>
+
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px">
+        <form method="POST" action="{{ url_for('toggle_email_schedule') }}" style="display:inline">
+          <button type="submit" class="btn {% if sched_enabled %}btn-primary{% else %}btn-secondary{% endif %}">
+            {% if sched_enabled %}✅ Scheduler ON — click to disable{% else %}⏸ Scheduler OFF — click to enable{% endif %}
+          </button>
+        </form>
+      </div>
+      {% if sched_last_status %}
+      <div class="alert alert-info" style="margin-bottom:14px">Last run: {{ sched_last_status }}</div>
+      {% endif %}
+
+      <form method="POST" action="{{ url_for('save_email_schedule') }}">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Send Time (on 1st of month)</label>
+            <input type="time" name="sched_time" value="{{ sched_time }}">
+          </div>
+          <div class="form-group">
+            <label>To (comma-separated)</label>
+            <input type="text" name="sched_to" value="{{ sched_to }}" placeholder="manager@company.com">
+          </div>
+          <div class="form-group">
+            <label>CC (optional)</label>
+            <input type="text" name="sched_cc" value="{{ sched_cc }}" placeholder="hr@company.com">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">💾 Save Schedule Settings</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════
+     MODAL: Cache & Storage
+══════════════════════════════════════════════════════════════ -->
+<div id="modal-cache" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-cache')">
+  <div class="modal-box" style="max-width:480px">
+    <div class="modal-header">
+      <span>🧹 Cache &amp; Storage</span>
+      <button class="modal-close" onclick="closeModal('modal-cache')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="caption" style="margin-bottom:12px">Housekeeping tools. Your Master Data, uploads, calculation results and settings are <strong>NOT</strong> deleted.</p>
+
+      <div class="kpi-card" style="max-width:200px;margin-bottom:16px">
+        <div class="kpi-label">Database File Size</div>
+        <div class="kpi-value" style="font-size:22px">{{ db_size_mb }} MB</div>
+      </div>
+
+      {% if last_cache_clear %}
+      <p class="caption" style="margin-bottom:10px">Last compacted: <strong>{{ last_cache_clear }}</strong></p>
+      {% endif %}
+
+      <p style="color:var(--text-muted);font-size:14px;margin-bottom:14px">
+        <strong>Clear Cache</strong> compacts the database file to remove unused empty space.
+        Runs <strong>at most once per day</strong>.
+      </p>
+
+      {% if cache_cleared_today %}
+      <div class="alert alert-info" style="margin-bottom:14px">✅ Already compacted today. Come back tomorrow.</div>
+      <button class="btn btn-secondary" disabled>🧹 Clear Cache &amp; Compact Database</button>
+      {% else %}
+      <form method="POST" action="{{ url_for('clear_cache') }}" id="cache-form">
+        <button type="submit" class="btn btn-primary" id="cache-btn">🧹 Clear Cache &amp; Compact Database</button>
+        <div class="loading" id="cache-loading" style="margin-left:12px"><div class="spinner"></div> Compacting…</div>
+      </form>
+      {% endif %}
+
+      <hr class="divider">
+      <p style="color:var(--text-muted);font-size:14px;margin-bottom:10px">
+        <strong>Hard Refresh</strong> forces the browser to reload all CSS, JS and fonts fresh.
+      </p>
+      <button class="btn btn-secondary btn-sm" onclick="hardRefresh()">🔄 Hard Refresh Browser</button>
+    </div>
+  </div>
 </div>
 
 {% endblock %}
 {% block scripts %}
 <script>
+function openModal(id) {
+  var m = document.getElementById(id);
+  if (m) { m.style.display = 'flex'; document.body.style.overflow = 'hidden'; }
+}
+function closeModal(id) {
+  var m = document.getElementById(id);
+  if (m) { m.style.display = 'none'; document.body.style.overflow = ''; }
+}
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay').forEach(function(m) {
+      m.style.display = 'none';
+    });
+    document.body.style.overflow = '';
+  }
+});
+
+/* Auto-open modal if redirected back after a form save */
+var hash = new URLSearchParams(location.search).get('m');
+if (hash) openModal('modal-' + hash);
+
 var cacheForm = document.getElementById('cache-form');
 if (cacheForm) {
   cacheForm.addEventListener('submit', function() {
@@ -194,11 +324,15 @@ if (cacheForm) {
     document.getElementById('cache-loading').classList.add('active');
   });
 }
-document.getElementById('auto-toggle').addEventListener('change', function() {
-  document.getElementById('manual-theme-row').style.display = this.checked ? 'none' : 'flex';
-});
+
+var autoToggle = document.getElementById('auto-toggle');
+if (autoToggle) {
+  autoToggle.addEventListener('change', function() {
+    document.getElementById('manual-theme-row').style.display = this.checked ? 'none' : 'flex';
+  });
+}
+
 function hardRefresh() {
-  /* Append a timestamp query param to bust all browser caches, then reload */
   var url = window.location.href.split('?')[0] + '?_=' + Date.now();
   window.location.replace(url);
 }
