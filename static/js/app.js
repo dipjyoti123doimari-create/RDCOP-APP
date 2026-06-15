@@ -186,7 +186,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   });
 
-  /* Topbar theme selector */
+  /* Topbar theme selector (hidden native, driven by custom picker) */
   var sel = document.getElementById('topbar-theme');
   if (sel) {
     sel.addEventListener('change', function () {
@@ -199,6 +199,14 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  /* Custom theme picker open/close */
+  document.addEventListener('click', function(e) {
+    var picker = document.getElementById('theme-picker');
+    if (!picker) return;
+    var panel = document.getElementById('theme-picker-panel');
+    if (!picker.contains(e.target)) panel.style.display = 'none';
+  });
+
   /* Flash message auto-dismiss */
   document.querySelectorAll('.alert[data-auto]').forEach(function (el) {
     setTimeout(function () {
@@ -208,3 +216,31 @@ document.addEventListener('DOMContentLoaded', function () {
     }, 6000);
   });
 });
+
+/* ---- Custom theme picker ---- */
+var _THEME_ICONS = {
+  'Pre-dawn':'🌑','Sunrise':'🌅','Daytime':'☀️','Dusk':'🌆','Sunset':'🌇','Night':'🌙'
+};
+function toggleThemePicker() {
+  var panel = document.getElementById('theme-picker-panel');
+  if (!panel) return;
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+function selectTheme(t) {
+  var panel  = document.getElementById('theme-picker-panel');
+  var icon   = document.getElementById('theme-icon-display');
+  var label  = document.getElementById('theme-label-display');
+  var sel    = document.getElementById('topbar-theme');
+  if (panel)  panel.style.display = 'none';
+  if (label)  label.textContent = t;
+  if (icon) {
+    icon.innerHTML = _THEME_ICONS[t] || '';
+    if (t === 'Night') icon.innerHTML += '<span class="star-sparkle">✦</span>';
+  }
+  /* Update active state in dropdown */
+  document.querySelectorAll('.theme-picker-opt').forEach(function(o) {
+    o.classList.toggle('active', o.getAttribute('onclick') === "selectTheme('" + t + "')");
+  });
+  /* Fire the hidden select so existing API call triggers */
+  if (sel) { sel.value = t; sel.dispatchEvent(new Event('change')); }
+}

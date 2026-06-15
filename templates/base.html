@@ -58,10 +58,27 @@
   <div class="main">
     <div class="topbar">
       <span class="topbar-label">Theme</span>
-      {% set _ti = {'Pre-dawn':'🌑','Sunrise':'🌅','Daytime':'☀️','Dusk':'🌆','Sunset':'🌇','Night':'🌙✨'} %}
-      <select id="topbar-theme">
-        {% for t in ['Pre-dawn','Sunrise','Daytime','Dusk','Sunset','Night'] %}
-        <option value="{{ t }}" {% if t == bg_theme %}selected{% endif %}>{{ _ti[t] }} {{ t }}</option>
+      {% set _themes = [('Pre-dawn','🌑'),('Sunrise','🌅'),('Daytime','☀️'),('Dusk','🌆'),('Sunset','🌇'),('Night','🌙')] %}
+      <!-- Custom theme picker so Night icon can animate -->
+      <div class="theme-picker" id="theme-picker">
+        <div class="theme-picker-btn" id="theme-picker-btn" onclick="toggleThemePicker()">
+          <span id="theme-icon-display">{% for t,i in _themes %}{% if t == bg_theme %}{{ i }}{% if t == 'Night' %}<span class="star-sparkle">✦</span>{% endif %}{% endif %}{% endfor %}</span>
+          <span id="theme-label-display">{{ bg_theme }}</span>
+          <span class="ms-arrow">▾</span>
+        </div>
+        <div class="theme-picker-panel" id="theme-picker-panel" style="display:none">
+          {% for t, icon in _themes %}
+          <div class="theme-picker-opt {% if t == bg_theme %}active{% endif %}" onclick="selectTheme('{{ t }}')">
+            <span>{{ icon }}{% if t == 'Night' %}<span class="star-sparkle">✦</span>{% endif %}</span>
+            <span>{{ t }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      <!-- Hidden native select still used by app.js for the actual API call -->
+      <select id="topbar-theme" style="display:none">
+        {% for t, icon in _themes %}
+        <option value="{{ t }}" {% if t == bg_theme %}selected{% endif %}>{{ t }}</option>
         {% endfor %}
       </select>
     </div>
