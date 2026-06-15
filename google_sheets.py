@@ -119,10 +119,14 @@ def _fetch_public(sheet_id: str, worksheet_name: str) -> pd.DataFrame:
             f"https://docs.google.com/spreadsheets/d/e/{sheet_id}/pub?output=csv",
         ]
     else:
-        # Regular sheets shared as "Anyone with the link can view"
+        # Regular sheets shared as "Anyone with the link can view".
+        # IMPORTANT: the gviz endpoint is the only one that honours the
+        # `sheet=<name>` parameter — the plain `export?format=csv&sheet=`
+        # URL ignores the name and always returns the FIRST/default tab.
+        # So gviz must be tried first whenever we need a specific tab.
         urls = [
-            f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&sheet={encoded_name}",
             f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={encoded_name}",
+            f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&sheet={encoded_name}",
             f"https://docs.google.com/spreadsheets/d/{sheet_id}/pub?output=csv&sheet={encoded_name}",
         ]
 

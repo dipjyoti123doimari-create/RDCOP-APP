@@ -345,7 +345,8 @@ def tp_dashboard():
 def tp_data_uploader():
     ora_ready = oracle_connector.is_configured()
     last_sync = google_sheets.get_tp_last_sync_info()
-    sheet_id  = database.get_setting("gsheet_id", "")
+    sheet_id  = database.get_module_setting("tp", "gsheet_id",
+                                            database.get_setting("gsheet_id", ""))
     tp_worksheet = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
     ora_counts = database.get_table_counts().get("tp_oracle_data", 0)
     ctx = _tp_ctx()
@@ -380,12 +381,17 @@ def tp_fetch_oracle():
 
 @app.route("/tp/action/sync-sheets", methods=["POST"])
 def tp_sync_sheets():
-    sheet_id    = request.form.get("sheet_id", "").strip() or database.get_setting("gsheet_id", "")
+    sheet_id    = (request.form.get("sheet_id", "").strip()
+                   or database.get_module_setting("tp", "gsheet_id",
+                                                   database.get_setting("gsheet_id", "")))
     worksheet   = request.form.get("worksheet", "Plant Data for TP").strip()
     result      = google_sheets.sync_tp_plant_data(sheet_id, worksheet)
     if result["error"]:
         flash(f"Sync failed: {result['error']}", "error")
     else:
+        # Remember the TP sheet id/worksheet so future syncs reuse them.
+        database.set_module_setting("tp", "gsheet_id", google_sheets.extract_sheet_id(sheet_id))
+        database.set_module_setting("tp", "gsheet_worksheet", worksheet)
         flash(f"✅ {result['rows_synced']} plant rows synced from Google Sheets ({result['mode']} mode).", "success")
     return redirect(url_for("tp_data_uploader"))
 
@@ -574,7 +580,8 @@ def tp_validation():
 # ── Settings ──────────────────────────────────────────────────────────────────
 @app.route("/tp/settings", methods=["GET"])
 def tp_settings():
-    sheet_id    = database.get_setting("gsheet_id", "")
+    sheet_id    = database.get_module_setting("tp", "gsheet_id",
+                                              database.get_setting("gsheet_id", ""))
     worksheet   = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
     plant_col   = database.get_module_setting("tp", "oracle_plant_col", "PLANT_CODE")
     batch_col   = database.get_module_setting("tp", "oracle_batch_col", "BATCH_NO")
@@ -609,7 +616,8 @@ def tp_save_worksheet():
     sheet_id  = request.form.get("sheet_id", "").strip()
     database.set_module_setting("tp", "gsheet_worksheet", worksheet)
     if sheet_id:
-        database.set_setting("gsheet_id", sheet_id)
+        # Save to the TP-scoped id so we never disturb RDC-I&D's sheet.
+        database.set_module_setting("tp", "gsheet_id", google_sheets.extract_sheet_id(sheet_id))
     flash("Sheet settings saved.", "success")
     return redirect(url_for("tp_settings", m="sheet"))
 
