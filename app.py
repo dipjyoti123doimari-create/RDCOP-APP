@@ -829,7 +829,7 @@ def tp_settings():
     sheet_id    = database.get_module_setting("tp", "gsheet_id",
                                               database.get_setting("gsheet_id", ""))
     worksheet   = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
-    plant_col   = database.get_module_setting("tp", "oracle_plant_col", "PLANT_CODE")
+    plant_col   = database.get_module_setting("tp", "oracle_plant_col", "PLANT")
     batch_col   = database.get_module_setting("tp", "oracle_batch_col", "BATCH_NO")
     time_col    = database.get_module_setting("tp", "oracle_time_col",  "MIXING_TIME")
     smtp        = email_helper.get_smtp_config()
@@ -857,7 +857,7 @@ def tp_settings():
 @app.route("/tp/settings/save-oracle-cols", methods=["POST"])
 def tp_save_oracle_cols():
     database.set_module_settings_bulk("tp", {
-        "oracle_plant_col": request.form.get("plant_col", "PLANT_CODE").strip(),
+        "oracle_plant_col": request.form.get("plant_col", "PLANT").strip(),
         "oracle_batch_col": request.form.get("batch_col", "BATCH_NO").strip(),
         "oracle_time_col":  request.form.get("time_col",  "MIXING_TIME").strip(),
     })
