@@ -281,7 +281,7 @@
         {% for row in grp %}
         <tr class="{{ row._cls }}">
           {% for col in result_cols %}
-          <td>{% if row[col] is number and col in ['incentive_amount','deduction_amount','incentive_rate','deduction_target','shortfall_quantity','total_quantity','ytd_maintenance_cost'] %}{{ row[col] | round(2) }}{% else %}{{ row[col] }}{% endif %}</td>
+          <td>{% if row[col] is number and col in ['incentive_amount','deduction_amount','incentive_rate','deduction_target','shortfall_quantity','total_quantity','ytd_maintenance_cost','plant_total_incentive','plant_total_deduction'] %}{{ row[col] | round(2) }}{% else %}{{ row[col] }}{% endif %}</td>
           {% endfor %}
         </tr>
         {% endfor %}

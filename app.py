@@ -232,6 +232,14 @@ RESULT_LABELS = {
     "deduction_amount":     "Deduction Amount (Rs)",
     "remarks":              "Remarks",
 }
+
+# Reports page gets two extra plant-aggregate columns
+REPORT_COLS = RESULT_COLS + ["plant_total_incentive", "plant_total_deduction"]
+REPORT_LABELS = {
+    **RESULT_LABELS,
+    "plant_total_incentive": "Plant Incentive (Rs)",
+    "plant_total_deduction": "Plant Deduction (Rs)",
+}
 CAT_TABS = {
     "All Trainees":       ["Civil Trainee", "Non-Civil Trainee"],
     "Plant Mgr & PI":     ["PM & API"],
@@ -479,8 +487,19 @@ def page_reports():
 
         filtered = _apply_filters(all_rows, cats, desigs, plants, elig, outcome, search)
         filtered = _sort_rows(filtered)
+
+        # Plant-wise totals (from full unfiltered set so plant sum is always complete)
+        plant_inc_map: dict = {}
+        plant_ded_map: dict = {}
+        for r in all_rows:
+            p = r.get("plant", "")
+            plant_inc_map[p] = plant_inc_map.get(p, 0.0) + (r.get("incentive_amount") or 0)
+            plant_ded_map[p] = plant_ded_map.get(p, 0.0) + (r.get("deduction_amount") or 0)
+
         for r in filtered:
             r["_cls"] = _row_cls(r)
+            r["plant_total_incentive"] = plant_inc_map.get(r.get("plant", ""), 0.0)
+            r["plant_total_deduction"] = plant_ded_map.get(r.get("plant", ""), 0.0)
         results = filtered
 
         # Build applied-filters string
@@ -530,7 +549,7 @@ def page_reports():
                            cat_tabs=CAT_TABS, cat_results=cat_results,
                            unmapped=unmapped,
                            total_rows=total_rows,
-                           result_cols=RESULT_COLS, result_labels=RESULT_LABELS,
+                           result_cols=REPORT_COLS, result_labels=REPORT_LABELS,
                            unique_cats=unique_cats, unique_desigs=unique_desigs,
                            unique_plants=unique_plants,
                            cats=cats, desigs=desigs, plants=plants,
