@@ -100,9 +100,10 @@
         <div class="toggle-row" id="manual-theme-row" style="{% if bg_auto %}display:none{% endif %}">
           <div class="form-group" style="flex:1;margin-bottom:0">
             <label>Manual Theme</label>
+            {% set _ti = {'Pre-dawn':'🌑','Sunrise':'🌅','Daytime':'☀️','Dusk':'🌆','Sunset':'🌇','Night':'🌙✨'} %}
             <select name="manual_theme">
               {% for t in ['Pre-dawn','Sunrise','Daytime','Dusk','Sunset','Night'] %}
-              <option {% if t == bg_theme %}selected{% endif %}>{{ t }}</option>
+              <option value="{{ t }}" {% if t == bg_theme %}selected{% endif %}>{{ _ti[t] }} {{ t }}</option>
               {% endfor %}
             </select>
           </div>
