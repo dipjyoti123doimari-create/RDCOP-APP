@@ -278,12 +278,38 @@ def _rows_to_df(rows: list, cols) -> pd.DataFrame:
 # ── PAGES ─────────────────────────────────────────────────────────────────────
 
 @app.route("/")
+def page_home():
+    return render_template("home.html")
+
+@app.route("/id")
+def page_id_dashboard():
+    return redirect(url_for("page_dashboard"))
+
+@app.route("/dashboard")
 def page_dashboard():
     _ss("active_page", "dashboard")
     counts = database.get_table_counts()
     return render_template("dashboard.html",
                            counts=counts,
                            db_path=database.DB_PATH)
+
+@app.route("/tp")
+def page_tp():
+    return render_template("module_placeholder.html",
+                           module_name="RDC-TP",
+                           module_desc="Calculates Plant wise Throughput")
+
+@app.route("/btrtp")
+def page_btrtp():
+    return render_template("module_placeholder.html",
+                           module_name="RDC-BTRTP",
+                           module_desc="Calculates batcher wise Throughput for individual efficiency tracking")
+
+@app.route("/jldc")
+def page_jldc():
+    return render_template("module_placeholder.html",
+                           module_name="RDC-JLDC",
+                           module_desc="Calculates LJCB & Loader Diesel Consumption")
 
 
 @app.route("/data-uploader")

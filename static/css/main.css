@@ -143,6 +143,18 @@ body {
   font-size: 10px; color: var(--text-faint); line-height: 1.4;
   text-align: center; letter-spacing: 0.04em;
 }
+.sidebar-back-btn {
+  display: block; text-align: center; font-size: 11px; font-weight: 600;
+  color: var(--text-faint); text-decoration: none; padding: 5px 0 10px;
+  letter-spacing: 0.04em; transition: color .18s;
+}
+.sidebar-back-btn:hover { color: rgba(0,212,255,0.85); }
+.sidebar-module-badge {
+  display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: 0.1em;
+  padding: 3px 10px; border-radius: 20px;
+  background: rgba(99,91,255,0.18); color: rgba(99,91,255,1);
+  border: 1px solid rgba(99,91,255,0.35);
+}
 
 .sidebar-nav { flex: 1; padding: 14px 8px; display: flex; flex-direction: column; gap: 2px; }
 .nav-item {

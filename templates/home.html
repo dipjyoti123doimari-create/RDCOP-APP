@@ -1,0 +1,41 @@
+{% extends "base_launcher.html" %}
+{% block title %}RDC-OP — Module Launcher{% endblock %}
+{% block content %}
+
+<div class="module-grid">
+
+  <!-- RDC-I&D -->
+  <div class="module-card">
+    <div class="module-badge active">✅ Active</div>
+    <div class="module-name">RDC-I&amp;D</div>
+    <div class="module-desc">Calculates Batching Incentive &amp; Deduction</div>
+    <a href="{{ url_for('page_id_dashboard') }}" class="module-launch active">🚀 Launch Module →</a>
+  </div>
+
+  <!-- RDC-TP -->
+  <div class="module-card">
+    <div class="module-badge soon">🚧 Coming Soon</div>
+    <div class="module-name">RDC-TP</div>
+    <div class="module-desc">Calculates Plant wise Throughput</div>
+    <a href="{{ url_for('page_tp') }}" class="module-launch soon">🔒 Not Available Yet</a>
+  </div>
+
+  <!-- RDC-BTRTP -->
+  <div class="module-card">
+    <div class="module-badge soon">🚧 Coming Soon</div>
+    <div class="module-name">RDC-BTRTP</div>
+    <div class="module-desc">Calculates batcher wise Throughput for individual efficiency tracking</div>
+    <a href="{{ url_for('page_btrtp') }}" class="module-launch soon">🔒 Not Available Yet</a>
+  </div>
+
+  <!-- RDC-JLDC -->
+  <div class="module-card">
+    <div class="module-badge soon">🚧 Coming Soon</div>
+    <div class="module-name">RDC-JLDC</div>
+    <div class="module-desc">Calculates LJCB &amp; Loader Diesel Consumption</div>
+    <a href="{{ url_for('page_jldc') }}" class="module-launch soon">🔒 Not Available Yet</a>
+  </div>
+
+</div>
+
+{% endblock %}

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}RDC Operations{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Meie+Script&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+<style>
+.launcher-wrap {
+  min-height: 100vh; display: flex; flex-direction: column;
+  align-items: center; padding: 48px 24px 64px;
+}
+.launcher-header {
+  display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 52px;
+}
+.launcher-header img { width: 120px; height: auto; border-radius: 12px; }
+.launcher-brand-main {
+  font-size: 32px; font-weight: 900; letter-spacing: 0.16em;
+  background: linear-gradient(90deg,#635BFF 0%,#7A73FF 15%,#00D4FF 35%,#ffffff 50%,#00D4FF 65%,#7A73FF 85%,#635BFF 100%);
+  background-size: 250% auto; -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  animation: nameShimmer 3s linear infinite;
+}
+.launcher-brand-sub {
+  font-family: 'Meie Script', cursive; font-size: 17px; font-weight: 400;
+  color: rgba(0,212,255,0.85); animation: subGlow 3s ease-in-out infinite;
+}
+.launcher-tagline {
+  font-size: 13px; color: var(--text-faint); letter-spacing: 0.04em;
+}
+.module-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 24px; width: 100%; max-width: 1100px;
+}
+.module-card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 18px;
+  padding: 32px 28px; display: flex; flex-direction: column; gap: 14px;
+  transition: border-color .2s, box-shadow .2s, transform .18s;
+  position: relative; overflow: hidden;
+}
+.module-card:hover { border-color: rgba(99,91,255,0.55); box-shadow: 0 8px 36px rgba(99,91,255,0.22); transform: translateY(-4px); }
+.module-card::before {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(135deg, rgba(99,91,255,0.06) 0%, transparent 60%);
+  pointer-events: none;
+}
+.module-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 4px 10px; border-radius: 20px; width: fit-content;
+}
+.module-badge.active  { background: rgba(74,222,128,0.14); color: #4ade80; border: 1px solid rgba(74,222,128,0.3); }
+.module-badge.soon    { background: rgba(251,191,36,0.12); color: #fbbf24; border: 1px solid rgba(251,191,36,0.25); }
+.module-name  { font-size: 26px; font-weight: 900; color: var(--text); letter-spacing: 0.06em; }
+.module-desc  { font-size: 14px; color: var(--text-muted); line-height: 1.55; flex: 1; }
+.module-launch {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 11px 22px; border-radius: 10px; font-size: 14px; font-weight: 700;
+  text-decoration: none; transition: all .18s; border: none; cursor: pointer;
+  font-family: var(--font);
+}
+.module-launch.active { background: linear-gradient(135deg,#635BFF,#7A73FF); color: #fff; box-shadow: 0 4px 18px rgba(99,91,255,0.4); }
+.module-launch.active:hover { box-shadow: 0 6px 28px rgba(99,91,255,0.6); transform: translateY(-1px); }
+.module-launch.soon   { background: rgba(255,255,255,0.07); color: var(--text-faint); border: 1px solid var(--border); cursor: not-allowed; }
+</style>
+</head>
+<body>
+<canvas id="bg-canvas"></canvas>
+<div id="cursor-glow" aria-hidden="true"></div>
+
+<div class="launcher-wrap">
+  <div class="launcher-header">
+    <img src="{{ url_for('static', filename='img/logo.gif') }}" alt="RDC-OP">
+    <div class="launcher-brand-main">RDC-OP</div>
+    <div class="launcher-brand-sub">by Dipjyoti</div>
+    <div class="launcher-tagline">Operations Intelligence Platform</div>
+  </div>
+
+  {% block content %}{% endblock %}
+</div>
+
+<script src="{{ url_for('static', filename='js/background.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script>
+  initBackground({ animate: {{ 'true' if bg_animate else 'false' }}, autoTheme: {{ 'true' if bg_auto else 'false' }}, theme: '{{ bg_theme }}' });
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
