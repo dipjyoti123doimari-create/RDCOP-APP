@@ -181,7 +181,7 @@
   <p style="color:var(--text-muted);font-size:14px;margin-bottom:10px">
     <strong>Hard Refresh</strong> forces the browser to reload all CSS, JS and fonts fresh — useful after app updates.
   </p>
-  <button class="btn btn-secondary btn-sm" onclick="location.reload(true)">🔄 Hard Refresh Browser</button>
+  <button class="btn btn-secondary btn-sm" onclick="hardRefresh()">🔄 Hard Refresh Browser</button>
 </div>
 
 {% endblock %}
@@ -197,5 +197,10 @@ if (cacheForm) {
 document.getElementById('auto-toggle').addEventListener('change', function() {
   document.getElementById('manual-theme-row').style.display = this.checked ? 'none' : 'flex';
 });
+function hardRefresh() {
+  /* Append a timestamp query param to bust all browser caches, then reload */
+  var url = window.location.href.split('?')[0] + '?_=' + Date.now();
+  window.location.replace(url);
+}
 </script>
 {% endblock %}
