@@ -752,9 +752,9 @@ def _style_result_rows(df: pd.DataFrame) -> pd.DataFrame:
     has_ded = (df[ded_col] > 0) if ded_col else pd.Series(False, index=df.index)
 
     # Green for incentive-only rows first...
-    styles.loc[has_inc & ~has_ded, :] = "background-color: #D4EDDA"  # light green
+    styles.loc[has_inc & ~has_ded, :] = "background-color: #064e3b"  # dark emerald
     # ...then red for ANY row with a deduction (this also overrides "both").
-    styles.loc[has_ded, :] = "background-color: #F8D7DA"             # light red
+    styles.loc[has_ded, :] = "background-color: #7f1d1d"             # dark crimson
     return styles
 
 
@@ -1019,10 +1019,12 @@ def page_calculate():
 def _result_legend():
     """The little green/red colour key used on the results pages."""
     st.markdown(
-        '<span style="background:#D4EDDA;padding:4px 10px;border-radius:6px;'
-        'font-size:13px;margin-right:8px">🟢 Incentive earned</span>'
-        '<span style="background:#F8D7DA;padding:4px 10px;border-radius:6px;'
-        'font-size:13px">🔴 Deduction applied (takes priority if both)</span>',
+        '<span style="background:rgba(16,185,129,0.15);color:#6EE7B7;'
+        'padding:4px 10px;border-radius:6px;font-size:13px;margin-right:8px;'
+        'border:1px solid rgba(16,185,129,0.25)">🟢 Incentive earned</span>'
+        '<span style="background:rgba(239,68,68,0.15);color:#FCA5A5;'
+        'padding:4px 10px;border-radius:6px;font-size:13px;'
+        'border:1px solid rgba(239,68,68,0.25)">🔴 Deduction applied (takes priority if both)</span>',
         unsafe_allow_html=True,
     )
 
@@ -1586,16 +1588,7 @@ def page_settings():
         st.selectbox("Manual theme", options=THEME_NAMES, key="bg_manual_theme")
 
     st.toggle("Background animation", key="bg_animate",
-              help="Turn off for a calm, static gradient (no moving rays).")
-
-    st.radio("Animation intensity", options=["Low", "Medium", "High"],
-             key="bg_intensity", horizontal=True,
-             help="Low = 70 rays · Medium = 120 rays · High = 180 rays")
-
-    ui_helpers.render_warning_message(
-        "Note: dark themes (Night, Pre-dawn) make the page darker. If any text "
-        "feels hard to read, turn on a lighter theme or switch animation off."
-    )
+              help="Turn off for a static gradient snapshot (no moving blobs).")
 
     st.divider()
 
