@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>RDC Operations Reports &amp; Calculators</h1>
+  <p>Centralized reporting and calculation tools for plant operations</p>
+</div>
+
+<!-- KPI cards -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">Master Data Rows</div>
+    <div class="kpi-value">{{ counts.get('master_data', 0) | format_int }}</div>
+    <div class="kpi-sub">Employees synced / stored</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Backend Rows</div>
+    <div class="kpi-value">{{ counts.get('backend_data', 0) | format_int }}</div>
+    <div class="kpi-sub">Uploaded batching records</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Maintenance Rows</div>
+    <div class="kpi-value">{{ counts.get('maintenance_cost', 0) | format_int }}</div>
+    <div class="kpi-sub">Plant maintenance costs</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Calculated Rows</div>
+    <div class="kpi-value">{{ counts.get('calculation_results', 0) | format_int }}</div>
+    <div class="kpi-sub">Saved results</div>
+  </div>
+</div>
+
+<!-- Database status -->
+<div class="card">
+  <div class="section-title">🗄️ Database Status</div>
+  <p class="caption" style="margin-bottom:14px">Local SQLite database: <code style="color:var(--info-text)">{{ db_path }}</code></p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr><th>Table</th><th>Rows</th></tr>
+      </thead>
+      <tbody>
+        {% for tbl, cnt in counts.items() %}
+        <tr>
+          <td>{{ tbl }}</td>
+          <td>{{ cnt | format_int }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="alert alert-success" style="margin-top:16px">
+    ✅ Database ready — all 9 tables are created.
+  </div>
+</div>
+
+{% endblock %}

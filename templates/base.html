@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}RDC Operations{% endblock %} — Batching Incentive Calculator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+<div id="toast-container"></div>
+
+<div class="app">
+
+  <!-- ── Sidebar ─────────────────────────────────────── -->
+  <nav class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-brand">
+        <span class="sidebar-icon">📊</span>
+        <span class="sidebar-name">RDC Operations<br>Reports & Calculators</span>
+      </div>
+      <div class="sidebar-tagline">Batching Incentive &amp; Deduction</div>
+    </div>
+
+    <div class="sidebar-nav">
+      <a href="{{ url_for('page_dashboard') }}" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
+        <span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span>
+      </a>
+      <a href="{{ url_for('page_data_uploader') }}" class="nav-item {% if active_page == 'data_uploader' %}active{% endif %}">
+        <span class="nav-icon">📤</span><span class="nav-label">Data Uploader</span>
+      </a>
+      <a href="{{ url_for('page_calculate') }}" class="nav-item {% if active_page == 'calculate' %}active{% endif %}">
+        <span class="nav-icon">⚡</span><span class="nav-label">Calculate Incentive &amp; Deduction</span>
+      </a>
+      <a href="{{ url_for('page_reports') }}" class="nav-item {% if active_page == 'reports' %}active{% endif %}">
+        <span class="nav-icon">📋</span><span class="nav-label">View Reports</span>
+      </a>
+      <a href="{{ url_for('page_validation') }}" class="nav-item {% if active_page == 'validation' %}active{% endif %}">
+        <span class="nav-icon">✅</span><span class="nav-label">Error / Validation Report</span>
+      </a>
+      <a href="{{ url_for('page_settings') }}" class="nav-item {% if active_page == 'settings' %}active{% endif %}">
+        <span class="nav-icon">⚙️</span><span class="nav-label">Settings</span>
+      </a>
+    </div>
+
+    <div class="sidebar-footer">Calculate · Reports · Email · Cache</div>
+  </nav>
+
+  <!-- ── Main ────────────────────────────────────────── -->
+  <div class="main">
+    <div class="topbar">
+      <span class="topbar-label">Theme</span>
+      <select id="topbar-theme">
+        {% for t in ['Pre-dawn','Sunrise','Daytime','Dusk','Sunset','Night'] %}
+        <option value="{{ t }}" {% if t == bg_theme %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}
+          <div class="alert alert-{{ 'success' if cat == 'success' else ('error' if cat == 'error' else ('warning' if cat == 'warning' else 'info')) }}" data-auto>
+            {{ msg }}
+          </div>
+        {% endfor %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/background.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script>
+  initBackground({ animate: {{ 'true' if bg_animate else 'false' }}, autoTheme: {{ 'true' if bg_auto else 'false' }}, theme: '{{ bg_theme }}' });
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

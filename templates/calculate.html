@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Calculate{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Calculate Incentive &amp; Deduction</h1>
+  <p>Choose a date range and run the full category-wise incentive &amp; deduction calculation</p>
+</div>
+
+{% if not available %}
+<div class="glass-card" style="text-align:center;padding:36px">
+  <h3>No backend data</h3>
+  <p>Upload a Backend Data file on the <strong>Data Uploader</strong> page first.</p>
+</div>
+{% else %}
+
+<div class="card">
+  <form method="POST" action="{{ url_for('run_calculation') }}" id="calc-form">
+    <div class="date-row">
+      <div class="form-group">
+        <label>From Date</label>
+        <input type="date" name="from_date" value="{{ default_from }}" required>
+      </div>
+      <div class="form-group">
+        <label>To Date</label>
+        <input type="date" name="to_date" value="{{ default_to }}" required>
+      </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <button type="submit" class="btn btn-primary" id="run-btn">⚡ Run Calculation</button>
+      </div>
+    </div>
+  </form>
+  <div class="loading" id="calc-loading"><div class="spinner"></div> Running calculation…</div>
+
+  {% if last_calc.ran_at %}
+  <p class="caption">Last run: {{ last_calc.ran_at }} · {{ last_calc.mapped }} employees · {{ last_calc.unmapped }} unmapped</p>
+  {% endif %}
+</div>
+
+{% if results %}
+
+<!-- Summary KPIs -->
+<div class="kpi-grid" style="margin-top:20px">
+  <div class="kpi-card">
+    <div class="kpi-label">Total Employees</div>
+    <div class="kpi-value">{{ total_emps | format_int }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Incentive Eligible</div>
+    <div class="kpi-value">{{ elig_count | format_int }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Total Incentive</div>
+    <div class="kpi-value" style="font-size:22px">₹{{ total_inc | format_int }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Total Deduction</div>
+    <div class="kpi-value" style="font-size:22px">₹{{ total_ded | format_int }}</div>
+  </div>
+</div>
+
+<!-- Legend -->
+<div class="legend">
+  <span class="legend-item legend-green">🟢 Incentive earned</span>
+  <span class="legend-item legend-red">🔴 Deduction applied (takes priority if both)</span>
+</div>
+
+<!-- Category tabs -->
+<div class="tabs">
+  {% set ns = namespace(first=true) %}
+  {% for label in cat_tabs.keys() %}
+  {% if cat_results[label] %}
+  <button class="tab-btn {% if ns.first %}active{% endif %}" data-tabset="cats" data-tab="{{ label | replace(' ','_') }}">{{ label }}</button>
+  {% set ns.first = false %}
+  {% endif %}
+  {% endfor %}
+</div>
+
+{% set ns2 = namespace(first=true) %}
+{% for label, cats in cat_tabs.items() %}
+{% if cat_results[label] %}
+<div class="tab-panel {% if ns2.first %}active{% endif %}" data-tabpanel="cats" data-tab="{{ label | replace(' ','_') }}">
+
+  {% set grp = cat_results[label] %}
+  <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+    <div class="kpi-card" style="padding:14px 16px">
+      <div class="kpi-label">Employees</div><div class="kpi-value" style="font-size:22px">{{ grp | length | format_int }}</div>
+    </div>
+    <div class="kpi-card" style="padding:14px 16px">
+      <div class="kpi-label">Eligible</div><div class="kpi-value" style="font-size:22px">{{ grp | selectattr('incentive_eligible','eq','Yes') | list | length | format_int }}</div>
+    </div>
+    <div class="kpi-card" style="padding:14px 16px">
+      <div class="kpi-label">Incentive</div><div class="kpi-value" style="font-size:18px">₹{{ grp | sum(attribute='incentive_amount') | int | format_int }}</div>
+    </div>
+    <div class="kpi-card" style="padding:14px 16px">
+      <div class="kpi-label">Deduction</div><div class="kpi-value" style="font-size:18px">₹{{ grp | sum(attribute='deduction_amount') | int | format_int }}</div>
+    </div>
+  </div>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          {% for col in result_cols %}
+          <th>{{ result_labels[col] }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in grp %}
+        <tr class="{{ row._cls }}">
+          {% for col in result_cols %}
+          <td>{% if row[col] is number and col in ['incentive_amount','deduction_amount','incentive_rate','deduction_target','shortfall_quantity','total_quantity','ytd_maintenance_cost'] %}{{ row[col] | round(2) }}{% else %}{{ row[col] }}{% endif %}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% set ns2.first = false %}
+{% endif %}
+{% endfor %}
+
+{% if unmapped %}
+<hr class="divider">
+<div class="card">
+  <div class="section-title">⚠️ {{ unmapped | length }} Unmapped Employee(s)</div>
+  <p class="caption" style="margin-bottom:10px">Employee codes in backend data not found in master data</p>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Employee Code</th><th>Total Qty</th><th>Records</th><th>Period</th><th>Detected At</th></tr></thead>
+      <tbody>
+        {% for row in unmapped %}
+        <tr>
+          <td>{{ row.employee_code }}</td><td>{{ row.total_quantity }}</td>
+          <td>{{ row.record_count }}</td><td>{{ row.period }}</td><td>{{ row.detected_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% elif ran %}
+<div class="glass-card" style="text-align:center;padding:28px;margin-top:20px">
+  <h3>No results</h3>
+  <p>No matching employees were found for the selected date range.</p>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('calc-form').addEventListener('submit', function() {
+  document.getElementById('run-btn').disabled = true;
+  document.getElementById('calc-loading').classList.add('active');
+});
+</script>
+{% endblock %}

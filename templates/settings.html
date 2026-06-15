@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Settings</h1>
+  <p>Animated background · SMTP email · Oracle database · Cache &amp; storage</p>
+</div>
+
+<!-- ── Animated Background ─────────────────────────── -->
+<div class="card settings-section">
+  <div class="section-title">🎨 Animated Background</div>
+  <p class="caption" style="margin-bottom:14px">Stripe-inspired gradient blob background. Reacts to your mouse and can follow your system clock.</p>
+
+  <form method="POST" action="{{ url_for('save_bg_settings') }}">
+    <div class="toggle-row">
+      <input type="checkbox" class="toggle" name="auto_theme" id="auto-toggle"
+             {% if bg_auto %}checked{% endif %}
+             onchange="document.getElementById('manual-theme-row').style.display=this.checked?'none':'flex'">
+      <div class="toggle-text">
+        <span class="toggle-label">Use automatic theme based on system time</span>
+        <span class="toggle-sub">04–06 Pre-dawn · 06–09 Sunrise · 09–17 Daytime · 17–18:30 Dusk · 18:30–20 Sunset · 20–04 Night</span>
+      </div>
+    </div>
+    <div class="toggle-row" id="manual-theme-row" style="{% if bg_auto %}display:none{% endif %}">
+      <div class="form-group" style="flex:1;margin-bottom:0">
+        <label>Manual Theme</label>
+        <select name="manual_theme">
+          {% for t in ['Pre-dawn','Sunrise','Daytime','Dusk','Sunset','Night'] %}
+          <option {% if t == bg_theme %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="toggle-row">
+      <input type="checkbox" class="toggle" name="animate" {% if bg_animate %}checked{% endif %}>
+      <div class="toggle-text">
+        <span class="toggle-label">Background animation</span>
+        <span class="toggle-sub">Turn off for a static gradient snapshot (no moving blobs)</span>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">💾 Save Background Settings</button>
+  </form>
+</div>
+
+<!-- ── SMTP Email ──────────────────────────────────── -->
+<div class="card settings-section">
+  <div class="section-title">✉️ Email (SMTP) Settings</div>
+  <p class="caption" style="margin-bottom:12px">Used to email the Excel report from the View Reports page. For Gmail, create an <strong>App Password</strong> — not your regular password.</p>
+
+  {% if email_configured %}
+  <div class="alert alert-success" style="margin-bottom:12px">✅ SMTP is configured and ready to send.</div>
+  {% else %}
+  <div class="alert alert-warning" style="margin-bottom:12px">⚠️ SMTP is not fully configured yet.</div>
+  {% endif %}
+
+  <form method="POST" action="{{ url_for('save_smtp') }}">
+    <div class="form-grid">
+      <div class="form-group"><label>SMTP Host</label><input type="text" name="host" value="{{ smtp.host }}" placeholder="smtp.gmail.com"></div>
+      <div class="form-group"><label>Port</label><input type="number" name="port" value="{{ smtp.port }}" min="1" max="65535"></div>
+      <div class="form-group"><label>Sender Email</label><input type="text" name="sender" value="{{ smtp.sender }}" placeholder="you@company.com"></div>
+      <div class="form-group"><label>Password / App Password</label><input type="password" name="password" value="" placeholder="Leave blank to keep saved password"></div>
+      <div class="form-group"><label>Default To (comma-separated)</label><input type="text" name="default_to" value="{{ smtp.default_to }}"></div>
+      <div class="form-group"><label>Default CC (optional)</label><input type="text" name="default_cc" value="{{ smtp.default_cc }}"></div>
+    </div>
+    <div class="form-group"><label>Default Subject</label><input type="text" name="subject" value="{{ smtp.subject }}"></div>
+    <div class="toggle-row">
+      <input type="checkbox" class="toggle" name="use_tls" {% if smtp.use_tls %}checked{% endif %}>
+      <div class="toggle-text"><span class="toggle-label">Use TLS (recommended)</span></div>
+    </div>
+    <button type="submit" class="btn btn-primary">💾 Save Email Settings</button>
+  </form>
+
+  {% if email_configured %}
+  <hr class="divider">
+  <form method="POST" action="{{ url_for('test_smtp') }}">
+    <button type="submit" class="btn btn-secondary">✉️ Send a test email to {{ smtp.sender }}</button>
+  </form>
+  {% endif %}
+</div>
+
+<!-- ── Oracle Database ────────────────────────────── -->
+<div class="card settings-section">
+  <div class="section-title">🔌 Oracle Database</div>
+  <p class="caption" style="margin-bottom:12px">Connection details for the enterprise Oracle database. Used to fetch backend production data directly from Oracle.</p>
+
+  {% if ora_configured %}
+  <div class="alert alert-success" style="margin-bottom:12px">✅ Oracle connection is configured.</div>
+  {% else %}
+  <div class="alert alert-warning" style="margin-bottom:12px">⚠️ Oracle connection is not fully configured yet.</div>
+  {% endif %}
+
+  <form method="POST" action="{{ url_for('save_oracle') }}">
+    <div class="form-grid">
+      <div class="form-group"><label>Host (IP)</label><input type="text" name="host" value="{{ ora.host }}" placeholder="192.168.100.11"></div>
+      <div class="form-group"><label>Port</label><input type="text" name="port" value="{{ ora.port }}" placeholder="1528"></div>
+      <div class="form-group"><label>Service Name</label><input type="text" name="service" value="{{ ora.service }}" placeholder="RDCAZPRD"></div>
+      <div class="form-group"><label>Username</label><input type="text" name="user" value="{{ ora.user }}" placeholder="RDCREAD"></div>
+      <div class="form-group"><label>Password</label><input type="password" name="password" value="" placeholder="Leave blank to keep saved password"></div>
+      <div class="form-group"><label>Status Filter</label><input type="text" name="status_filter" value="{{ ora.status_filter }}" placeholder="Processed" title="Only fetch rows where STATUS = this value. Leave blank for all."></div>
+    </div>
+    <div class="form-group"><label>Oracle Instant Client Path</label><input type="text" name="instantclient" value="{{ ora.instantclient }}" placeholder="D:\AI Project\Incentive Calculator\instantclient"></div>
+    <button type="submit" class="btn btn-primary">💾 Save Oracle Settings</button>
+  </form>
+
+  {% if ora_configured %}
+  <hr class="divider">
+  <form method="POST" action="{{ url_for('test_oracle') }}">
+    <button type="submit" class="btn btn-secondary">🔌 Test Oracle Connection</button>
+  </form>
+  {% endif %}
+</div>
+
+<!-- ── Cache & Storage ────────────────────────────── -->
+<div class="card settings-section">
+  <div class="section-title">🧹 Cache &amp; Storage</div>
+  <p class="caption" style="margin-bottom:12px">Housekeeping tools. Your Master Data, uploads, calculation results and settings are <strong>NOT</strong> deleted.</p>
+
+  <div class="kpi-card" style="max-width:200px;margin-bottom:16px">
+    <div class="kpi-label">Database File Size</div>
+    <div class="kpi-value" style="font-size:22px">{{ db_size_mb }} MB</div>
+  </div>
+
+  <p style="color:var(--text-muted);font-size:14px;margin-bottom:14px">
+    <strong>Clear Cache</strong> compacts the database file to remove unused empty space.
+  </p>
+
+  <form method="POST" action="{{ url_for('clear_cache') }}" id="cache-form">
+    <button type="submit" class="btn btn-primary" id="cache-btn">🧹 Clear Cache &amp; Compact Database</button>
+    <div class="loading" id="cache-loading" style="display:inline-flex;margin-left:12px"><div class="spinner"></div> Compacting…</div>
+  </form>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('cache-form').addEventListener('submit', function() {
+  document.getElementById('cache-btn').disabled = true;
+  document.getElementById('cache-loading').classList.add('active');
+});
+document.getElementById('auto-toggle').addEventListener('change', function() {
+  document.getElementById('manual-theme-row').style.display = this.checked ? 'none' : 'flex';
+});
+</script>
+{% endblock %}

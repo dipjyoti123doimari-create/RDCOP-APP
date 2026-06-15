@@ -8,7 +8,8 @@
 #  easy to install. You can tighten these later if you want.)
 # ---------------------------------------------------------------------------
 
-streamlit            # Builds the web app user interface (UI)
+flask                # Production web framework (replaces Streamlit)
+streamlit            # Legacy UI — kept as streamlit_app.py for reference
 pandas               # Reads and processes table data (Excel, calculations)
 openpyxl             # Reads .xlsx Excel files and helps format Excel output
 xlsxwriter           # Writes nicely formatted Excel reports (colors, freeze, etc.)

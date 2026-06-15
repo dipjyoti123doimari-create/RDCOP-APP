@@ -1,28 +1,25 @@
 """
-app.py
-======
-This is the MAIN file of the app. You run the whole app with this command
-(from inside the project folder, in the VS Code terminal):
+flask_app.py
+============
+Production Flask application for Batching Incentive & Deduction Calculator.
+Replaces the Streamlit front-end; all Python business-logic modules are
+kept exactly as-is (calculator.py, database.py, oracle_connector.py …).
 
-    streamlit run app.py
-
-What this file does (and ONLY this):
-- Sets up the page (title, icon, layout).
-- Applies the theme (from ui_helpers.py).
-- Shows the logo (if one exists) and the sidebar navigation menu.
-- Looks at which page the user picked and calls the matching page function.
-
-Important design rule for this project:
-app.py stays SMALL. Heavy business logic (calculations, database code) lives
-in its own file (calculator.py, database.py, etc.).
+Run with:
+    python flask_app.py
+Opens on http://localhost:2001
 """
 
+from __future__ import annotations
+
+import io
+import json
 import os
-import time
-from datetime import datetime as _dt
+from datetime import date as _date, datetime as _dt
 
 import pandas as pd
-import streamlit as st
+from flask import (Flask, flash, jsonify, redirect, render_template,
+                   request, send_file, url_for)
 
 import cache_helpers
 import calculator
@@ -33,736 +30,120 @@ import email_helper
 import google_sheets
 import oracle_connector
 import report_generator
-import ui_helpers
 import validations
-from utils.animated_background import render_interactive_background, THEME_NAMES
+
+# ── App setup ────────────────────────────────────────────────────────────────
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "rdc-incentive-local-key-2025")
+
+# ── Single-user in-memory state (no session serialization overhead) ──────────
+_S: dict = {}
 
 
-# ---------------------------------------------------------------------------
-# STEP 1: Configure the browser tab (title + icon) and page layout.
-# ---------------------------------------------------------------------------
-# We try to use the logo as the browser tab icon. If the logo file is missing,
-# we fall back to a simple emoji so the app never crashes.
-def _get_page_icon():
-    """Return the logo path if it exists, otherwise a fallback emoji."""
-    if os.path.exists(config.LOGO_PATH):
-        return config.LOGO_PATH
-    return "📊"  # fallback icon shown in the browser tab
+def _s(key, default=None):
+    return _S.get(key, default)
 
 
-st.set_page_config(
-    page_title=config.APP_NAME,
-    page_icon=_get_page_icon(),
-    layout="wide",                 # use the full width of the browser
-    initial_sidebar_state="expanded",
-)
-
-# Apply our custom theme. This must come right after set_page_config().
-ui_helpers.inject_custom_css()
+def _ss(key, val):
+    _S[key] = val
 
 
-# ---------------------------------------------------------------------------
-# STEP 2: Build the sidebar (logo + navigation menu).
-# ---------------------------------------------------------------------------
-def render_sidebar():
-    """
-    Draw the sidebar and return the name of the page the user selected.
-    """
-    with st.sidebar:
-        # Show the logo at the top IF the file exists. If not, show the app name.
-        if os.path.exists(config.LOGO_PATH):
-            st.image(config.LOGO_PATH, use_container_width=True)
-        else:
-            st.markdown(f"### 📊 {config.APP_NAME}")
+# ── Boot ─────────────────────────────────────────────────────────────────────
+database.init_db()
 
-        st.caption(config.APP_TAGLINE)
-        st.divider()
+# ── Jinja filters / globals ───────────────────────────────────────────────────
 
-        # The navigation menu. st.radio shows one clickable item per page.
-        selected_page = st.radio(
-            "Navigation",
-            options=config.PAGES,
-            label_visibility="collapsed",
-        )
-
-        st.divider()
-        st.caption("Calculate • Reports • Email • Cache")
-
-    return selected_page
+@app.template_filter("format_int")
+def _fmt_int(v):
+    try:
+        return f"{int(v):,}"
+    except Exception:
+        return v
 
 
-# ---------------------------------------------------------------------------
-# STEP 3: Page functions — one per sidebar item.
-# ---------------------------------------------------------------------------
+@app.template_global()
+def bg_auto():
+    return database.get_setting("bg_auto_theme", "true") == "true"
 
-def page_dashboard():
-    ui_helpers.render_page_header(
-        "RDC Operations Reports & Calculators",
-        "Centralized reporting and calculation tools for plant operations",
-    )
 
-    # A simple row of KPI cards. The numbers are all 0 for now because we have
-    # not loaded any data yet. They become real in later phases.
-    # Live row counts straight from the SQLite database.
-    counts = database.get_table_counts()
+@app.template_global()
+def bg_animate():
+    return database.get_setting("bg_animate", "true") == "true"
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        ui_helpers.render_kpi_card("Master Data Rows", f"{counts['master_data']:,}",
-                                   "Employees synced/stored")
-    with col2:
-        ui_helpers.render_kpi_card("Backend Rows", f"{counts['backend_data']:,}",
-                                   "Uploaded batching records")
-    with col3:
-        ui_helpers.render_kpi_card("Maintenance Rows",
-                                   f"{counts['maintenance_cost']:,}",
-                                   "Plant maintenance costs")
-    with col4:
-        ui_helpers.render_kpi_card("Calculated Rows",
-                                   f"{counts['calculation_results']:,}",
-                                   "Saved results")
 
-    st.write("")  # small spacer
+@app.template_global()
+def bg_theme():
+    return database.get_setting("bg_manual_theme", "Daytime")
 
-    # ---- Database status panel (proves Phase 2 tables exist) ----
-    st.subheader("🗄️ Database status")
-    st.caption(f"Local SQLite database: `{database.DB_PATH}`")
 
-    status_df = pd.DataFrame(
-        {"Table": list(counts.keys()), "Rows": list(counts.values())}
-    )
-    st.dataframe(status_df, hide_index=True, use_container_width=True)
+# ── Context processor (sidebar active-page + bg settings) ──────────────────
 
-    ui_helpers.render_success_message(
-        "Database ready — all 9 tables are created."
+@app.context_processor
+def _ctx():
+    return dict(
+        active_page=_s("active_page", ""),
+        bg_auto=bg_auto(),
+        bg_animate=bg_animate(),
+        bg_theme=bg_theme(),
     )
 
 
-def page_data_uploader():
-    """
-    One combined page for all data sources. We use three tabs so the single
-    "Data Uploader" sidebar button still gives access to all three jobs:
-      1. Master Data Sync & Management
-      2. Upload Backend Data
-      3. Upload Maintenance Cost Data
-    """
-    ui_helpers.render_page_header(
-        "Data Uploader",
-        "Sync master data and upload backend & maintenance cost files in one place",
-    )
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-    tab_master, tab_backend, tab_maintenance, tab_oracle = st.tabs(
-        [
-            "🧑‍💼 Master Data Sync & Management",
-            "📦 Backend Data",
-            "🛠️ Maintenance Cost Data",
-            "🔌 Oracle (Live Data)",
-        ]
-    )
-
-    with tab_master:
-        st.subheader("🔄 Sync from Google Sheets")
-
-        # --- Mode indicator ---
-        if google_sheets.credentials_exist():
-            st.success(
-                "🔐 **Private mode** — service account credentials found. "
-                "Private sheets are supported.",
-                icon="✅",
-            )
-        else:
-            st.info(
-                "🌐 **Public mode** — no service account credentials. "
-                "Works perfectly for sheets shared as 'Anyone with the link can view'. "
-                "To enable private sheets later, add `credentials/service_account.json`.",
-                icon="ℹ️",
-            )
-
-        # --- Connection settings ---
-        last_sync_info = google_sheets.get_last_sync_info()
-
-        with st.form("gsheet_sync_form"):
-            st.caption(
-                "Paste your Google Sheet **URL or ID** below and click **Sync Now**. "
-                "A full URL like `https://docs.google.com/spreadsheets/d/…/edit` also works."
-            )
-            sheet_id = st.text_input(
-                "Google Sheet URL or ID",
-                value=last_sync_info["sheet_id"],
-                placeholder="https://docs.google.com/spreadsheets/d/1BxiMVs0.../edit",
-                help="Paste the full URL from your browser, or just the Sheet ID.",
-            )
-            worksheet_name = st.text_input(
-                "Worksheet / Tab Name",
-                value=last_sync_info["worksheet"] or "Sheet1",
-                placeholder="Sheet1",
-                help="The exact name of the tab inside the spreadsheet (case-sensitive).",
-            )
-            sync_clicked = st.form_submit_button("🔄 Sync Now", type="primary")
-
-        if sync_clicked:
-            if not sheet_id.strip():
-                ui_helpers.render_error_message("Please enter a Google Sheet ID.")
-            else:
-                tracker = ui_helpers.ProgressTracker(
-                    ["📥 Fetching from Sheets", "🧹 Cleaning data", "💾 Saving to DB"]
-                )
-
-                # Step 0 — fetch rows from Google Sheets (network call, takes a moment)
-                tracker.start(0)
-                try:
-                    clean_id = google_sheets.extract_sheet_id(sheet_id.strip())
-                    df_sync = google_sheets.fetch_master_data(
-                        clean_id, worksheet_name.strip()
-                    )
-                    tracker.complete(0, f"{len(df_sync):,} employees")
-                except Exception as exc:
-                    tracker.fail(0, "Failed")
-                    ui_helpers.render_error_message(
-                        f"Sync failed:<br><code>{exc}</code>"
-                    )
-                    st.stop()
-
-                # Step 1 — cleaning (already done inside fetch_master_data)
-                tracker.start(1)
-                time.sleep(0.25)          # let the spinner flash briefly
-                tracker.complete(1, "Columns validated")
-
-                # Step 2 — save to SQLite
-                tracker.start(2)
-                now = _dt.now().isoformat(timespec="seconds")
-                rows_to_save = [
-                    {
-                        "employee_code": str(row["Employee Code"]),
-                        "employee_name": str(row["Employee Name"]),
-                        "designation":   str(row["Designation"]),
-                        "category":      str(row["Category"]),
-                        "plant":         str(row["Plant"]),
-                        "plant_code":    str(row["Plant Code"]),
-                        "updated_at":    now,
-                    }
-                    for _, row in df_sync.iterrows()
-                ]
-                inserted = database.replace_table_rows("master_data", rows_to_save)
-                database.set_setting("gsheet_id",         clean_id)
-                database.set_setting("gsheet_worksheet",  worksheet_name.strip())
-                database.set_setting("gsheet_last_sync",  now)
-                database.set_setting("gsheet_last_count", str(inserted))
-                tracker.complete(2, f"{inserted:,} rows saved")
-
-                time.sleep(0.8)   # let the user see the all-green state
-                st.rerun()
-
-        # --- Startup auto-sync banner (shown if auto-sync just ran) ---
-        startup_result = st.session_state.get("startup_sync_result")
-        if startup_result:
-            if startup_result["error"]:
-                ui_helpers.render_error_message(
-                    f"Auto-sync on startup failed:<br><code>{startup_result['error']}</code>"
-                )
-            else:
-                ui_helpers.render_success_message(
-                    f"✅ Auto-synced on startup — <b>{startup_result['rows_synced']}</b> "
-                    f"employees loaded at {startup_result['synced_at']}."
-                )
-            # Clear it so it doesn't show again on the next rerun.
-            del st.session_state["startup_sync_result"]
-
-        # --- Last sync info ---
-        if last_sync_info["last_sync"]:
-            st.info(
-                f"Last synced: **{last_sync_info['last_sync']}** · "
-                f"**{last_sync_info['last_count']}** rows",
-                icon="🕐",
-            )
-
-        # --- Auto-sync toggle (saved permanently to app_settings) ---
-        current_auto = database.get_setting("gsheet_auto_sync", "false") == "true"
-        new_auto = st.toggle(
-            "Auto-sync every time the app starts",
-            value=current_auto,
-            help="When ON, the app fetches the latest data from Google Sheets "
-                 "automatically each time you open it — no need to click Sync Now.",
-        )
-        if new_auto != current_auto:
-            database.set_setting("gsheet_auto_sync", "true" if new_auto else "false")
-            st.rerun()
-
-        st.divider()
-
-        # --- Current master data table ---
-        st.subheader("👥 Current Master Data")
-        _m_count = database.get_table_counts().get("master_data", 0)
-        if _m_count == 0:
-            ui_helpers.render_glass_card(
-                "No data yet",
-                "The master_data table is empty. Enter your Sheet ID above and click "
-                "<b>Sync Now</b> to load employees.",
-            )
-        else:
-            master_df = database.read_table_limited(
-                "master_data", order_by="employee_code", limit=500
-            )
-            st.caption(
-                f"Showing first 500 of **{_m_count:,}** employees · "
-                "use Export to see all"
-            )
-            st.dataframe(master_df.drop(columns=["id"], errors="ignore"),
-                         hide_index=True, use_container_width=True)
-
-        st.divider()
-        st.subheader("✏️ Manage Employees (Add / Edit / Delete)")
-        ui_helpers.render_warning_message(
-            "Manual changes here can be <b>overwritten the next time you sync</b> "
-            "from Google Sheets (a sync does a full replace of master data)."
-        )
-
-        # List of current employee codes for the Edit / Delete pickers.
-        _codes_df = database.read_table_limited(
-            "master_data", order_by="employee_code", limit=100000
-        )
-        _codes = (_codes_df["employee_code"].astype(str).tolist()
-                  if not _codes_df.empty else [])
-
-        m_add, m_edit, m_del, m_log = st.tabs(
-            ["➕ Add", "✏️ Edit", "🗑️ Delete", "📜 Change log"]
-        )
-
-        # --- Add ----------------------------------------------------------------
-        with m_add:
-            with st.form("add_emp_form", clear_on_submit=True):
-                a1, a2 = st.columns(2)
-                with a1:
-                    add_code  = st.text_input("Employee Code *")
-                    add_name  = st.text_input("Employee Name")
-                    add_desig = st.text_input("Designation")
-                with a2:
-                    add_cat   = st.selectbox("Category", options=config.CATEGORIES)
-                    add_plant = st.text_input("Plant")
-                    add_pcode = st.text_input("Plant Code")
-                add_submit = st.form_submit_button("➕ Add employee", type="primary")
-            if add_submit:
-                try:
-                    database.add_employee(add_code, add_name, add_desig,
-                                          add_cat, add_plant, add_pcode)
-                    ui_helpers.render_success_message(
-                        f"Added employee <b>{add_code}</b>."
-                    )
-                    st.rerun()
-                except ValueError as err:
-                    ui_helpers.render_error_message(str(err))
-
-        # --- Edit ---------------------------------------------------------------
-        with m_edit:
-            if not _codes:
-                ui_helpers.render_glass_card(
-                    "No employees", "Add or sync employees first."
-                )
-            else:
-                sel_code = st.selectbox("Select Employee Code", options=_codes,
-                                        key="edit_pick")
-                emp = database.get_employee(sel_code)
-                if emp:
-                    with st.form("edit_emp_form"):
-                        e1, e2 = st.columns(2)
-                        with e1:
-                            ed_name  = st.text_input("Employee Name",
-                                                     value=emp["employee_name"] or "")
-                            ed_desig = st.text_input("Designation",
-                                                     value=emp["designation"] or "")
-                            ed_plant = st.text_input("Plant",
-                                                     value=emp["plant"] or "")
-                        with e2:
-                            _cats = config.CATEGORIES
-                            _idx = (_cats.index(emp["category"])
-                                    if emp["category"] in _cats else 0)
-                            ed_cat   = st.selectbox("Category", options=_cats,
-                                                    index=_idx)
-                            ed_pcode = st.text_input("Plant Code",
-                                                     value=emp["plant_code"] or "")
-                        ed_submit = st.form_submit_button("💾 Save changes",
-                                                          type="primary")
-                    if ed_submit:
-                        try:
-                            database.update_employee(sel_code, ed_name, ed_desig,
-                                                     ed_cat, ed_plant, ed_pcode)
-                            ui_helpers.render_success_message(
-                                f"Updated employee <b>{sel_code}</b>."
-                            )
-                            st.rerun()
-                        except ValueError as err:
-                            ui_helpers.render_error_message(str(err))
-
-        # --- Delete -------------------------------------------------------------
-        with m_del:
-            if not _codes:
-                ui_helpers.render_glass_card("No employees", "Nothing to delete yet.")
-            else:
-                del_code = st.selectbox("Select Employee Code", options=_codes,
-                                        key="del_pick")
-                emp = database.get_employee(del_code)
-                if emp:
-                    st.dataframe(
-                        pd.DataFrame([{
-                            "Code": emp["employee_code"],
-                            "Name": emp["employee_name"],
-                            "Designation": emp["designation"],
-                            "Category": emp["category"],
-                            "Plant": emp["plant"],
-                            "Plant Code": emp["plant_code"],
-                        }]),
-                        hide_index=True, use_container_width=True,
-                    )
-                    confirm = st.checkbox(
-                        "Yes, I really want to delete this employee",
-                        key="del_confirm",
-                    )
-                    if st.button("🗑️ Delete employee", disabled=not confirm,
-                                 key="del_btn"):
-                        try:
-                            database.delete_employee(del_code)
-                            ui_helpers.render_success_message(
-                                f"Deleted employee <b>{del_code}</b>."
-                            )
-                            st.rerun()
-                        except ValueError as err:
-                            ui_helpers.render_error_message(str(err))
-
-        # --- Change log ---------------------------------------------------------
-        with m_log:
-            log_df = database.read_table("master_data_change_log", order_by="id DESC")
-            if log_df.empty:
-                ui_helpers.render_glass_card(
-                    "No changes yet",
-                    "Add, edit or delete an employee and it will be recorded here.",
-                )
-            else:
-                show_log = (
-                    log_df.rename(columns={
-                        "action_type":    "Action",
-                        "employee_code":  "Emp Code",
-                        "old_value_json": "Old values",
-                        "new_value_json": "New values",
-                        "changed_at":     "When",
-                        "changed_by":     "By",
-                    }).drop(columns=["id"], errors="ignore")
-                )
-                st.caption(f"{len(show_log):,} change(s), newest first")
-                st.dataframe(show_log, hide_index=True, use_container_width=True)
-
-    with tab_backend:
-        st.subheader("📦 Upload Backend Data")
-        st.caption(
-            f"Required columns: **{', '.join(config.BACKEND_REQUIRED_COLUMNS)}**  "
-            "· Extra columns in the file are ignored."
-        )
-
-        uploaded_backend = st.file_uploader(
-            "Choose the Backend Data Excel file (.xlsx)",
-            type=["xlsx"],
-            key="backend_file_uploader",
-        )
-
-        if uploaded_backend:
-            # Cache the parsed dataframe in session_state so re-renders
-            # (caused by radio clicks, etc.) don't re-read the large Excel file.
-            _bkey = f"backend_{uploaded_backend.name}_{uploaded_backend.size}"
-            if st.session_state.get("_backend_cache_key") != _bkey:
-                try:
-                    _df, _w = data_loader.load_backend_data(uploaded_backend)
-                    st.session_state["_backend_cache_key"] = _bkey
-                    st.session_state["_backend_df"]   = _df
-                    st.session_state["_backend_warns"] = _w
-                except ValueError as err:
-                    ui_helpers.render_error_message(str(err))
-                    st.stop()
-
-            df_backend = st.session_state["_backend_df"]
-            warnings   = st.session_state["_backend_warns"]
-
-            for w in warnings:
-                ui_helpers.render_warning_message(w)
-
-            st.success(
-                f"✅ File read — **{len(df_backend):,} rows** ready to save."
-            )
-
-            with st.expander("🔍 Preview (first 10 rows)", expanded=True):
-                st.dataframe(df_backend.head(10), hide_index=True,
-                             use_container_width=True)
-
-            replace_mode = st.radio(
-                "Upload mode",
-                options=["Replace existing data", "Append to existing data"],
-                index=0, horizontal=True,
-                help="Replace clears the previous upload first.",
-            )
-
-            if st.button("💾 Save to Database", type="primary",
-                         key="save_backend_btn"):
-                replace = replace_mode == "Replace existing data"
-                tracker = ui_helpers.ProgressTracker(
-                    ["📂 Reading file", "🧹 Cleaning data", "💾 Saving to DB"]
-                )
-                tracker.start(0)
-                tracker.complete(0, f"{len(df_backend):,} rows")
-                tracker.start(1)
-                time.sleep(0.2)
-                lbl = f"{len(warnings)} skipped" if warnings else "✓ All clean"
-                tracker.complete(1, lbl)
-                tracker.start(2)
-                saved = data_loader.save_backend_data(
-                    df_backend, source_file=uploaded_backend.name, replace=replace
-                )
-                tracker.complete(2, f"{saved:,} rows {'replaced' if replace else 'appended'}")
-                # Clear cache so the summary refreshes after save
-                st.session_state.pop("_backend_cache_key", None)
-                time.sleep(0.8)
-                st.rerun()
-
-        # --- Current data summary (never loads all rows) ---
-        st.divider()
-        st.subheader("📋 Current Backend Data")
-        _b_count = database.get_table_counts().get("backend_data", 0)
-        if _b_count == 0:
-            ui_helpers.render_glass_card(
-                "No data yet",
-                "Upload an Excel file above to populate backend data.",
-            )
-        else:
-            _b_first = database.read_table_limited("backend_data",
-                                                    order_by="date", limit=1)
-            _b_last  = database.read_table_limited("backend_data",
-                                                    order_by="date DESC", limit=1)
-            _b_preview = database.read_table_limited("backend_data",
-                                                      order_by="date", limit=200)
-            col_a, col_b, col_c = st.columns(3)
-            col_a.metric("Total rows", f"{_b_count:,}")
-            col_b.metric("Earliest date", _b_first["date"].iloc[0])
-            col_c.metric("Latest date",   _b_last["date"].iloc[0])
-            st.caption(f"Showing first 200 of **{_b_count:,}** rows")
-            st.dataframe(_b_preview.drop(columns=["id"], errors="ignore"),
-                         hide_index=True, use_container_width=True)
-
-    with tab_maintenance:
-        st.subheader("🛠️ Upload Maintenance Cost Data")
-        st.caption(
-            f"Required columns: **{', '.join(config.MAINTENANCE_REQUIRED_COLUMNS)}**  "
-            "· Each upload replaces the previous data."
-        )
-
-        uploaded_maint = st.file_uploader(
-            "Choose the Maintenance Cost Excel file (.xlsx)",
-            type=["xlsx"],
-            key="maint_file_uploader",
-        )
-
-        if uploaded_maint:
-            _mkey = f"maint_{uploaded_maint.name}_{uploaded_maint.size}"
-            if st.session_state.get("_maint_cache_key") != _mkey:
-                try:
-                    _dfm, _wm = data_loader.load_maintenance_cost(uploaded_maint)
-                    st.session_state["_maint_cache_key"] = _mkey
-                    st.session_state["_maint_df"]   = _dfm
-                    st.session_state["_maint_warns"] = _wm
-                except ValueError as err:
-                    ui_helpers.render_error_message(str(err))
-                    st.stop()
-
-            df_maint = st.session_state["_maint_df"]
-            warns_m  = st.session_state["_maint_warns"]
-
-            for w in warns_m:
-                ui_helpers.render_warning_message(w)
-
-            st.success(
-                f"✅ File read — **{len(df_maint):,} plants** ready to save."
-            )
-
-            with st.expander("🔍 Preview (all rows)", expanded=True):
-                st.dataframe(df_maint, hide_index=True, use_container_width=True)
-
-            if st.button("💾 Save to Database", type="primary",
-                         key="save_maint_btn"):
-                tracker = ui_helpers.ProgressTracker(
-                    ["📂 Reading file", "🧹 Cleaning data", "💾 Saving to DB"]
-                )
-                tracker.start(0)
-                tracker.complete(0, f"{len(df_maint):,} plants")
-                tracker.start(1)
-                time.sleep(0.2)
-                lbl_m = f"{len(warns_m)} skipped" if warns_m else "✓ All clean"
-                tracker.complete(1, lbl_m)
-                tracker.start(2)
-                saved_m = data_loader.save_maintenance_cost(df_maint)
-                tracker.complete(2, f"{saved_m:,} plants saved")
-                st.session_state.pop("_maint_cache_key", None)
-                time.sleep(0.8)
-                st.rerun()
-
-        # --- Current data summary ---
-        st.divider()
-        st.subheader("📋 Current Maintenance Cost Data")
-        maint_df = database.read_table("maintenance_cost", order_by="plant_code")
-        if maint_df.empty:
-            ui_helpers.render_glass_card(
-                "No data yet",
-                "Upload an Excel file above to populate maintenance cost data.",
-            )
-        else:
-            col_a, col_b, col_c = st.columns(3)
-            col_a.metric("Plants", f"{len(maint_df):,}")
-            col_b.metric("Avg cost (Rs/cum)",
-                         f"{maint_df['ytd_maintenance_cost'].mean():.2f}")
-            col_c.metric(
-                f"Above >{config.MAINTENANCE_COST_THRESHOLD}",
-                int((maint_df["ytd_maintenance_cost"]
-                     > config.MAINTENANCE_COST_THRESHOLD).sum()),
-            )
-            st.dataframe(maint_df.drop(columns=["id"], errors="ignore"),
-                         hide_index=True, use_container_width=True)
-
-    # ── Oracle Live Data tab ─────────────────────────────────────────────────
-    with tab_oracle:
-        st.subheader("🔌 Fetch Backend Data from Oracle")
-        st.caption(
-            "Pulls production data directly from the enterprise Oracle database "
-            "(APPSREAD.rdc_batch_trx_headers) for any date range — no Excel upload needed."
-        )
-
-        ora_cfg = oracle_connector.get_oracle_config()
-        ora_ready = oracle_connector.is_configured(ora_cfg)
-
-        if not ora_ready:
-            ui_helpers.render_warning_message(
-                "Oracle connection is not configured. "
-                "Go to <b>Settings → Oracle Database</b> and save your credentials first."
-            )
-        else:
-            ui_helpers.render_success_message(
-                f"Connected to <b>{ora_cfg['host']}:{ora_cfg['port']}/{ora_cfg['service']}</b> "
-                f"as <b>{ora_cfg['user']}</b>"
-            )
-
-        st.divider()
-
-        # Date range picker
-        from datetime import date as _date
-        ora_col1, ora_col2 = st.columns(2)
-        with ora_col1:
-            ora_from = st.date_input("From Date", value=_date.today().replace(day=1),
-                                     key="ora_from")
-        with ora_col2:
-            ora_to = st.date_input("To Date", value=_date.today(), key="ora_to")
-
-        if ora_from > ora_to:
-            ui_helpers.render_error_message("'From Date' must be on or before 'To Date'.")
-        else:
-            ora_replace = st.radio(
-                "Load mode",
-                ["Replace existing backend data", "Append to existing backend data"],
-                index=0, horizontal=True,
-                key="ora_replace_mode",
-            )
-
-            if st.button("🔌 Fetch from Oracle", type="primary",
-                         key="ora_fetch_btn", disabled=not ora_ready):
-                tracker = ui_helpers.ProgressTracker([
-                    "🔌 Connecting to Oracle",
-                    "📥 Fetching rows",
-                    "💾 Saving to database",
-                ])
-                tracker.start(0)
-                try:
-                    test = oracle_connector.test_connection()
-                    if not test["success"]:
-                        tracker.fail(0, "Failed")
-                        ui_helpers.render_error_message(
-                            f"Oracle connection failed:<br><code>{test['error']}</code>"
-                        )
-                        st.stop()
-                    tracker.complete(0, "Connected")
-                except Exception as exc:
-                    tracker.fail(0, "Failed")
-                    ui_helpers.render_error_message(str(exc))
-                    st.stop()
-
-                tracker.start(1)
-                try:
-                    df_ora, ora_warns = oracle_connector.fetch_backend_data(ora_from, ora_to)
-                    tracker.complete(1, f"{len(df_ora):,} rows")
-                except Exception as exc:
-                    tracker.fail(1, "Failed")
-                    ui_helpers.render_error_message(
-                        f"Fetch failed:<br><code>{exc}</code>"
-                    )
-                    st.stop()
-
-                for w in ora_warns:
-                    ui_helpers.render_warning_message(w)
-
-                if df_ora.empty:
-                    tracker.fail(2, "No data")
-                    st.stop()
-
-                tracker.start(2)
-                replace_flag = (ora_replace == "Replace existing backend data")
-                saved = oracle_connector.save_oracle_backend_data(
-                    df_ora, ora_from, ora_to, replace=replace_flag
-                )
-                tracker.complete(2, f"{saved:,} rows {'replaced' if replace_flag else 'appended'}")
-
-                time.sleep(0.8)
-                st.rerun()
-
-        # Current backend data summary
-        st.divider()
-        st.subheader("📋 Current Backend Data (all sources)")
-        _b_count = database.get_table_counts().get("backend_data", 0)
-        if _b_count == 0:
-            ui_helpers.render_glass_card(
-                "No data yet", "Fetch from Oracle above to populate backend data."
-            )
-        else:
-            _b_prev = database.read_table_limited("backend_data", order_by="date DESC", limit=10)
-            st.caption(f"**{_b_count:,}** total rows — showing latest 10")
-            st.dataframe(_b_prev.drop(columns=["id"], errors="ignore"),
-                         hide_index=True, use_container_width=True)
+def _records(df: pd.DataFrame) -> list:
+    if df is None or df.empty:
+        return []
+    return json.loads(df.to_json(orient="records", date_format="iso"))
 
 
-def _style_result_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Return a same-shaped DataFrame of CSS strings (the row highlighting).
-
-    Spec rule:
-      - Incentive Amount > 0  -> light green row
-      - Deduction Amount > 0  -> light red row
-      - If BOTH are > 0       -> light red wins (deduction takes priority)
-      - Both 0                -> normal (no colour)
-
-    The amount columns are found by their name PREFIX so this keeps working
-    even when the deduction column is renamed to "Deduction Amount @ Rs 10".
-    """
-    styles = pd.DataFrame("", index=df.index, columns=df.columns)
-
-    inc_col = next((c for c in df.columns if c.startswith("Incentive Amount")), None)
-    ded_col = next((c for c in df.columns if c.startswith("Deduction Amount")), None)
-
-    has_inc = (df[inc_col] > 0) if inc_col else pd.Series(False, index=df.index)
-    has_ded = (df[ded_col] > 0) if ded_col else pd.Series(False, index=df.index)
-
-    # Green for incentive-only rows first...
-    styles.loc[has_inc & ~has_ded, :] = "background-color: #064e3b"  # dark emerald
-    # ...then red for ANY row with a deduction (this also overrides "both").
-    styles.loc[has_ded, :] = "background-color: #7f1d1d"             # dark crimson
-    return styles
+def _row_cls(row: dict) -> str:
+    if (row.get("deduction_amount") or 0) > 0:
+        return "row-red"
+    if (row.get("incentive_amount") or 0) > 0:
+        return "row-green"
+    return ""
 
 
-# ---------------------------------------------------------------------------
-# Shared result-table helpers (used by BOTH the Calculate and View Reports pages)
-# ---------------------------------------------------------------------------
-# The columns we show (in order) and their friendly display names.
-RESULT_SHOW_COLS = [
+def _sort_rows(rows: list) -> list:
+    def _key(r):
+        d = r.get("deduction_amount") or 0
+        i = r.get("incentive_amount") or 0
+        if d > 0:
+            return (0, -d, -i)
+        if i > 0:
+            return (1, 0, -i)
+        return (2, 0, 0)
+    return sorted(rows, key=_key)
+
+
+def _apply_filters(rows: list, cats, desigs, plants, elig, outcome, search):
+    out = rows
+    if cats:
+        out = [r for r in out if r.get("category") in cats]
+    if desigs:
+        out = [r for r in out if r.get("designation") in desigs]
+    if plants:
+        out = [r for r in out if r.get("plant") in plants]
+    if elig == "Yes":
+        out = [r for r in out if r.get("incentive_eligible") == "Yes"]
+    elif elig == "No":
+        out = [r for r in out if r.get("incentive_eligible") == "No"]
+    if outcome == "incentive":
+        out = [r for r in out if (r.get("incentive_amount") or 0) > 0]
+    elif outcome == "deduction":
+        out = [r for r in out if (r.get("deduction_amount") or 0) > 0]
+    elif outcome == "both":
+        out = [r for r in out if (r.get("incentive_amount") or 0) > 0 and (r.get("deduction_amount") or 0) > 0]
+    elif outcome == "neither":
+        out = [r for r in out if (r.get("incentive_amount") or 0) == 0 and (r.get("deduction_amount") or 0) == 0]
+    if search.strip():
+        s = search.strip().lower()
+        out = [r for r in out if s in str(r.get("employee_code", "")).lower()
+               or s in str(r.get("employee_name", "")).lower()]
+    return out
+
+
+RESULT_COLS = [
     "employee_code", "employee_name", "designation",
     "plant", "plant_code",
     "total_quantity", "ytd_maintenance_cost",
@@ -770,7 +151,7 @@ RESULT_SHOW_COLS = [
     "deduction_target", "shortfall_quantity", "deduction_amount",
     "remarks",
 ]
-RESULT_RENAME = {
+RESULT_LABELS = {
     "employee_code":        "Emp Code",
     "employee_name":        "Name",
     "designation":          "Designation",
@@ -786,1094 +167,762 @@ RESULT_RENAME = {
     "deduction_amount":     "Deduction Amount (Rs)",
     "remarks":              "Remarks",
 }
+CAT_TABS = {
+    "All Trainees":       ["Civil Trainee", "Non-Civil Trainee"],
+    "Plant Mgr & PI":     ["PM & API"],
+    "QCI":                ["QCI"],
+    "All MO":             ["MO"],
+    "SPE":                ["SPE"],
+    "TL Employee":        ["TL BPO"],
+    "Production Officer": ["Production Officer"],
+    "NA":                 ["NA"],
+}
 
 
-def _sort_report_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Sort result rows for display/export:
-      1. Deduction (red) rows first — highest → lowest deduction amount.
-      2. Incentive (green) rows next — highest → lowest incentive amount.
-      3. Plain rows last.
-    A row with BOTH counts as a deduction row (red takes priority).
-    Works on the internal column names (incentive_amount / deduction_amount).
-    """
-    out = df.copy()
-    out["_band"] = 2                                    # plain rows
-    out.loc[out["incentive_amount"] > 0, "_band"] = 1   # green
-    out.loc[out["deduction_amount"] > 0, "_band"] = 0   # red (priority)
-    out = out.sort_values(
-        by=["_band", "deduction_amount", "incentive_amount"],
-        ascending=[True, False, False],
-    ).drop(columns="_band")
-    return out
+def _build_meta(from_date, to_date, filtered, unmapped, applied_filters):
+    return {
+        "generated_on":     _dt.now().isoformat(timespec="seconds"),
+        "date_range":       f"{from_date} to {to_date}",
+        "applied_filters":  applied_filters,
+        "total_employees":  len(filtered),
+        "total_quantity":   sum(r.get("total_quantity") or 0 for r in filtered),
+        "total_incentive":  sum(r.get("incentive_amount") or 0 for r in filtered),
+        "total_deduction":  sum(r.get("deduction_amount") or 0 for r in filtered),
+        "unmapped_count":   len(unmapped),
+        "validation_count": database.get_table_counts().get("validation_errors", 0),
+    }
 
 
+def _rows_to_df(rows: list, cols) -> pd.DataFrame:
+    if not rows:
+        return pd.DataFrame(columns=cols)
+    return pd.DataFrame(rows)[list(cols)]
+
+
+# ── PAGES ─────────────────────────────────────────────────────────────────────
+
+@app.route("/")
+def page_dashboard():
+    _ss("active_page", "dashboard")
+    counts = database.get_table_counts()
+    return render_template("dashboard.html",
+                           counts=counts,
+                           db_path=database.DB_PATH)
+
+
+@app.route("/data-uploader")
+def page_data_uploader():
+    _ss("active_page", "data_uploader")
+    last_sync = google_sheets.get_last_sync_info()
+    has_creds = google_sheets.credentials_exist()
+    ora_cfg   = oracle_connector.get_oracle_config()
+    ora_ready = oracle_connector.is_configured(ora_cfg)
+    auto_sync = database.get_setting("gsheet_auto_sync", "false") == "true"
+
+    m_count = database.get_table_counts().get("master_data", 0)
+    master_cols, master_rows = [], []
+    if m_count > 0:
+        df = database.read_table_limited("master_data", order_by="employee_code", limit=500)
+        df = df.drop(columns=["id"], errors="ignore")
+        master_cols = df.columns.tolist()
+        master_rows = _records(df)
+
+    b_count = database.get_table_counts().get("backend_data", 0)
+    b_earliest = b_latest = ""
+    backend_preview = []
+    if b_count > 0:
+        df_e = database.read_table_limited("backend_data", order_by="date", limit=1)
+        df_l = database.read_table_limited("backend_data", order_by="date DESC", limit=1)
+        b_earliest = df_e["date"].iloc[0] if not df_e.empty else ""
+        b_latest   = df_l["date"].iloc[0] if not df_l.empty else ""
+        df_p = database.read_table_limited("backend_data", order_by="date", limit=200)
+        backend_preview = _records(df_p.drop(columns=["id"], errors="ignore"))
+
+    maint_df = database.read_table("maintenance_cost", order_by="plant_code")
+    maint_cols, maint_rows, maint_avg, maint_above = [], [], 0, 0
+    if not maint_df.empty:
+        df_m2 = maint_df.drop(columns=["id"], errors="ignore")
+        maint_cols = df_m2.columns.tolist()
+        maint_rows = _records(df_m2)
+        maint_avg  = round(maint_df["ytd_maintenance_cost"].mean(), 2)
+        maint_above = int((maint_df["ytd_maintenance_cost"] > config.MAINTENANCE_COST_THRESHOLD).sum())
+
+    codes_df = database.read_table_limited("master_data", order_by="employee_code", limit=100000)
+    codes = codes_df["employee_code"].astype(str).tolist() if not codes_df.empty else []
+
+    log_df   = database.read_table("master_data_change_log", order_by="id DESC")
+    log_rows = _records(log_df.drop(columns=["id"], errors="ignore")) if not log_df.empty else []
+
+    ora_b_preview = []
+    if b_count > 0:
+        df_ob = database.read_table_limited("backend_data", order_by="date DESC", limit=10)
+        ora_b_preview = _records(df_ob.drop(columns=["id"], errors="ignore"))
+
+    # Edit / delete employee (loaded when query params present)
+    edit_code = request.args.get("edit_code")
+    del_code  = request.args.get("del_code")
+    edit_emp  = database.get_employee(edit_code) if edit_code else None
+    del_emp   = database.get_employee(del_code)  if del_code  else None
+
+    return render_template("data_uploader.html",
+                           last_sync=last_sync, has_creds=has_creds,
+                           ora_cfg=ora_cfg, ora_ready=ora_ready, auto_sync=auto_sync,
+                           m_count=m_count, master_cols=master_cols, master_rows=master_rows,
+                           b_count=b_count, b_earliest=b_earliest, b_latest=b_latest,
+                           backend_preview=backend_preview,
+                           maint_cols=maint_cols, maint_rows=maint_rows,
+                           maint_avg=maint_avg, maint_above=maint_above,
+                           maint_count=len(maint_rows),
+                           codes=codes, log_rows=log_rows, ora_b_preview=ora_b_preview,
+                           edit_emp=edit_emp, del_emp=del_emp,
+                           categories=config.CATEGORIES,
+                           today=str(_date.today()),
+                           today_first=str(_date.today().replace(day=1)))
+
+
+@app.route("/calculate")
 def page_calculate():
-    import calendar as _cal
-
-    ui_helpers.render_page_header(
-        "Calculate Incentive & Deduction",
-        "Choose a date range and run the full category-wise incentive & deduction calculation",
-    )
-
-    # ── Guard: need backend data ─────────────────────────────────────────────
+    _ss("active_page", "calculate")
     available = calculator.get_available_months()
-    if not available:
-        ui_helpers.render_glass_card(
-            "No backend data",
-            "Upload a Backend Data file on the <b>Data Uploader</b> page first.",
-        )
-        return
 
-    # ── Date range picker ────────────────────────────────────────────────────
-    # Default: first and last date found in backend_data
-    conn = database.get_connection()
-    try:
-        minmax = pd.read_sql_query(
-            "SELECT MIN(date) AS mn, MAX(date) AS mx FROM backend_data", conn
-        )
-    finally:
-        conn.close()
-
-    from datetime import date as _date
-    default_from = pd.to_datetime(minmax["mn"].iloc[0]).date()
-    default_to   = pd.to_datetime(minmax["mx"].iloc[0]).date()
-
-    col_f, col_t, col_btn = st.columns([2, 2, 3])
-    with col_f:
-        from_date = st.date_input("From Date", value=default_from, key="calc_from")
-    with col_t:
-        to_date = st.date_input("To Date", value=default_to, key="calc_to")
-
-    if from_date > to_date:
-        ui_helpers.render_error_message("'From Date' must be on or before 'To Date'.")
-        return
-
-    # Row count for the selected range
-    conn = database.get_connection()
-    try:
-        cnt = pd.read_sql_query(
-            "SELECT COUNT(*) AS c FROM backend_data WHERE date >= ? AND date <= ?",
-            conn, params=(str(from_date), str(to_date)),
-        )
-    finally:
-        conn.close()
-    period_rows = int(cnt["c"].iloc[0])
-
-    with col_btn:
-        st.write("")
-        st.caption(f"**{period_rows:,}** backend rows in selected range")
-
-    if period_rows == 0:
-        ui_helpers.render_warning_message(
-            "No backend data found for the selected date range."
-        )
-        return
-
-    last = calculator.get_last_calculation_info()
-    if last["ran_at"]:
-        st.caption(
-            f"Last run: {last['ran_at']}  ·  "
-            f"{last['mapped']} employees  ·  {last['unmapped']} unmapped"
-        )
-
-    # ── Run button ───────────────────────────────────────────────────────────
-    st.write("")
-    if st.button("⚡ Run Calculation", type="primary", key="run_calc_btn"):
-        tracker = ui_helpers.ProgressTracker([
-            "📦 Aggregating data",
-            "🧑‍💼 Matching employees",
-            "💰 Calculating",
-            "💾 Saving",
-        ])
-        tracker.start(0)
-        time.sleep(0.2)
-        tracker.complete(0, f"{period_rows:,} rows")
-
-        tracker.start(1)
-        time.sleep(0.1)
-        tracker.complete(1, f"{database.get_table_counts().get('master_data',0):,} in master")
-
-        tracker.start(2)
-        result = calculator.run_calculation(
-            month=from_date.month,
-            year=from_date.year,
-            start_date=str(from_date),
-            end_date=str(to_date),
-        )
-        if result["error"]:
-            tracker.fail(2, "Error")
-            ui_helpers.render_error_message(result["error"])
-            st.stop()
-        tracker.complete(2, f"{result['mapped']:,} employees")
-
-        tracker.start(3)
-        time.sleep(0.2)
-        tracker.complete(3, f"done · {result['unmapped']} unmapped")
-        time.sleep(0.8)
-        st.rerun()
-
-    st.divider()
-
-    # ── Results ──────────────────────────────────────────────────────────────
-    if database.get_table_counts().get("calculation_results", 0) == 0:
-        ui_helpers.render_glass_card(
-            "No results yet",
-            "Select a date range and click <b>Run Calculation</b> above.",
-        )
-        return
-
-    results_df = database.read_table("calculation_results")
-
-    # ── Summary KPI row ───────────────────────────────────────────────────────
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Employees", f"{len(results_df):,}")
-    c2.metric("Incentive Eligible", f"{(results_df['incentive_eligible']=='Yes').sum():,}")
-    c3.metric("Total Incentive", f"₹{results_df['incentive_amount'].sum():,.0f}")
-    c4.metric("Total Deduction", f"₹{results_df['deduction_amount'].sum():,.0f}")
-
-    st.write("")
-
-    # ── Legend ────────────────────────────────────────────────────────────────
-    _result_legend()
-    st.write("")
-
-    # ── Category-wise tabs ────────────────────────────────────────────────────
-    # Map tab label → list of categories it covers (from config.REPORT_SHEETS)
-    CAT_TABS = {
-        "All Trainees":       ["Civil Trainee", "Non-Civil Trainee"],
-        "Plant Mgr & PI":     ["PM & API"],
-        "QCI":                ["QCI"],
-        "All MO":             ["MO"],
-        "SPE":                ["SPE"],
-        "TL Employee":        ["TL BPO"],
-        "Production Officer": ["Production Officer"],
-        "NA":                 ["NA"],
-    }
-
-    # Only show tabs that have at least one row in the results
-    active_tabs = {
-        label: cats
-        for label, cats in CAT_TABS.items()
-        if not results_df[results_df["category"].isin(cats)].empty
-    }
-
-    # Display columns + friendly names come from the shared module constants.
-    SHOW_COLS = RESULT_SHOW_COLS
-    RENAME = RESULT_RENAME
-
-    if active_tabs:
-        tabs = st.tabs(list(active_tabs.keys()))
-        for tab_widget, (label, cats) in zip(tabs, active_tabs.items()):
-            with tab_widget:
-                grp = results_df[results_df["category"].isin(cats)].copy()
-
-                # Category summary row at top of tab
-                c_a, c_b, c_c, c_d = st.columns(4)
-                c_a.metric("Employees", f"{len(grp):,}")
-                c_b.metric("Eligible", f"{(grp['incentive_eligible']=='Yes').sum():,}")
-                c_c.metric("Incentive", f"₹{grp['incentive_amount'].sum():,.0f}")
-                c_d.metric("Deduction", f"₹{grp['deduction_amount'].sum():,.0f}")
-
-                # Show the deduction RATE in the column header (spec rule).
-                # Every category inside one tab shares the same rate, so we can
-                # label the header e.g. "Deduction Amount @ Rs 10".
-                ded_rates = {
-                    config.DEDUCTION_RULES.get(c, {}).get("rate", 0) for c in cats
-                }
-                rename_tab = dict(RENAME)
-                if len(ded_rates) == 1 and next(iter(ded_rates)):
-                    rename_tab["deduction_amount"] = (
-                        f"Deduction Amount @ Rs {next(iter(ded_rates))}"
-                    )
-
-                # Sort: deduction (red) rows first, then incentive (green), then
-                # plain — biggest amount on top within each band.
-                grp = _sort_report_rows(grp)
-
-                # Build display df
-                show = (
-                    grp[[c for c in SHOW_COLS if c in grp.columns]]
-                    .rename(columns=rename_tab)
-                    .reset_index(drop=True)
-                )
-
-                # Apply row highlighting
-                styled = show.style.apply(_style_result_rows, axis=None)
-                st.dataframe(styled, hide_index=True, use_container_width=True)
-
-    # ── Unmapped employees — small footnote ──────────────────────────────────
-    unmapped_df = database.read_table("unmapped_employees")
-    if not unmapped_df.empty:
-        st.divider()
-        with st.expander(
-            f"⚠️ {len(unmapped_df)} unmapped employee(s) — codes in backend data not found in master data",
-            expanded=False,
-        ):
-            st.dataframe(
-                unmapped_df.drop(columns=["id"], errors="ignore"),
-                hide_index=True, use_container_width=True,
-            )
-
-
-def _result_legend():
-    """The little green/red colour key used on the results pages."""
-    st.markdown(
-        '<span style="background:rgba(16,185,129,0.15);color:#6EE7B7;'
-        'padding:4px 10px;border-radius:6px;font-size:13px;margin-right:8px;'
-        'border:1px solid rgba(16,185,129,0.25)">🟢 Incentive earned</span>'
-        '<span style="background:rgba(239,68,68,0.15);color:#FCA5A5;'
-        'padding:4px 10px;border-radius:6px;font-size:13px;'
-        'border:1px solid rgba(239,68,68,0.25)">🔴 Deduction applied (takes priority if both)</span>',
-        unsafe_allow_html=True,
-    )
-
-
-def page_view_reports():
-    ui_helpers.render_page_header(
-        "View Reports",
-        "Pick a date range, then browse the report with live multi-select filters",
-    )
-
-    # ── Report period (From / To date range) ─────────────────────────────────
-    # View Reports builds the report LIVE for the chosen range from Backend Data,
-    # so you can browse any period. It does NOT overwrite the saved calculation
-    # (it calls the engine with persist=False). It needs backend data to work.
-    # When Oracle is configured, we fetch live — no pre-loaded Excel needed.
-    ora_live = oracle_connector.is_configured()
-    if not ora_live:
-        available = calculator.get_available_months()
-        if not available:
-            ui_helpers.render_glass_card(
-                "No backend data",
-                "Upload a Backend Data file on the <b>Data Uploader</b> page first, "
-                "or configure Oracle on the <b>Settings</b> page for live data.",
-            )
-            return
-
-    # Default date range: today's month when Oracle is live, else from stored data.
-    from datetime import date as _date
-    if ora_live:
-        default_from = _date.today().replace(day=1)
-        default_to   = _date.today()
-    else:
+    default_from = default_to = str(_date.today())
+    if available:
         conn = database.get_connection()
         try:
-            minmax = pd.read_sql_query(
-                "SELECT MIN(date) AS mn, MAX(date) AS mx FROM backend_data", conn
-            )
+            mm = pd.read_sql_query(
+                "SELECT MIN(date) AS mn, MAX(date) AS mx FROM backend_data", conn)
         finally:
             conn.close()
-        default_from = pd.to_datetime(minmax["mn"].iloc[0]).date()
-        default_to   = pd.to_datetime(minmax["mx"].iloc[0]).date()
+        default_from = str(pd.to_datetime(mm["mn"].iloc[0]).date())
+        default_to   = str(pd.to_datetime(mm["mx"].iloc[0]).date())
 
-    st.subheader("📅 Report period")
-    if ora_live:
-        st.caption("🔌 Live data — Oracle will be queried automatically for the selected range.")
-    col_f, col_t = st.columns(2)
-    with col_f:
-        from_date = st.date_input("From Date", value=default_from, key="vr_from")
-    with col_t:
-        to_date = st.date_input("To Date", value=default_to, key="vr_to")
+    last_calc  = calculator.get_last_calculation_info()
+    results_df = database.read_table("calculation_results") \
+        if database.get_table_counts().get("calculation_results", 0) > 0 \
+        else pd.DataFrame()
 
-    if from_date > to_date:
-        ui_helpers.render_error_message("'From Date' must be on or before 'To Date'.")
-        return
+    results       = _records(results_df)
+    unmapped_rows = _records(database.read_table("unmapped_employees")
+                             .drop(columns=["id"], errors="ignore"))
 
-    # Recompute ONLY when the date range changes — so changing the filters below
-    # is instant and never re-runs the calculation.
-    range_key = f"{from_date}|{to_date}"
-    if (st.session_state.get("vr_range_key") != range_key
-            or "vr_results_df" not in st.session_state):
+    cat_results = {}
+    for label, cats in CAT_TABS.items():
+        grp = [r for r in results if r.get("category") in cats]
+        grp = _sort_rows(grp)
+        for r in grp:
+            r["_cls"] = _row_cls(r)
+        cat_results[label] = grp
 
-        # Step 1 — if Oracle is configured, fetch live data for this range first.
-        ora_fetch_note = ""
-        if ora_live:
-            with st.spinner("🔌 Fetching live data from Oracle…"):
+    total_emps = len(results)
+    elig_count = sum(1 for r in results if r.get("incentive_eligible") == "Yes")
+    total_inc  = sum((r.get("incentive_amount") or 0) for r in results)
+    total_ded  = sum((r.get("deduction_amount") or 0) for r in results)
+
+    return render_template("calculate.html",
+                           available=available,
+                           default_from=default_from, default_to=default_to,
+                           last_calc=last_calc,
+                           results=results if not results_df.empty else None,
+                           ran=_s("calc_ran", False),
+                           cat_tabs=CAT_TABS, cat_results=cat_results,
+                           unmapped=unmapped_rows,
+                           result_cols=RESULT_COLS, result_labels=RESULT_LABELS,
+                           total_emps=total_emps, elig_count=elig_count,
+                           total_inc=total_inc, total_ded=total_ded)
+
+
+@app.route("/reports")
+def page_reports():
+    _ss("active_page", "reports")
+
+    available  = calculator.get_available_months()
+    ora_live   = oracle_connector.is_configured()
+    no_backend = (not available) and (not ora_live)
+
+    from_date_s = request.args.get("from_date", str(_date.today().replace(day=1)))
+    to_date_s   = request.args.get("to_date",   str(_date.today()))
+    try:
+        from_date = _date.fromisoformat(from_date_s)
+        to_date   = _date.fromisoformat(to_date_s)
+    except ValueError:
+        from_date = _date.today().replace(day=1)
+        to_date   = _date.today()
+
+    cats   = request.args.getlist("category")
+    desigs = request.args.getlist("designation")
+    plants = request.args.getlist("plant")
+    elig   = request.args.get("elig",    "All")
+    outcome = request.args.get("outcome", "All")
+    search  = request.args.get("search",  "")
+
+    results = None
+    unmapped = []
+    error_msg = ""
+    ora_note  = ""
+    unique_cats = unique_desigs = unique_plants = []
+    total_rows = 0
+
+    has_params = "from_date" in request.args
+
+    if has_params and not no_backend:
+        range_key = f"{from_date}|{to_date}"
+        if _s("rpt_range_key") != range_key:
+            # Optionally fetch Oracle data first
+            if ora_live:
                 try:
-                    df_ora, ora_warns = oracle_connector.fetch_backend_data(from_date, to_date)
+                    df_ora, _ = oracle_connector.fetch_backend_data(from_date, to_date)
                     if not df_ora.empty:
                         oracle_connector.save_oracle_backend_data(
-                            df_ora, from_date, to_date, replace=True
-                        )
-                        ora_fetch_note = f"Oracle: {len(df_ora):,} rows loaded."
+                            df_ora, from_date, to_date, replace=True)
+                        ora_note = f"Oracle: {len(df_ora):,} rows loaded."
                     else:
-                        ora_fetch_note = "Oracle returned no rows for this range."
+                        ora_note = "Oracle returned no rows for this range."
                 except Exception as exc:
-                    ora_fetch_note = f"Oracle fetch failed: {exc}"
+                    ora_note = f"Oracle fetch failed: {exc}"
 
-        # Step 2 — run the calculation on whatever is now in backend_data.
-        with st.spinner("Calculating incentives & deductions…"):
             res = calculator.run_calculation(
                 month=from_date.month, year=from_date.year,
                 start_date=str(from_date), end_date=str(to_date),
                 persist=False,
             )
-        if res["error"]:
-            st.session_state["vr_results_df"]  = pd.DataFrame()
-            st.session_state["vr_unmapped_df"] = pd.DataFrame()
-            st.session_state["vr_range_note"]  = res["error"]
-        else:
-            st.session_state["vr_results_df"]  = pd.DataFrame(res["results_rows"])
-            st.session_state["vr_unmapped_df"] = pd.DataFrame(res["unmapped_rows"])
-            st.session_state["vr_range_note"]  = ora_fetch_note
-        st.session_state["vr_range_key"] = range_key
+            if res["error"]:
+                error_msg = res["error"]
+                _ss("rpt_all", [])
+                _ss("rpt_unmapped", [])
+            else:
+                _ss("rpt_all", res.get("results_rows", []))
+                _ss("rpt_unmapped", res.get("unmapped_rows", []))
+            _ss("rpt_range_key", range_key)
+            _ss("rpt_ora_note", ora_note)
 
-    results_df = st.session_state["vr_results_df"]
-    range_note = st.session_state.get("vr_range_note", "")
-    if results_df.empty:
-        ui_helpers.render_warning_message(
-            range_note or "No mapped employees were found for this date range."
-        )
-        return
-    if range_note:
-        st.caption(f"🔌 {range_note}")
+        all_rows = _s("rpt_all", [])
+        unmapped  = _s("rpt_unmapped", [])
+        ora_note  = _s("rpt_ora_note", "")
+        total_rows = len(all_rows)
 
-    st.caption(
-        f"Live report for **{from_date} → {to_date}**  ·  "
-        f"**{len(results_df):,}** employees  ·  _(preview only — not saved)_"
-    )
-    st.divider()
+        unique_cats   = sorted(set(r.get("category", "")    for r in all_rows if r.get("category")))
+        unique_desigs = sorted(set(r.get("designation", "") for r in all_rows if r.get("designation")))
+        unique_plants = sorted(set(r.get("plant", "")       for r in all_rows if r.get("plant")))
 
-    # ── Phase 8: dynamic multi-select filters ────────────────────────────────
-    # The results table carries the Master Data columns (Category, Designation,
-    # Plant, Plant Code), so the dropdown options come straight from real data.
-    st.subheader("🔎 Filters")
-    filtered = ui_helpers.render_dynamic_filters(
-        results_df,
-        [
-            ("category",   "Category"),
-            ("designation", "Designation"),
-            ("plant",      "Plant"),
-        ],
-        key_prefix="vr",
-    )
+        filtered = _apply_filters(all_rows, cats, desigs, plants, elig, outcome, search)
+        filtered = _sort_rows(filtered)
+        for r in filtered:
+            r["_cls"] = _row_cls(r)
+        results = filtered
 
-    # Extra filters: eligibility, outcome, and a free-text search box.
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        elig = st.selectbox(
-            "Incentive eligibility",
-            ["All", "Eligible (Yes)", "Not eligible (No)"],
-            key="vr_elig",
-        )
-    with col2:
-        outcome = st.selectbox(
-            "Outcome",
-            ["All", "Has incentive", "Has deduction", "Has both", "Neither"],
-            key="vr_outcome",
-        )
-    with col3:
-        search = st.text_input(
-            "Search Emp Code / Name",
-            key="vr_search",
-            placeholder="e.g. 1023 or Ramesh",
-        )
+        # Build applied-filters string
+        parts = []
+        if cats:   parts.append(f"Category: {', '.join(cats)}")
+        if desigs: parts.append(f"Designation: {', '.join(desigs)}")
+        if plants: parts.append(f"Plant: {', '.join(plants)}")
+        if elig != "All":     parts.append(f"Eligibility: {elig}")
+        if outcome != "All":  parts.append(f"Outcome: {outcome}")
+        if search.strip():    parts.append(f"Search: {search.strip()}")
+        applied_filters = " | ".join(parts) if parts else "None"
 
-    # Apply eligibility filter
-    if elig == "Eligible (Yes)":
-        filtered = filtered[filtered["incentive_eligible"] == "Yes"]
-    elif elig == "Not eligible (No)":
-        filtered = filtered[filtered["incentive_eligible"] == "No"]
+        # Store snapshot for downloads / email
+        _ss("rpt_filtered",        filtered)
+        _ss("rpt_unmapped_snap",   unmapped)
+        _ss("rpt_from",            str(from_date))
+        _ss("rpt_to",              str(to_date))
+        _ss("rpt_applied_filters", applied_filters)
 
-    # Apply outcome filter
-    if outcome == "Has incentive":
-        filtered = filtered[filtered["incentive_amount"] > 0]
-    elif outcome == "Has deduction":
-        filtered = filtered[filtered["deduction_amount"] > 0]
-    elif outcome == "Has both":
-        filtered = filtered[(filtered["incentive_amount"] > 0) &
-                            (filtered["deduction_amount"] > 0)]
-    elif outcome == "Neither":
-        filtered = filtered[(filtered["incentive_amount"] == 0) &
-                            (filtered["deduction_amount"] == 0)]
-
-    # Apply text search (matches Employee Code OR Name, case-insensitive)
-    if search.strip():
-        s = search.strip().lower()
-        mask = (
-            filtered["employee_code"].astype(str).str.lower().str.contains(s) |
-            filtered["employee_name"].astype(str).str.lower().str.contains(s)
-        )
-        filtered = filtered[mask]
-
-    # Build a readable "applied filters" description (used in the table caption,
-    # the Excel Summary sheet and the email body).
-    filter_parts = []
-    for col_name, lbl in [("category", "Category"), ("designation", "Designation"),
-                          ("plant", "Plant")]:
-        sel = st.session_state.get(f"vr_{col_name}")
-        if sel:
-            filter_parts.append(f"{lbl}: {', '.join(map(str, sel))}")
-    if elig != "All":
-        filter_parts.append(f"Eligibility: {elig}")
-    if outcome != "All":
-        filter_parts.append(f"Outcome: {outcome}")
-    if search.strip():
-        filter_parts.append(f"Search: {search.strip()}")
-    applied_filters = " | ".join(filter_parts) if filter_parts else "None"
-
-    st.divider()
-
-    # ── Generate the report (explicit button) ────────────────────────────────
-    # Nothing below is shown until you press Generate, and what IS shown always
-    # matches the date range + filters that were active at that moment — so the
-    # table, summary, Excel and email body can never drift out of sync.
-    selection_sig = f"{from_date}|{to_date}|{applied_filters}|{len(filtered)}"
-    if st.button("🔄 Generate Report", type="primary", key="vr_generate"):
-        st.session_state["vr_report"] = {
-            "filtered":        filtered.copy(),
-            "unmapped":        st.session_state.get("vr_unmapped_df", pd.DataFrame()).copy(),
-            "from_date":       from_date,
-            "to_date":         to_date,
-            "applied_filters": applied_filters,
-            "total_rows":      len(results_df),
-            "sig":             selection_sig,
-        }
-
-    report = st.session_state.get("vr_report")
-    if not report:
-        ui_helpers.render_glass_card(
-            "Ready when you are",
-            "Choose your <b>date range</b> and <b>filters</b> above, then click "
-            "<b>🔄 Generate Report</b> to build the table, summary and export options.",
-        )
-        return
-
-    # If the date range / filters changed since the last Generate, nudge the user.
-    if report["sig"] != selection_sig:
-        ui_helpers.render_warning_message(
-            "Your date range or filters changed since this report was generated. "
-            "Click <b>🔄 Generate Report</b> again to refresh it."
-        )
-
-    # From here on, use the GENERATED snapshot for everything (table, KPIs,
-    # Excel, email) so they always agree with each other.
-    filtered        = report["filtered"]
-    unmapped_df     = report["unmapped"]
-    from_date       = report["from_date"]
-    to_date         = report["to_date"]
-    applied_filters = report["applied_filters"]
-    gen_total_rows  = report["total_rows"]
-
-    # ── Summary KPIs (reflect the generated report) ──────────────────────────
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Employees (filtered)", f"{len(filtered):,}")
-    c2.metric("Incentive eligible",
-              f"{(filtered['incentive_eligible'] == 'Yes').sum():,}")
-    c3.metric("Total Incentive", f"₹{filtered['incentive_amount'].sum():,.0f}")
-    c4.metric("Total Deduction", f"₹{filtered['deduction_amount'].sum():,.0f}")
-
-    st.write("")
-    _result_legend()
-    st.write("")
-
-    if filtered.empty:
-        ui_helpers.render_warning_message(
-            "No rows match the current filters. Clear a filter to see more."
-        )
-        return
-
-    # ── Sorted + colour-highlighted table ────────────────────────────────────
-    sorted_df = _sort_report_rows(filtered)
-    show = (
-        sorted_df[[c for c in RESULT_SHOW_COLS if c in sorted_df.columns]]
-        .rename(columns=RESULT_RENAME)
-        .reset_index(drop=True)
-    )
-    st.caption(f"Showing **{len(show):,}** of **{gen_total_rows:,}** total rows")
-    styled = show.style.apply(_style_result_rows, axis=None)
-    st.dataframe(styled, hide_index=True, use_container_width=True)
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # 📤 EXPORT & EMAIL  (merged into this page — no separate sidebar item)
-    # ─────────────────────────────────────────────────────────────────────────
-    st.divider()
-    st.subheader("📤 Export & Email")
-
-    # filtered / unmapped_df / applied_filters all come from the generated
-    # snapshot above. Validation errors are date-independent, so read them live.
-    validation_df = database.read_table("validation_errors")
-
-    # Friendly month label for the subject/body: "May 2026" when the whole range
-    # sits in one calendar month, otherwise the explicit date range.
+    # Month label for email
     if (from_date.year, from_date.month) == (to_date.year, to_date.month):
         month_label = from_date.strftime("%B %Y")
     else:
         month_label = f"{from_date.strftime('%d %b %Y')} to {to_date.strftime('%d %b %Y')}"
 
-    tab_excel, tab_csv, tab_email = st.tabs(
-        ["📊 Excel report", "📄 CSV", "✉️ Email"]
-    )
+    email_cfg    = email_helper.get_smtp_config()
+    email_ready  = bool(email_cfg["host"] and email_cfg["sender"] and email_cfg["password"])
+    default_subj = email_helper.compose_report_subject(month_label)
+    default_body = email_helper.compose_report_body(month_label)
 
-    # --- Excel (full multi-sheet, formatted) ---------------------------------
-    with tab_excel:
-        st.caption(
-            "One workbook: **Summary** + a sheet per category + **Unmapped** + "
-            "**Validation Errors**. Colour-highlighted, header frozen, and it "
-            "**respects the filters and date range above**."
-        )
-        meta = {
-            "generated_on":    _dt.now().isoformat(timespec="seconds"),
-            "date_range":      f"{from_date} to {to_date}",
-            "applied_filters": applied_filters,
-            "total_employees": int(len(filtered)),
-            "total_quantity":  float(filtered["total_quantity"].sum()),
-            "total_incentive": float(filtered["incentive_amount"].sum()),
-            "total_deduction": float(filtered["deduction_amount"].sum()),
-            "unmapped_count":  int(len(unmapped_df)),
-            "validation_count": int(len(validation_df)),
-        }
-        try:
-            xlsx_bytes = report_generator.generate_excel_report(
-                filtered, unmapped_df, validation_df, meta
-            )
-            st.download_button(
-                "⬇️ Download Excel report (.xlsx)",
-                data=xlsx_bytes,
-                file_name=f"incentive_report_{from_date}_to_{to_date}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument."
-                     "spreadsheetml.sheet",
-                key="vr_xlsx",
-                type="primary",
-            )
-        except Exception as exc:  # noqa: BLE001 - show any build error to the user
-            ui_helpers.render_error_message(f"Could not build the Excel file:<br><code>{exc}</code>")
+    elog_df    = database.read_table("email_log", order_by="id DESC")
+    email_log  = _records(elog_df.drop(columns=["id"], errors="ignore").head(20)) \
+        if not elog_df.empty else []
 
-    # --- CSV (quick, single sheet of the filtered view) ----------------------
-    with tab_csv:
-        st.caption("A plain CSV of exactly the filtered table shown above.")
-        csv_bytes = show.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "⬇️ Download filtered data (CSV)",
-            data=csv_bytes,
-            file_name=f"incentive_report_{from_date}_to_{to_date}.csv",
-            mime="text/csv",
-            key="vr_download",
-        )
+    total_inc  = sum((r.get("incentive_amount") or 0) for r in (results or []))
+    total_ded  = sum((r.get("deduction_amount") or 0) for r in (results or []))
+    elig_count = sum(1 for r in (results or []) if r.get("incentive_eligible") == "Yes")
 
-    # --- Email (sends the Excel above as an attachment) ----------------------
-    with tab_email:
-        # Read config once; derive "configured" from it (no extra DB reads).
-        email_cfg = email_helper.get_smtp_config()
-        email_ready = bool(email_cfg["host"] and email_cfg["sender"]
-                           and email_cfg["password"])
-        if not email_ready:
-            ui_helpers.render_warning_message(
-                "Email is not set up yet. Add your SMTP settings on the "
-                "<b>Settings</b> page, then come back here to send."
-            )
-
-        e_to = st.text_input("To (comma-separated)", value=email_cfg["default_to"],
-                             key="vr_email_to", placeholder="name@company.com")
-        e_cc = st.text_input("CC (optional)", value=email_cfg["default_cc"],
-                             key="vr_email_cc", placeholder="manager@company.com")
-
-        # Subject + body follow the company's standard monthly-mail format
-        # (see the Mail Reference), with the report month filled in automatically.
-        # IMPORTANT: a keyed text widget keeps its first cached value and ignores
-        # later `value=` changes, which made the period go stale. We tie the keys
-        # to the report month so they refresh when the period changes, while still
-        # letting you edit the text for the same report.
-        default_subject = email_helper.compose_report_subject(month_label)
-        default_body    = email_helper.compose_report_body(month_label)
-        e_subject = st.text_input(
-            "Subject", value=default_subject,
-            key=f"vr_email_subject::{month_label}",
-        )
-        e_body = st.text_area(
-            "Message", value=default_body, height=300,
-            key=f"vr_email_body::{month_label}",
-        )
-        include_tables = st.checkbox(
-            "📋 Also paste the report tables inside the email body (optional)",
-            value=False, key="vr_email_tables",
-            help="Off by default: the email is the message text above, with the "
-                 "report attached as Excel. Tick this to also paste a colour-coded "
-                 "table per section into the body (makes the email much larger).",
-        )
-
-        if st.button("✉️ Send report", key="vr_send_email", type="primary",
-                     disabled=not email_ready):
-            try:
-                fname = f"incentive_report_{from_date}_to_{to_date}.xlsx"
-                xlsx_for_email = report_generator.generate_excel_report(
-                    filtered, unmapped_df, validation_df, meta
-                )
-                # When requested, render the per-section tables into the email
-                # body (HTML) after the message text — the Excel is still attached.
-                html_body = None
-                if include_tables:
-                    tables_html = report_generator.build_email_tables_html(filtered)
-                    html_body = email_helper.wrap_html_body(e_body, tables_html)
-                with st.spinner("Sending email…"):
-                    res = email_helper.send_report_email(
-                        to_emails=e_to, cc_emails=e_cc, subject=e_subject,
-                        body=e_body, attachment_bytes=xlsx_for_email,
-                        attachment_name=fname, html_body=html_body,
-                    )
-                if res["success"]:
-                    ui_helpers.render_success_message(f"Report emailed to {e_to}.")
-                else:
-                    ui_helpers.render_error_message(f"Email failed: {res['error']}")
-            except Exception as exc:  # noqa: BLE001
-                ui_helpers.render_error_message(f"Could not send: {exc}")
-
-        with st.expander("📜 Recent email log"):
-            elog = database.read_table("email_log", order_by="id DESC")
-            if elog.empty:
-                st.caption("No emails sent yet.")
-            else:
-                st.dataframe(
-                    elog.drop(columns=["id"], errors="ignore").head(20),
-                    hide_index=True, use_container_width=True,
-                )
+    return render_template("reports.html",
+                           from_date=str(from_date), to_date=str(to_date),
+                           results=results, unmapped=unmapped,
+                           total_rows=total_rows,
+                           result_cols=RESULT_COLS, result_labels=RESULT_LABELS,
+                           unique_cats=unique_cats, unique_desigs=unique_desigs,
+                           unique_plants=unique_plants,
+                           cats=cats, desigs=desigs, plants=plants,
+                           elig=elig, outcome=outcome, search=search,
+                           total_inc=total_inc, total_ded=total_ded,
+                           elig_count=elig_count,
+                           error_msg=error_msg, ora_note=ora_note,
+                           ora_live=ora_live, no_backend=no_backend,
+                           month_label=month_label,
+                           email_cfg=email_cfg, email_ready=email_ready,
+                           default_subject=default_subj, default_body=default_body,
+                           email_log=email_log)
 
 
+@app.route("/validation")
 def page_validation():
-    ui_helpers.render_page_header(
-        "Error / Validation Report",
-        "Run data checks on Master Data, Backend Data and Maintenance Cost before calculating",
-    )
-
-    # ── Last run info ────────────────────────────────────────────────────────
-    last = validations.get_last_validation_info()
-    if last["last_run"]:
-        err_n = int(last["error_count"])
-        if err_n == 0:
-            ui_helpers.render_success_message(
-                f"Last validation ran at **{last['last_run']}** — ✅ No errors found."
-            )
-        else:
-            ui_helpers.render_warning_message(
-                f"Last validation ran at **{last['last_run']}** — "
-                f"⚠️ **{err_n}** error(s) found. Review below."
-            )
-    else:
-        ui_helpers.render_glass_card(
-            "Validation not run yet",
-            "Click <b>Run Validation</b> below to check all three data sources.",
-        )
-
-    st.write("")
-
-    # ── Run button ───────────────────────────────────────────────────────────
-    if st.button("▶️ Run Validation Now", type="primary", key="run_validation_btn"):
-        tracker = ui_helpers.ProgressTracker([
-            "🧑‍💼 Master Data",
-            "📦 Backend Data",
-            "🛠️ Maintenance Cost",
-            "💾 Saving errors",
-        ])
-
-        tracker.start(0)
-        _errs: list = []
-        m_count = validations._validate_master_data(_errs)
-        tracker.complete(0, f"{m_count} issue(s)")
-
-        tracker.start(1)
-        b_count = validations._validate_backend_data(_errs)
-        tracker.complete(1, f"{b_count} issue(s)")
-
-        tracker.start(2)
-        mc_count = validations._validate_maintenance_cost(_errs)
-        tracker.complete(2, f"{mc_count} issue(s)")
-
-        tracker.start(3)
-        validations.clear_validation_errors()
-        if _errs:
-            database.insert_rows("validation_errors", _errs)
-        ran_at = _dt.now().isoformat(timespec="seconds")
-        database.set_setting("last_validation_at",     ran_at)
-        database.set_setting("last_validation_errors", str(len(_errs)))
-        tracker.complete(3, f"{len(_errs)} total")
-
-        time.sleep(0.8)
-        st.rerun()
-
-    st.divider()
-
-    # ── Summary cards ────────────────────────────────────────────────────────
-    counts = database.get_table_counts()
+    _ss("active_page", "validation")
+    last    = validations.get_last_validation_info()
+    counts  = database.get_table_counts()
     total_errors = counts.get("validation_errors", 0)
 
-    if total_errors == 0:
-        ui_helpers.render_glass_card(
-            "All clear",
-            "No validation errors are stored. "
-            "Either validation has not been run yet, or all checks passed.",
-        )
-        return
+    summary_rows = summary_cols = []
+    master_n = backend_n = maint_n = 0
+    errors   = []
+    sources  = []
+    etypes   = []
+    sel_src  = request.args.get("src", "")
+    sel_etype = request.args.get("etype", "")
 
-    # Summary by source + type
-    st.subheader("📊 Error Summary")
-    summary_df = validations.get_validation_summary()
-    if not summary_df.empty:
-        col1, col2, col3, col4 = st.columns(4)
-        master_n  = summary_df[summary_df["Source"] == "master_data"]["Count"].sum()
-        backend_n = summary_df[summary_df["Source"] == "backend_data"]["Count"].sum()
-        maint_n   = summary_df[summary_df["Source"] == "maintenance_cost"]["Count"].sum()
-        col1.metric("Total errors",       int(total_errors))
-        col2.metric("Master Data",        int(master_n))
-        col3.metric("Backend Data",       int(backend_n))
-        col4.metric("Maintenance Cost",   int(maint_n))
-        st.write("")
-        st.dataframe(summary_df, hide_index=True, use_container_width=True)
+    if total_errors > 0:
+        summary_df = validations.get_validation_summary()
+        if not summary_df.empty:
+            summary_cols = summary_df.columns.tolist()
+            summary_rows = _records(summary_df)
+            master_n  = int(summary_df[summary_df["Source"] == "master_data"]["Count"].sum())
+            backend_n = int(summary_df[summary_df["Source"] == "backend_data"]["Count"].sum())
+            maint_n   = int(summary_df[summary_df["Source"] == "maintenance_cost"]["Count"].sum())
 
-    st.divider()
+        all_err_df = database.read_table("validation_errors")
+        sources = sorted(all_err_df["source"].unique().tolist()) if not all_err_df.empty else []
+        etypes  = sorted(all_err_df["error_type"].unique().tolist()) if not all_err_df.empty else []
 
-    # ── Detailed error table with filters ───────────────────────────────────
-    st.subheader("🔍 Error Details")
+        filtered_err = all_err_df.copy()
+        if sel_src:   filtered_err = filtered_err[filtered_err["source"] == sel_src]
+        if sel_etype: filtered_err = filtered_err[filtered_err["error_type"] == sel_etype]
+        errors = _records(filtered_err.drop(columns=["id"], errors="ignore"))
 
-    all_errors_df = database.read_table("validation_errors")
-
-    # Filters
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
-        source_opts = ["All"] + sorted(all_errors_df["source"].unique().tolist())
-        sel_source = st.selectbox("Filter by source", options=source_opts,
-                                  key="val_filter_source")
-    with col_f2:
-        type_opts = ["All"] + sorted(all_errors_df["error_type"].unique().tolist())
-        sel_type = st.selectbox("Filter by error type", options=type_opts,
-                                key="val_filter_type")
-
-    filtered = all_errors_df.copy()
-    if sel_source != "All":
-        filtered = filtered[filtered["source"] == sel_source]
-    if sel_type != "All":
-        filtered = filtered[filtered["error_type"] == sel_type]
-
-    st.caption(f"Showing **{len(filtered):,}** of **{total_errors:,}** errors")
-    st.dataframe(
-        filtered.drop(columns=["id"], errors="ignore"),
-        hide_index=True,
-        use_container_width=True,
-    )
-
-    # Clear button
-    st.write("")
-    if st.button("🗑️ Clear All Validation Errors", key="clear_val_btn"):
-        validations.clear_validation_errors()
-        database.set_setting("last_validation_at",     "")
-        database.set_setting("last_validation_errors", "0")
-        st.rerun()
+    return render_template("validation.html",
+                           last=last, total_errors=total_errors,
+                           summary_rows=summary_rows, summary_cols=summary_cols,
+                           master_n=master_n, backend_n=backend_n, maint_n=maint_n,
+                           errors=errors, sources=sources, etypes=etypes,
+                           sel_src=sel_src, sel_etype=sel_etype)
 
 
+@app.route("/settings")
 def page_settings():
-    ui_helpers.render_page_header(
-        "Settings",
-        "Animated background • SMTP email • Cache & storage",
-    )
+    _ss("active_page", "settings")
+    smtp       = email_helper.get_smtp_config()
+    email_configured = bool(smtp["host"] and smtp["sender"] and smtp["password"])
+    ora        = oracle_connector.get_oracle_config()
+    ora_configured = oracle_connector.is_configured(ora)
 
-    # ---- Animated background controls ----
-    st.subheader("🎨 Animated background")
-    st.caption(
-        "A Stripe-inspired ray-burst background. It reacts to your mouse and can "
-        "change its theme automatically based on your computer's clock. You can "
-        "also pick any theme directly from the dropdown in the top-right corner."
-    )
+    return render_template("settings.html",
+                           smtp=smtp, email_configured=email_configured,
+                           ora=ora, ora_configured=ora_configured,
+                           db_size_mb=cache_helpers.get_db_size_mb(),
+                           bg_auto=bg_auto(), bg_animate=bg_animate(), bg_theme=bg_theme())
 
-    # Auto theme on/off. Using key=... binds the widget directly to session_state,
-    # so the choice is saved automatically and applied on the next run.
-    st.toggle(
-        "Use automatic theme based on system time",
-        key="bg_auto_theme",
-        help="04-06 Pre-dawn · 06-09 Sunrise · 09-17 Daytime · "
-             "17-18:30 Dusk · 18:30-20 Sunset · 20-04 Night",
-    )
 
-    # Manual theme dropdown — only shown when automatic theme is OFF.
-    if not st.session_state.bg_auto_theme:
-        st.selectbox("Manual theme", options=THEME_NAMES, key="bg_manual_theme")
+# ── ACTIONS ───────────────────────────────────────────────────────────────────
 
-    st.toggle("Background animation", key="bg_animate",
-              help="Turn off for a static gradient snapshot (no moving blobs).")
+@app.route("/action/sync-gsheet", methods=["POST"])
+def sync_gsheet():
+    sheet_id  = request.form.get("sheet_id", "").strip()
+    worksheet = request.form.get("worksheet", "Sheet1").strip()
+    if not sheet_id:
+        flash("Please enter a Google Sheet ID.", "error")
+        return redirect(url_for("page_data_uploader"))
+    try:
+        clean_id = google_sheets.extract_sheet_id(sheet_id)
+        df_sync  = google_sheets.fetch_master_data(clean_id, worksheet)
+        now = _dt.now().isoformat(timespec="seconds")
+        rows = [{"employee_code": str(r["Employee Code"]),
+                 "employee_name": str(r["Employee Name"]),
+                 "designation":   str(r["Designation"]),
+                 "category":      str(r["Category"]),
+                 "plant":         str(r["Plant"]),
+                 "plant_code":    str(r["Plant Code"]),
+                 "updated_at":    now}
+                for _, r in df_sync.iterrows()]
+        inserted = database.replace_table_rows("master_data", rows)
+        database.set_settings_bulk({"gsheet_id": clean_id, "gsheet_worksheet": worksheet,
+                                    "gsheet_last_sync": now, "gsheet_last_count": str(inserted)})
+        flash(f"Synced {inserted:,} employees from Google Sheets.", "success")
+    except Exception as exc:
+        flash(f"Sync failed: {exc}", "error")
+    return redirect(url_for("page_data_uploader"))
 
-    st.divider()
 
-    # ---- Email (SMTP) settings (Phase 12) ----
-    st.subheader("✉️ Email (SMTP) settings")
-    st.caption(
-        "Used to email the Excel report from the View Reports page. For Gmail or "
-        "Outlook, create an **App Password** and use that here — not your normal "
-        "login password."
-    )
+@app.route("/action/toggle-auto-sync", methods=["POST"])
+def toggle_auto_sync():
+    enabled = "enabled" in request.form
+    database.set_setting("gsheet_auto_sync", "true" if enabled else "false")
+    return redirect(url_for("page_data_uploader"))
 
-    # Read the config ONCE and derive "configured" from it, so we don't hit the
-    # database again for every is_configured() check on this page.
-    cfg = email_helper.get_smtp_config()
-    configured = bool(cfg["host"] and cfg["sender"] and cfg["password"])
-    if configured:
-        ui_helpers.render_success_message("SMTP is configured and ready to send.")
-    else:
-        ui_helpers.render_warning_message("SMTP is not fully configured yet.")
 
-    with st.form("smtp_form"):
-        s1, s2 = st.columns(2)
-        with s1:
-            smtp_host   = st.text_input("SMTP host", value=cfg["host"],
-                                        placeholder="smtp.gmail.com")
-            smtp_sender = st.text_input("Sender email", value=cfg["sender"],
-                                        placeholder="you@company.com")
-            default_to  = st.text_input("Default To (comma-separated)",
-                                        value=cfg["default_to"])
-        with s2:
-            smtp_port = st.number_input("Port", value=int(cfg["port"]),
-                                        min_value=1, max_value=65535, step=1)
-            smtp_pwd  = st.text_input(
-                "Password / App password", value="", type="password",
-                help="Leave blank to keep the saved password. Stored locally in "
-                     "your app database; use an app password where possible.",
-            )
-            default_cc = st.text_input("Default CC (optional)", value=cfg["default_cc"])
-        smtp_subject = st.text_input("Default subject", value=cfg["subject"])
-        use_tls = st.toggle("Use TLS (recommended)", value=cfg["use_tls"])
-        saved = st.form_submit_button("💾 Save email settings", type="primary")
-
-    if saved:
-        # Save every key in ONE transaction (fast) instead of 8 separate writes.
-        to_save = {
-            "smtp_host":        smtp_host.strip(),
-            "smtp_port":        str(int(smtp_port)),
-            "smtp_sender":      smtp_sender.strip(),
-            "smtp_use_tls":     "true" if use_tls else "false",
-            "email_default_to": default_to.strip(),
-            "email_default_cc": default_cc.strip(),
-            "email_subject":    smtp_subject.strip(),
-        }
-        if smtp_pwd:  # only overwrite the password when a new one is typed
-            to_save["smtp_password"] = smtp_pwd
-        database.set_settings_bulk(to_save)
-        ui_helpers.render_success_message("Email settings saved.")
-        st.rerun()
-
-    # Quick connection test (sends a tiny email to the sender address)
-    if configured:
-        if st.button("✉️ Send a test email to the sender", key="smtp_test_btn"):
-            with st.spinner("Sending test email…"):
-                res = email_helper.send_report_email(
-                    to_emails=cfg["sender"], cc_emails="",
-                    subject="Test email — Batching Incentive Calculator",
-                    body="This is a test email confirming your SMTP settings work.",
-                )
-            if res["success"]:
-                ui_helpers.render_success_message(
-                    f"Test email sent to {cfg['sender']}. Check the inbox."
-                )
-            else:
-                ui_helpers.render_error_message(f"Test failed: {res['error']}")
-
-    st.divider()
-
-    # ---- Oracle Database settings ----
-    st.subheader("🔌 Oracle Database")
-    st.caption(
-        "Connection details for the enterprise Oracle database. Used to fetch "
-        "backend production data directly from Oracle (Data Uploader → Oracle tab)."
-    )
-
-    ora_cfg = oracle_connector.get_oracle_config()
-    ora_ready = oracle_connector.is_configured(ora_cfg)
-    if ora_ready:
-        ui_helpers.render_success_message("Oracle connection is configured.")
-    else:
-        ui_helpers.render_warning_message("Oracle connection is not fully configured yet.")
-
-    with st.form("oracle_form"):
-        o1, o2 = st.columns(2)
-        with o1:
-            o_host     = st.text_input("Host (IP)", value=ora_cfg["host"],
-                                       placeholder="192.168.100.11")
-            o_service  = st.text_input("Service Name", value=ora_cfg["service"],
-                                       placeholder="RDCAZPRD")
-            o_user     = st.text_input("Username", value=ora_cfg["user"],
-                                       placeholder="RDCREAD")
-        with o2:
-            o_port     = st.text_input("Port", value=ora_cfg["port"],
-                                       placeholder="1528")
-            o_password = st.text_input("Password", value="", type="password",
-                                       help="Leave blank to keep the saved password.")
-            o_status   = st.text_input("Status filter", value=ora_cfg["status_filter"],
-                                       placeholder="Processed",
-                                       help="Only fetch rows where STATUS = this value. Leave blank for all.")
-        o_instant = st.text_input(
-            "Oracle Instant Client path",
-            value=ora_cfg["instantclient"],
-            help="Folder containing oci.dll (e.g. D:\\AI Project\\Incentive Calculator\\instantclient)",
+@app.route("/action/add-employee", methods=["POST"])
+def add_employee():
+    try:
+        database.add_employee(
+            request.form["code"].strip(),
+            request.form.get("name", "").strip(),
+            request.form.get("designation", "").strip(),
+            request.form.get("category", ""),
+            request.form.get("plant", "").strip(),
+            request.form.get("plant_code", "").strip(),
         )
-        o_saved = st.form_submit_button("💾 Save Oracle settings", type="primary")
+        flash(f"Added employee {request.form['code'].strip()}.", "success")
+    except ValueError as e:
+        flash(str(e), "error")
+    return redirect(url_for("page_data_uploader"))
 
-    if o_saved:
-        to_save = {
-            "oracle_host":             o_host.strip(),
-            "oracle_port":             o_port.strip(),
-            "oracle_service":          o_service.strip(),
-            "oracle_user":             o_user.strip(),
-            "oracle_status_filter":    o_status.strip(),
-            "oracle_instantclient_dir": o_instant.strip(),
-        }
-        if o_password:
-            to_save["oracle_password"] = o_password
-        database.set_settings_bulk(to_save)
-        ui_helpers.render_success_message("Oracle settings saved.")
-        st.rerun()
 
-    if ora_ready:
-        if st.button("🔌 Test Oracle connection", key="ora_test_btn"):
-            with st.spinner("Connecting to Oracle…"):
-                result = oracle_connector.test_connection()
-            if result["success"]:
-                ui_helpers.render_success_message(
-                    f"Connection successful!<br><code>{result['version']}</code>"
-                )
-            else:
-                ui_helpers.render_error_message(
-                    f"Connection failed:<br><code>{result['error']}</code>"
-                )
+@app.route("/action/update-employee/<code>", methods=["POST"])
+def update_employee(code):
+    try:
+        database.update_employee(
+            code,
+            request.form.get("name", "").strip(),
+            request.form.get("designation", "").strip(),
+            request.form.get("category", ""),
+            request.form.get("plant", "").strip(),
+            request.form.get("plant_code", "").strip(),
+        )
+        flash(f"Updated employee {code}.", "success")
+    except ValueError as e:
+        flash(str(e), "error")
+    return redirect(url_for("page_data_uploader"))
 
-    st.divider()
 
-    # ---- Cache & storage (Phase 13) ----
-    st.subheader("🧹 Cache & storage")
-    st.caption(
-        "Housekeeping tools. These keep the app fast and reclaim disk space. "
-        "They are completely safe — your Master Data, uploads, calculation "
-        "results and settings are NOT deleted."
-    )
+@app.route("/action/delete-employee/<code>", methods=["POST"])
+def delete_employee(code):
+    try:
+        database.delete_employee(code)
+        flash(f"Deleted employee {code}.", "success")
+    except ValueError as e:
+        flash(str(e), "error")
+    return redirect(url_for("page_data_uploader"))
 
-    # Show the current database file size so the user can see the effect.
-    st.metric("Database file size", f"{cache_helpers.get_db_size_mb()} MB")
 
-    st.write(
-        "**Clear Cache** does two things: it empties Streamlit's temporary "
-        "in-memory results (so the next click reloads fresh data), and it "
-        "compacts the database file to remove unused empty space."
-    )
+@app.route("/action/upload-backend", methods=["POST"])
+def upload_backend():
+    if "file" not in request.files or request.files["file"].filename == "":
+        flash("No file selected.", "error")
+        return redirect(url_for("page_data_uploader") + "#backend")
+    f = request.files["file"]
+    replace = request.form.get("mode", "replace") == "replace"
+    try:
+        df, warns = data_loader.load_backend_data(f)
+        for w in warns:
+            flash(w, "warning")
+        saved = data_loader.save_backend_data(df, source_file=f.filename, replace=replace)
+        flash(f"{'Replaced' if replace else 'Appended'} {saved:,} backend rows.", "success")
+    except Exception as exc:
+        flash(f"Upload failed: {exc}", "error")
+    return redirect(url_for("page_data_uploader") + "#backend")
 
-    if st.button("🧹 Clear cache & compact database", key="clear_cache_btn",
-                 type="primary"):
-        with st.spinner("Clearing cache and compacting the database…"):
-            summary = cache_helpers.clear_cache()
 
+@app.route("/action/upload-maintenance", methods=["POST"])
+def upload_maintenance():
+    if "file" not in request.files or request.files["file"].filename == "":
+        flash("No file selected.", "error")
+        return redirect(url_for("page_data_uploader") + "#maintenance")
+    f = request.files["file"]
+    try:
+        df, warns = data_loader.load_maintenance_cost(f)
+        for w in warns:
+            flash(w, "warning")
+        saved = data_loader.save_maintenance_cost(df)
+        flash(f"Saved {saved:,} plant maintenance cost rows.", "success")
+    except Exception as exc:
+        flash(f"Upload failed: {exc}", "error")
+    return redirect(url_for("page_data_uploader") + "#maintenance")
+
+
+@app.route("/action/fetch-oracle", methods=["POST"])
+def fetch_oracle():
+    from_s = request.form.get("from_date", str(_date.today().replace(day=1)))
+    to_s   = request.form.get("to_date",   str(_date.today()))
+    replace = request.form.get("mode", "replace") == "replace"
+    try:
+        fd = _date.fromisoformat(from_s)
+        td = _date.fromisoformat(to_s)
+        result = oracle_connector.test_connection()
+        if not result["success"]:
+            flash(f"Oracle connection failed: {result['error']}", "error")
+            return redirect(url_for("page_data_uploader") + "#oracle")
+        df_ora, warns = oracle_connector.fetch_backend_data(fd, td)
+        for w in warns:
+            flash(w, "warning")
+        if df_ora.empty:
+            flash("Oracle returned no rows for the selected date range.", "warning")
+        else:
+            saved = oracle_connector.save_oracle_backend_data(df_ora, fd, td, replace=replace)
+            flash(f"{'Replaced' if replace else 'Appended'} {saved:,} rows from Oracle.", "success")
+    except Exception as exc:
+        flash(f"Oracle fetch failed: {exc}", "error")
+    return redirect(url_for("page_data_uploader") + "#oracle")
+
+
+@app.route("/action/run-calculation", methods=["POST"])
+def run_calculation():
+    from_s = request.form.get("from_date")
+    to_s   = request.form.get("to_date")
+    try:
+        fd = _date.fromisoformat(from_s)
+        td = _date.fromisoformat(to_s)
+        if fd > td:
+            flash("'From Date' must be on or before 'To Date'.", "error")
+            return redirect(url_for("page_calculate"))
+        result = calculator.run_calculation(
+            month=fd.month, year=fd.year,
+            start_date=str(fd), end_date=str(td),
+        )
+        if result["error"]:
+            flash(f"Calculation failed: {result['error']}", "error")
+        else:
+            flash(f"Calculation complete — {result['mapped']:,} employees, {result['unmapped']} unmapped.", "success")
+        _ss("calc_ran", True)
+    except Exception as exc:
+        flash(f"Calculation error: {exc}", "error")
+    return redirect(url_for("page_calculate"))
+
+
+@app.route("/action/run-validation", methods=["POST"])
+def run_validation():
+    try:
+        errs: list = []
+        validations._validate_master_data(errs)
+        validations._validate_backend_data(errs)
+        validations._validate_maintenance_cost(errs)
+        validations.clear_validation_errors()
+        if errs:
+            database.insert_rows("validation_errors", errs)
+        ran_at = _dt.now().isoformat(timespec="seconds")
+        database.set_settings_bulk({
+            "last_validation_at":     ran_at,
+            "last_validation_errors": str(len(errs)),
+        })
+        flash(f"Validation complete — {len(errs)} error(s) found.", "success" if not errs else "warning")
+    except Exception as exc:
+        flash(f"Validation error: {exc}", "error")
+    return redirect(url_for("page_validation"))
+
+
+@app.route("/action/clear-validation", methods=["POST"])
+def clear_validation():
+    validations.clear_validation_errors()
+    database.set_settings_bulk({"last_validation_at": "", "last_validation_errors": "0"})
+    flash("All validation errors cleared.", "success")
+    return redirect(url_for("page_validation"))
+
+
+@app.route("/action/save-smtp", methods=["POST"])
+def save_smtp():
+    pwd = request.form.get("password", "").strip()
+    to_save = {
+        "smtp_host":        request.form.get("host", "").strip(),
+        "smtp_port":        request.form.get("port", "587").strip(),
+        "smtp_sender":      request.form.get("sender", "").strip(),
+        "smtp_use_tls":     "true" if "use_tls" in request.form else "false",
+        "email_default_to": request.form.get("default_to", "").strip(),
+        "email_default_cc": request.form.get("default_cc", "").strip(),
+        "email_subject":    request.form.get("subject", "").strip(),
+    }
+    if pwd:
+        to_save["smtp_password"] = pwd
+    database.set_settings_bulk(to_save)
+    flash("Email settings saved.", "success")
+    return redirect(url_for("page_settings"))
+
+
+@app.route("/action/test-smtp", methods=["POST"])
+def test_smtp():
+    cfg = email_helper.get_smtp_config()
+    try:
+        res = email_helper.send_report_email(
+            to_emails=cfg["sender"], cc_emails="",
+            subject="Test email — Batching Incentive Calculator",
+            body="This is a test email confirming your SMTP settings work.",
+        )
+        if res["success"]:
+            flash(f"Test email sent to {cfg['sender']}. Check the inbox.", "success")
+        else:
+            flash(f"Test failed: {res['error']}", "error")
+    except Exception as exc:
+        flash(f"Test failed: {exc}", "error")
+    return redirect(url_for("page_settings"))
+
+
+@app.route("/action/save-oracle", methods=["POST"])
+def save_oracle():
+    pwd = request.form.get("password", "").strip()
+    to_save = {
+        "oracle_host":              request.form.get("host", "").strip(),
+        "oracle_port":              request.form.get("port", "").strip(),
+        "oracle_service":           request.form.get("service", "").strip(),
+        "oracle_user":              request.form.get("user", "").strip(),
+        "oracle_status_filter":     request.form.get("status_filter", "").strip(),
+        "oracle_instantclient_dir": request.form.get("instantclient", "").strip(),
+    }
+    if pwd:
+        to_save["oracle_password"] = pwd
+    database.set_settings_bulk(to_save)
+    flash("Oracle settings saved.", "success")
+    return redirect(url_for("page_settings"))
+
+
+@app.route("/action/test-oracle", methods=["POST"])
+def test_oracle():
+    try:
+        result = oracle_connector.test_connection()
+        if result["success"]:
+            flash(f"Connection successful! {result.get('version', '')}", "success")
+        else:
+            flash(f"Connection failed: {result['error']}", "error")
+    except Exception as exc:
+        flash(f"Test failed: {exc}", "error")
+    return redirect(url_for("page_settings"))
+
+
+@app.route("/action/save-bg-settings", methods=["POST"])
+def save_bg_settings():
+    auto    = "auto_theme" in request.form
+    animate = "animate"    in request.form
+    theme   = request.form.get("manual_theme", "Daytime")
+    database.set_settings_bulk({
+        "bg_auto_theme":    "true" if auto    else "false",
+        "bg_animate":       "true" if animate else "false",
+        "bg_manual_theme":  theme,
+    })
+    flash("Background settings saved.", "success")
+    return redirect(url_for("page_settings"))
+
+
+@app.route("/action/clear-cache", methods=["POST"])
+def clear_cache():
+    try:
+        summary = cache_helpers.clear_cache()
         if summary["error"]:
-            ui_helpers.render_error_message(
-                f"Could not compact the database: {summary['error']}"
-            )
+            flash(f"Could not compact database: {summary['error']}", "error")
         else:
             freed = summary["freed_mb"]
-            freed_note = (
-                f" Freed <b>{freed} MB</b> of unused space."
-                if freed > 0 else
-                " The database was already compact (nothing to free)."
-            )
-            cache_note = (
-                "Streamlit memory cache cleared."
-                if summary["streamlit_cache_cleared"] else
-                "No Streamlit cache was active."
-            )
-            ui_helpers.render_success_message(
-                f"Done! {cache_note}{freed_note} "
-                f"Database size is now {summary['after_mb']} MB."
-            )
+            note  = f"Freed {freed} MB." if freed > 0 else "Database was already compact."
+            flash(f"Done! {note} Database size now {summary['after_mb']} MB.", "success")
+    except Exception as exc:
+        flash(f"Cache clear failed: {exc}", "error")
+    return redirect(url_for("page_settings"))
 
 
-# ---------------------------------------------------------------------------
-# STEP 4: Connect each page name to its function.
-# ---------------------------------------------------------------------------
-# This dictionary maps the text shown in the sidebar to the function that
-# draws that page. It keeps the routing tidy and easy to extend.
+# ── AJAX endpoint (topbar theme) ─────────────────────────────────────────────
 
-PAGE_FUNCTIONS = {
-    "Dashboard": page_dashboard,
-    "Data Uploader": page_data_uploader,
-    "Calculate Incentive & Deduction": page_calculate,
-    "View Reports": page_view_reports,
-    "Error / Validation Report": page_validation,
-    "Settings": page_settings,
-}
+@app.route("/api/bg-settings", methods=["POST"])
+def api_bg_settings():
+    data = request.get_json(silent=True) or {}
+    database.set_settings_bulk({
+        "bg_auto_theme":   "true" if data.get("auto_theme") else "false",
+        "bg_manual_theme": data.get("manual_theme", "Daytime"),
+    })
+    return jsonify({"ok": True})
 
 
-# ---------------------------------------------------------------------------
-# STEP 5: Run the app.
-# ---------------------------------------------------------------------------
-def _init_background_settings():
-    """
-    Make sure the animated-background settings exist in st.session_state.
-    session_state is Streamlit's memory that survives between reruns, so the
-    user's choices on the Settings page are remembered while the app is open.
-    """
-    ss = st.session_state
-    ss.setdefault("bg_auto_theme", True)        # follow system time?
-    ss.setdefault("bg_manual_theme", "Daytime")  # used when auto is off
-    ss.setdefault("bg_animate", True)            # animate or static?
-    ss.setdefault("bg_intensity", "Medium")      # Low / Medium / High
+# ── DOWNLOAD ENDPOINTS ────────────────────────────────────────────────────────
+
+def _snapshot_dfs():
+    filtered = _s("rpt_filtered", [])
+    unmapped  = _s("rpt_unmapped_snap", [])
+    from_s    = _s("rpt_from",  str(_date.today()))
+    to_s      = _s("rpt_to",    str(_date.today()))
+    applied   = _s("rpt_applied_filters", "None")
+    meta      = _build_meta(from_s, to_s, filtered, unmapped, applied)
+
+    col_set = set(RESULT_COLS) | {"category", "month", "year"}
+    all_cols = [c for c in (RESULT_COLS + ["category", "month", "year"])
+                if c not in ("_cls",)]
+
+    df_f = pd.DataFrame(filtered) if filtered else pd.DataFrame()
+    df_u = pd.DataFrame(unmapped) if unmapped else pd.DataFrame()
+    val_df = database.read_table("validation_errors")
+    return df_f, df_u, val_df, meta, from_s, to_s
 
 
-def _auto_sync_master_data():
-    """
-    If the user has turned on "Auto-sync on startup", fetch the latest master
-    data from Google Sheets once per browser session (not on every rerun).
-
-    We use the session_state flag 'startup_sync_done' to make sure we only
-    run this once, even though Streamlit re-executes the whole script on
-    every widget interaction.
-    """
-    ss = st.session_state
-
-    # Already ran in this browser session — skip.
-    if ss.get("startup_sync_done"):
-        return
-
-    ss["startup_sync_done"] = True  # mark as done immediately to avoid double-run
-
-    # Check whether the user has opted in to auto-sync.
-    auto_sync_enabled = database.get_setting("gsheet_auto_sync", "false") == "true"
-    if not auto_sync_enabled:
-        return
-
-    # Need a sheet ID and credentials in place to actually sync.
-    sheet_id  = database.get_setting("gsheet_id", "")
-    worksheet = database.get_setting("gsheet_worksheet", "Sheet1")
-    if not sheet_id or not google_sheets.credentials_exist():
-        return
-
-    # Run the sync silently in the background — store the result so the
-    # Data Uploader page can show a banner if it wants to.
-    result = google_sheets.sync_master_data(sheet_id, worksheet)
-    ss["startup_sync_result"] = result
+@app.route("/download/excel")
+def download_excel():
+    df_f, df_u, val_df, meta, from_s, to_s = _snapshot_dfs()
+    if df_f.empty:
+        flash("No report data. Load a report on the View Reports page first.", "warning")
+        return redirect(url_for("page_reports"))
+    try:
+        xlsx = report_generator.generate_excel_report(df_f, df_u, val_df, meta)
+        fname = f"incentive_report_{from_s}_to_{to_s}.xlsx"
+        return send_file(
+            io.BytesIO(xlsx), as_attachment=True,
+            download_name=fname,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception as exc:
+        flash(f"Could not build Excel: {exc}", "error")
+        return redirect(url_for("page_reports"))
 
 
-def main():
-    # Create the database and its tables once per session. init_db() is safe to
-    # call repeatedly, but the flag avoids doing it on every single rerun.
-    if not st.session_state.get("db_ready"):
-        database.init_db()
-        st.session_state["db_ready"] = True
-
-    # Auto-sync master data from Google Sheets if the setting is turned on.
-    _auto_sync_master_data()
-
-    _init_background_settings()
-    ss = st.session_state
-
-    # Draw the app-wide animated background ONCE, using the saved settings.
-    # (Calling it every run is safe — it updates the existing background.)
-    render_interactive_background(
-        mode="auto" if ss.bg_auto_theme else "manual",
-        theme=ss.bg_manual_theme,
-        intensity=ss.bg_intensity.lower(),
-        animate=ss.bg_animate,
-    )
-
-    selected_page = render_sidebar()
-
-    # Find the function for the selected page and call it.
-    page_function = PAGE_FUNCTIONS.get(selected_page, page_dashboard)
-    page_function()
+@app.route("/download/csv")
+def download_csv():
+    filtered = _s("rpt_filtered", [])
+    from_s   = _s("rpt_from",  str(_date.today()))
+    to_s     = _s("rpt_to",    str(_date.today()))
+    if not filtered:
+        flash("No report data. Load a report on the View Reports page first.", "warning")
+        return redirect(url_for("page_reports"))
+    df = pd.DataFrame(filtered)
+    # Rename columns for display
+    df_show = df[[c for c in RESULT_COLS if c in df.columns]].rename(columns=RESULT_LABELS)
+    csv_bytes = df_show.to_csv(index=False).encode("utf-8")
+    fname = f"incentive_report_{from_s}_to_{to_s}.csv"
+    return send_file(io.BytesIO(csv_bytes), as_attachment=True,
+                     download_name=fname, mimetype="text/csv")
 
 
-# This standard Python line means: "only run main() when this file is the one
-# being executed" (which is exactly what `streamlit run app.py` does).
+@app.route("/action/send-email", methods=["POST"])
+def send_email():
+    df_f, df_u, val_df, meta, from_s, to_s = _snapshot_dfs()
+    if df_f.empty:
+        flash("No report data. Load a report on the View Reports page first.", "warning")
+        return redirect(url_for("page_reports"))
+
+    to_addr  = request.form.get("to", "")
+    cc_addr  = request.form.get("cc", "")
+    subject  = request.form.get("subject", "")
+    body     = request.form.get("body", "")
+    incl_tables = "include_tables" in request.form
+
+    try:
+        fname     = f"incentive_report_{from_s}_to_{to_s}.xlsx"
+        xlsx_data = report_generator.generate_excel_report(df_f, df_u, val_df, meta)
+
+        html_body = None
+        if incl_tables:
+            tables_html = report_generator.build_email_tables_html(df_f)
+            html_body   = email_helper.wrap_html_body(body, tables_html)
+
+        res = email_helper.send_report_email(
+            to_emails=to_addr, cc_emails=cc_addr,
+            subject=subject, body=body,
+            attachment_bytes=xlsx_data, attachment_name=fname,
+            html_body=html_body,
+        )
+        if res["success"]:
+            flash(f"Report emailed to {to_addr}.", "success")
+        else:
+            flash(f"Email failed: {res['error']}", "error")
+    except Exception as exc:
+        flash(f"Could not send: {exc}", "error")
+
+    return redirect(url_for("page_reports"))
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
-    main()
+    print("=" * 60)
+    print("  RDC Batching Incentive Calculator")
+    print("  Flask server starting on http://localhost:2001")
+    print("=" * 60)
+    app.run(host="0.0.0.0", port=2001, debug=False)
