@@ -1143,7 +1143,6 @@ def page_view_reports():
             ("category",   "Category"),
             ("designation", "Designation"),
             ("plant",      "Plant"),
-            ("plant_code", "Plant Code"),
         ],
         key_prefix="vr",
     )
@@ -1200,7 +1199,7 @@ def page_view_reports():
     # the Excel Summary sheet and the email body).
     filter_parts = []
     for col_name, lbl in [("category", "Category"), ("designation", "Designation"),
-                          ("plant", "Plant"), ("plant_code", "Plant Code")]:
+                          ("plant", "Plant")]:
         sel = st.session_state.get(f"vr_{col_name}")
         if sel:
             filter_parts.append(f"{lbl}: {', '.join(map(str, sel))}")
