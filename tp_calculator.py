@@ -116,13 +116,14 @@ def parse_oracle_df(raw_df: pd.DataFrame) -> tuple:
 # ── Main calculation ──────────────────────────────────────────────────────────
 
 def run_tp_calculation(month: int, year: int,
-                        from_date: str = None, to_date: str = None) -> tuple:
+                        from_date: str = None, to_date: str = None,
+                        ora_df=None) -> tuple:
     """
-    Calculate plant-wise and location-wise throughput from stored data.
+    Calculate plant-wise and location-wise throughput.
 
-    If from_date/to_date are given (YYYY-MM-DD strings), only Oracle rows whose
-    production_date falls in that range are used. month/year are used to tag the
-    saved results (derive them from from_date in the caller).
+    ora_df – optional in-memory DataFrame (already parsed). When supplied the
+             DB is not read at all, enabling historical queries without
+             persisting data. When None, data is read from tp_oracle_data.
 
     Returns:
         plant_rows    – list[dict]  one row per plant/mixer
@@ -131,16 +132,20 @@ def run_tp_calculation(month: int, year: int,
     """
     warnings = []
 
-    # 1. Load oracle data
-    ora_df = database.read_table("tp_oracle_data")
-    if ora_df.empty:
-        warnings.append("No Oracle data found — fetch from Oracle first.")
-        return [], [], warnings
-
-    # 1b. Filter to the requested date range (production_date is 'YYYY-MM-DD')
-    if from_date and to_date:
-        pd_str = ora_df["production_date"].astype(str).str.slice(0, 10)
-        ora_df = ora_df[(pd_str >= str(from_date)) & (pd_str <= str(to_date))]
+    # 1. Load oracle data (from memory or DB)
+    if ora_df is None:
+        ora_df = database.read_table("tp_oracle_data")
+        if ora_df.empty:
+            warnings.append("No Oracle data found — fetch from Oracle first.")
+            return [], [], warnings
+        # Filter to the requested date range when reading from DB
+        if from_date and to_date:
+            pd_str = ora_df["production_date"].astype(str).str.slice(0, 10)
+            ora_df = ora_df[(pd_str >= str(from_date)) & (pd_str <= str(to_date))]
+            if ora_df.empty:
+                warnings.append(f"No Oracle data in range {from_date} → {to_date}.")
+                return [], [], warnings
+    else:
         if ora_df.empty:
             warnings.append(f"No Oracle data in range {from_date} → {to_date}.")
             return [], [], warnings
