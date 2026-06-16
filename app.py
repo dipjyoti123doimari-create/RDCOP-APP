@@ -649,10 +649,27 @@ def tp_reports():
     except ValueError:
         fd, td = today.replace(day=1), today
 
+    ora_note = None
+
     # Re-run the calculation for the chosen range when the user loads a report,
     # otherwise fall back to the rows from the last Calculate run.
     if "from_date" in request.args:
         month, year = fd.month, fd.year
+
+        # Auto-fetch Oracle data for this range (mirrors I&D behaviour)
+        if oracle_connector.is_configured():
+            try:
+                raw_df, ora_warns = oracle_connector.fetch_tp_data(str(fd), str(td))
+                if not raw_df.empty:
+                    parsed, skip_log = tp_calculator.parse_oracle_df(raw_df)
+                    oracle_connector.save_tp_oracle_data(raw_df, str(fd), str(td), parsed, replace=True)
+                    database.purge_old_oracle_data()
+                    ora_note = f"Oracle: {len(raw_df):,} rows loaded for {fd} → {td}."
+                else:
+                    ora_note = "Oracle returned no rows for this range."
+            except Exception as exc:
+                ora_note = f"Oracle fetch failed: {exc}"
+
         all_plants, all_locs, _w = tp_calculator.run_tp_calculation(
             month, year, from_date=str(fd), to_date=str(td))
         _mss("tp", "plant_rows", all_plants)
@@ -710,7 +727,8 @@ def tp_reports():
                            month_label=month_label, email_cfg=smtp,
                            email_ready=email_ready,
                            default_subject=default_subject,
-                           default_body=default_body, **ctx)
+                           default_body=default_body,
+                           ora_note=ora_note, **ctx)
 
 
 @app.route("/tp/download-excel")

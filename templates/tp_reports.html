@@ -2,6 +2,10 @@
 {% block title %}View Reports{% endblock %}
 {% block content %}
 
+{% if ora_note %}
+<div class="alert alert-info" style="margin-bottom:14px">🔌 {{ ora_note }}</div>
+{% endif %}
+
 <div class="page-header">
   <h1>View Reports</h1>
   <p>Plant &amp; location throughput for <strong>{{ month_label }}</strong> — filter, browse, export or email</p>
