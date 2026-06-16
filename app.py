@@ -900,12 +900,12 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
     """Return HTML string with two color-coded tables for TP report email."""
     mon_tag = _tp_mon_tag(month, year)
 
-    # Same rgba base as the app's CSS (row-red/yellow/green) at 0.22 opacity
-    # so the glossy tint is visible on a white email background
+    # Same rgba base as the app's CSS (row-red/yellow/green) at 0.38 opacity
+    # — higher than the app's 0.10 because email background is white (not dark)
     def _bg(pct):
-        if pct < 60:   return "rgba(239,68,68,0.22)"
-        if pct < 75:   return "rgba(251,191,36,0.22)"
-        return "rgba(16,185,129,0.22)"
+        if pct < 60:   return "rgba(239,68,68,0.38)"
+        if pct < 75:   return "rgba(251,191,36,0.38)"
+        return "rgba(16,185,129,0.38)"
 
     # Reference-mail borders: medium gray #9A9A9A, header fill #EEEEEE
     BORDER = "1px solid #9A9A9A"
@@ -938,17 +938,22 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
     for i, r in enumerate(location_rows, 1):
         pct = float(r.get("avg_throughput_pct", 0))
         pan = bool(r.get("is_pan_india"))
+        # PAN India row: white background, bold text — no color band
+        bg  = "#ffffff" if pan else _bg(pct)
         bw  = "font-weight:bold;" if pan else ""
         num = "—" if pan else str(i)
+        _td_pan = (f'style="{FONT}background:{bg};padding:4px 7px;'
+                   f'border:{BORDER};text-align:center;vertical-align:middle;{bw}"')
         loc_body += (
             f'<tr>'
-            f'<td {_td(pct,"center",pan)}>{num}</td>'
-            f'<td style="{FONT}background:{_bg(pct)};padding:4px 7px;border:{BORDER};'
+            f'<td {_td_pan}>{num}</td>'
+            f'<td style="{FONT}background:{bg};padding:4px 7px;border:{BORDER};'
             f'text-align:left;vertical-align:middle;{bw}">{r.get("exco_location","")}</td>'
-            f'<td {_td(pct,"center",pan)}>{r.get("plant_count",0)}</td>'
-            f'<td {_td(pct,"center",pan)}>{round(float(r.get("total_quantity",0)),1)}</td>'
-            f'<td {_td(pct,"center",pan)}>{round(float(r.get("total_time_min",0)),1)}</td>'
-            f'<td {_td(pct,"center",True)}>{round(pct)}%</td>'
+            f'<td {_td_pan}>{r.get("plant_count",0)}</td>'
+            f'<td {_td_pan}>{round(float(r.get("total_quantity",0)),1)}</td>'
+            f'<td {_td_pan}>{round(float(r.get("total_time_min",0)),1)}</td>'
+            f'<td style="{FONT}background:{bg};padding:4px 7px;border:{BORDER};'
+            f'text-align:center;vertical-align:middle;font-weight:bold">{round(pct)}%</td>'
             f'</tr>'
         )
 
