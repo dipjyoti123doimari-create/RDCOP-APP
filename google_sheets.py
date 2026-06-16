@@ -40,8 +40,9 @@ import database
 CREDS_PATH = os.path.join("credentials", "service_account.json")
 
 # Google API scopes (only needed for private/service-account mode).
+# Full spreadsheets scope is required for write-back (add/edit/delete rows).
 SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.readonly",
 ]
 
@@ -539,3 +540,135 @@ def get_last_sync_info() -> dict:
         "last_sync":  database.get_setting("gsheet_last_sync", None),
         "last_count": database.get_setting("gsheet_last_count", "0"),
     }
+
+
+# ---------------------------------------------------------------------------
+# 9. RDC-TP: Write-back — push add / update / delete to Google Sheet
+# ---------------------------------------------------------------------------
+# Sheet column order (must match _TP_PLANT_COLS):
+#   A: Plant Code | B: Exco Location | C: Plant | D: Business Head
+#   E: Plant Manager/ Asst. PI | F: Mixer Theo. Capacity
+
+_TP_SHEET_HEADERS = [
+    "Plant Code", "Exco Location", "Plant", "Business Head",
+    "Plant Manager/ Asst. PI", "Mixer Theo. Capacity",
+]
+
+
+def _gspread_worksheet(sheet_id: str, worksheet_name: str):
+    """Open a gspread Worksheet object (write-capable). Raises if no credentials."""
+    if not credentials_exist():
+        raise RuntimeError(
+            "No service account credentials found. "
+            "Add credentials/service_account.json to enable write-back to Google Sheets."
+        )
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials
+    except ImportError:
+        raise ImportError("Run: python -m pip install gspread google-auth")
+
+    creds = Credentials.from_service_account_file(CREDS_PATH, scopes=SCOPES)
+    client = gspread.authorize(creds)
+    return client.open_by_key(sheet_id).worksheet(worksheet_name)
+
+
+def _find_plant_row(ws, plant_code: str) -> int:
+    """
+    Find the 1-based row index of a plant in the sheet by matching Plant Code
+    in column A. Returns 0 if not found.
+    """
+    col_a = ws.col_values(1)   # all values in column A (1-indexed)
+    for i, val in enumerate(col_a):
+        if str(val).strip().upper() == str(plant_code).strip().upper():
+            return i + 1       # gspread rows are 1-based
+    return 0
+
+
+def push_tp_plant_add(plant_data: dict) -> dict:
+    """
+    Append a new plant row to the Google Sheet.
+    plant_data keys: plant_code, exco_location, plant_name,
+                     business_head, plant_manager, mixer_theo_cap
+    Returns {"ok": bool, "message": str}
+    """
+    try:
+        sheet_id  = database.get_module_setting("tp", "gsheet_id",
+                    database.get_setting("gsheet_id", ""))
+        ws_name   = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
+        if not sheet_id:
+            return {"ok": False, "message": "Google Sheet ID not configured."}
+
+        ws = _gspread_worksheet(extract_sheet_id(sheet_id), ws_name)
+        row = [
+            str(plant_data.get("plant_code", "")),
+            str(plant_data.get("exco_location", "")),
+            str(plant_data.get("plant_name", "")),
+            str(plant_data.get("business_head", "")),
+            str(plant_data.get("plant_manager", "")),
+            str(plant_data.get("mixer_theo_cap", "")),
+        ]
+        ws.append_row(row, value_input_option="USER_ENTERED")
+        return {"ok": True, "message": "Row added to Google Sheet."}
+    except RuntimeError as exc:
+        return {"ok": False, "message": str(exc)}
+    except Exception as exc:
+        return {"ok": False, "message": f"Sheet write failed: {exc}"}
+
+
+def push_tp_plant_update(plant_data: dict) -> dict:
+    """
+    Update an existing plant row in the Google Sheet (matched by Plant Code).
+    Returns {"ok": bool, "message": str}
+    """
+    try:
+        sheet_id  = database.get_module_setting("tp", "gsheet_id",
+                    database.get_setting("gsheet_id", ""))
+        ws_name   = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
+        if not sheet_id:
+            return {"ok": False, "message": "Google Sheet ID not configured."}
+
+        ws  = _gspread_worksheet(extract_sheet_id(sheet_id), ws_name)
+        row_idx = _find_plant_row(ws, plant_data["plant_code"])
+        if row_idx == 0:
+            # Row not found in sheet — append as new row instead
+            return push_tp_plant_add(plant_data)
+
+        ws.update(f"A{row_idx}:F{row_idx}", [[
+            str(plant_data.get("plant_code", "")),
+            str(plant_data.get("exco_location", "")),
+            str(plant_data.get("plant_name", "")),
+            str(plant_data.get("business_head", "")),
+            str(plant_data.get("plant_manager", "")),
+            str(plant_data.get("mixer_theo_cap", "")),
+        ]], value_input_option="USER_ENTERED")
+        return {"ok": True, "message": "Row updated in Google Sheet."}
+    except RuntimeError as exc:
+        return {"ok": False, "message": str(exc)}
+    except Exception as exc:
+        return {"ok": False, "message": f"Sheet write failed: {exc}"}
+
+
+def push_tp_plant_delete(plant_code: str) -> dict:
+    """
+    Delete a plant row from the Google Sheet (matched by Plant Code).
+    Returns {"ok": bool, "message": str}
+    """
+    try:
+        sheet_id  = database.get_module_setting("tp", "gsheet_id",
+                    database.get_setting("gsheet_id", ""))
+        ws_name   = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
+        if not sheet_id:
+            return {"ok": False, "message": "Google Sheet ID not configured."}
+
+        ws = _gspread_worksheet(extract_sheet_id(sheet_id), ws_name)
+        row_idx = _find_plant_row(ws, plant_code)
+        if row_idx == 0:
+            return {"ok": False, "message": f"Plant '{plant_code}' not found in sheet."}
+
+        ws.delete_rows(row_idx)
+        return {"ok": True, "message": f"Plant '{plant_code}' deleted from Google Sheet."}
+    except RuntimeError as exc:
+        return {"ok": False, "message": str(exc)}
+    except Exception as exc:
+        return {"ok": False, "message": f"Sheet write failed: {exc}"}

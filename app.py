@@ -507,16 +507,22 @@ def tp_data_uploader():
 
 @app.route("/tp/action/add-plant", methods=["POST"])
 def tp_add_plant():
+    plant_data = {
+        "plant_code":     request.form.get("plant_code", ""),
+        "exco_location":  request.form.get("exco_location", ""),
+        "plant_name":     request.form.get("plant_name", ""),
+        "business_head":  request.form.get("business_head", ""),
+        "plant_manager":  request.form.get("plant_manager", ""),
+        "mixer_theo_cap": request.form.get("mixer_theo_cap", 0),
+    }
     try:
-        database.add_tp_plant(
-            plant_code     = request.form.get("plant_code", ""),
-            exco_location  = request.form.get("exco_location", ""),
-            plant_name     = request.form.get("plant_name", ""),
-            business_head  = request.form.get("business_head", ""),
-            plant_manager  = request.form.get("plant_manager", ""),
-            mixer_theo_cap = request.form.get("mixer_theo_cap", 0),
-        )
+        database.add_tp_plant(**plant_data)
         flash("✅ Plant added successfully.", "success")
+        res = google_sheets.push_tp_plant_add(plant_data)
+        if res["ok"]:
+            flash(f"☁️ {res['message']}", "info")
+        else:
+            flash(f"⚠️ Saved locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as exc:
         flash(str(exc), "error")
     return redirect(url_for("tp_data_uploader") + "#sheets")
@@ -524,16 +530,22 @@ def tp_add_plant():
 
 @app.route("/tp/action/update-plant/<code>", methods=["POST"])
 def tp_update_plant(code):
+    plant_data = {
+        "plant_code":     code,
+        "exco_location":  request.form.get("exco_location", ""),
+        "plant_name":     request.form.get("plant_name", ""),
+        "business_head":  request.form.get("business_head", ""),
+        "plant_manager":  request.form.get("plant_manager", ""),
+        "mixer_theo_cap": request.form.get("mixer_theo_cap", 0),
+    }
     try:
-        database.update_tp_plant(
-            plant_code     = code,
-            exco_location  = request.form.get("exco_location", ""),
-            plant_name     = request.form.get("plant_name", ""),
-            business_head  = request.form.get("business_head", ""),
-            plant_manager  = request.form.get("plant_manager", ""),
-            mixer_theo_cap = request.form.get("mixer_theo_cap", 0),
-        )
+        database.update_tp_plant(**plant_data)
         flash("✅ Plant updated successfully.", "success")
+        res = google_sheets.push_tp_plant_update(plant_data)
+        if res["ok"]:
+            flash(f"☁️ {res['message']}", "info")
+        else:
+            flash(f"⚠️ Saved locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as exc:
         flash(str(exc), "error")
     return redirect(url_for("tp_data_uploader") + "#sheets")
@@ -544,6 +556,11 @@ def tp_delete_plant(code):
     try:
         database.delete_tp_plant(code)
         flash(f"✅ Plant '{code}' deleted.", "success")
+        res = google_sheets.push_tp_plant_delete(code)
+        if res["ok"]:
+            flash(f"☁️ {res['message']}", "info")
+        else:
+            flash(f"⚠️ Deleted locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as exc:
         flash(str(exc), "error")
     return redirect(url_for("tp_data_uploader") + "#sheets")
