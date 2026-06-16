@@ -223,9 +223,10 @@ def build_email_tables_html(results_df, sections=None) -> str:
     BORDER = "1px solid #9A9A9A"
     FONT   = "font-family:Arial,sans-serif;font-size:11px;"
 
+    # Solid colors matching Excel export (red = deduction, green = incentive)
     def _row_bg(inc, ded):
-        if ded > 0: return "rgba(239,68,68,0.38)"
-        if inc > 0: return "rgba(16,185,129,0.38)"
+        if ded > 0: return "#FFD5D5"
+        if inc > 0: return "#D5F0D5"
         return "#ffffff"
 
     parts = []
@@ -238,11 +239,12 @@ def build_email_tables_html(results_df, sections=None) -> str:
 
         ttl_td = (
             f'colspan="{num_cols}" '
-            f'style="{FONT}background:#1a3558;color:#fff;font-weight:bold;'
+            f'style="{FONT}background:#0A2540;color:#fff;font-weight:bold;'
             f'padding:7px 10px;font-size:12px;border:{BORDER};text-align:left"'
         )
+        # Column header: dark navy matching app thead
         th_base = (
-            f'{FONT}background:#EEEEEE;color:#222;font-weight:bold;'
+            f'{FONT}background:#0A2540;color:#fff;font-weight:bold;'
             f'padding:5px 6px;border:{BORDER};white-space:normal;'
             f'word-break:break-word;line-height:1.3'
         )

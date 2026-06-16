@@ -900,25 +900,24 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
     """Return HTML string with two color-coded tables for TP report email."""
     mon_tag = _tp_mon_tag(month, year)
 
-    # Same rgba base as the app's CSS (row-red/yellow/green) at 0.38 opacity
-    # — higher than the app's 0.10 because email background is white (not dark)
+    # Solid row colors — same as Excel export so email and file are consistent
     def _bg(pct):
-        if pct < 60:   return "rgba(239,68,68,0.38)"
-        if pct < 75:   return "rgba(251,191,36,0.38)"
-        return "rgba(16,185,129,0.38)"
+        if pct < 60:   return "#FFD5D5"   # red
+        if pct < 75:   return "#FFF3CC"   # yellow
+        return "#D5F0D5"                   # green
 
-    # Reference-mail borders: medium gray #9A9A9A, header fill #EEEEEE
+    # Reference-mail border: #9A9A9A
     BORDER = "1px solid #9A9A9A"
-    HDR_BG = "#EEEEEE"
+    HDR_BG = "#EEEEEE"   # used only for PAN India separator row
     FONT   = "font-family:Arial,sans-serif;font-size:11px;"
 
-    # Title row — dark navy, left-aligned
-    TTL = (f'style="{FONT}background:#1a3558;color:#fff;font-weight:bold;'
+    # Section title row — dark navy
+    TTL = (f'style="{FONT}background:#0A2540;color:#fff;font-weight:bold;'
            f'padding:7px 10px;font-size:12px;border:{BORDER};text-align:left"')
 
-    # Column header — light gray fill, dark text, wrapped
+    # Column header — dark navy matching app thead, white text, wrapped
     def _th(w):
-        return (f'style="{FONT}background:{HDR_BG};color:#222;font-weight:bold;'
+        return (f'style="{FONT}background:#0A2540;color:#fff;font-weight:bold;'
                 f'padding:5px 6px;border:{BORDER};text-align:center;'
                 f'white-space:normal;word-break:break-word;line-height:1.3;width:{w}"')
 
