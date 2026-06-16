@@ -771,9 +771,15 @@ def tp_reports():
         month_label = f"{calendar.month_name[fd.month]} {fd.year}"
     else:
         month_label = f"{fd:%d %b %Y} → {td:%d %b %Y}"
-    default_subject = f"RDC-TP Plant Throughput Report — {month_label}"
-    default_body    = (f"Dear Team,\n\nPlease find attached the Plant Throughput "
-                       f"Report for {month_label}.\n\nRegards,\nRDC Operations")
+
+    # TP-specific email defaults (set in TP Settings → Email)
+    default_to      = database.get_module_setting("tp", "email_default_to", "") or smtp.get("default_to", "")
+    default_cc      = database.get_module_setting("tp", "email_default_cc", "") or smtp.get("default_cc", "")
+    default_subject = (database.get_module_setting("tp", "email_default_subject", "")
+                       or f"RDC-TP Plant Throughput Report — {month_label}")
+    default_body    = (database.get_module_setting("tp", "email_default_body", "")
+                       or f"Dear Team,\n\nPlease find attached the Plant Throughput "
+                          f"Report for {month_label}.\n\nRegards,\nRDC Operations")
 
     ctx = _tp_ctx()
     ctx["active_page"] = "reports"
@@ -787,6 +793,7 @@ def tp_reports():
                            band=band, search=search,
                            month_label=month_label, email_cfg=smtp,
                            email_ready=email_ready,
+                           default_to=default_to, default_cc=default_cc,
                            default_subject=default_subject,
                            default_body=default_body,
                            ora_note=ora_note, **ctx)
@@ -1051,7 +1058,11 @@ def tp_settings():
     sched_time        = database.get_module_setting("tp", "email_schedule_time", "08:00")
     sched_to          = database.get_module_setting("tp", "email_schedule_to", "")
     sched_cc          = database.get_module_setting("tp", "email_schedule_cc", "")
-    sched_last_status = database.get_module_setting("tp", "email_schedule_last_status", "")
+    sched_last_status  = database.get_module_setting("tp", "email_schedule_last_status", "")
+    tp_email_to        = database.get_module_setting("tp", "email_default_to", "")
+    tp_email_cc        = database.get_module_setting("tp", "email_default_cc", "")
+    tp_email_subject   = database.get_module_setting("tp", "email_default_subject", "")
+    tp_email_body      = database.get_module_setting("tp", "email_default_body", "")
     ctx = _tp_ctx()
     ctx["active_page"] = "settings"
     return render_template("tp_settings.html",
@@ -1061,7 +1072,10 @@ def tp_settings():
                            ora_configured=ora_configured, last_sync=last_sync,
                            sched_enabled=sched_enabled, sched_time=sched_time,
                            sched_to=sched_to, sched_cc=sched_cc,
-                           sched_last_status=sched_last_status, **ctx)
+                           sched_last_status=sched_last_status,
+                           tp_email_to=tp_email_to, tp_email_cc=tp_email_cc,
+                           tp_email_subject=tp_email_subject, tp_email_body=tp_email_body,
+                           **ctx)
 
 
 @app.route("/tp/settings/save-oracle-cols", methods=["POST"])
@@ -1104,6 +1118,18 @@ def tp_save_email_schedule():
                                   trigger=CronTrigger(day=1, hour=h, minute=m))
     flash("TP schedule settings saved.", "success")
     return redirect(url_for("tp_settings", m="schedule"))
+
+
+@app.route("/tp/settings/save-email-defaults", methods=["POST"])
+def tp_save_email_defaults():
+    database.set_module_settings_bulk("tp", {
+        "email_default_to":      request.form.get("default_to", "").strip(),
+        "email_default_cc":      request.form.get("default_cc", "").strip(),
+        "email_default_subject": request.form.get("default_subject", "").strip(),
+        "email_default_body":    request.form.get("default_body", "").strip(),
+    })
+    flash("TP email defaults saved.", "success")
+    return redirect(url_for("tp_settings", m="email"))
 
 
 @app.route("/tp/settings/toggle-schedule", methods=["POST"])

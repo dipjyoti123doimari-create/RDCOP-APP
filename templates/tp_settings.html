@@ -116,13 +116,39 @@
       <button class="modal-close" onclick="closeModal('modal-email')">✕</button>
     </div>
     <div class="modal-body">
-      <p class="caption" style="margin-bottom:12px">The <strong>sender mailbox &amp; App Password are shared</strong> across all modules (one company sender). Only the <strong>recipients</strong> differ per module — set RDC-TP's recipients in <em>Scheduled Monthly Report</em> below, or per-send on the Reports page. To change the shared sender, open RDC-I&amp;D settings.</p>
+      <p class="caption" style="margin-bottom:12px">The <strong>sender mailbox &amp; App Password are shared</strong> across all modules. To change the shared sender, open RDC-I&amp;D settings.</p>
       {% if email_configured %}
-      <div class="alert alert-success" style="margin-bottom:14px">✅ Shared sender configured — <strong>{{ smtp.sender }}</strong></div>
+      <div class="alert alert-success" style="margin-bottom:10px">✅ Shared sender — <strong>{{ smtp.sender }}</strong></div>
       {% else %}
-      <div class="alert alert-warning" style="margin-bottom:14px">⚠️ SMTP not configured yet.</div>
+      <div class="alert alert-warning" style="margin-bottom:10px">⚠️ SMTP not configured yet.</div>
       {% endif %}
-      <a href="{{ url_for('page_settings') }}" class="btn btn-primary">⚙️ Open shared Email (SMTP) settings →</a>
+      <a href="{{ url_for('page_settings') }}" class="btn btn-secondary btn-sm">⚙️ Open shared SMTP settings →</a>
+
+      <hr style="margin:18px 0;border-color:#2a3a4a">
+
+      <div class="section-title" style="font-size:13px;margin-bottom:12px">📧 RDC-TP Default Recipients &amp; Message</div>
+      <p class="caption" style="margin-bottom:12px">These pre-fill the email form on the View Reports page. You can still edit them before sending.</p>
+      <form method="POST" action="{{ url_for('tp_save_email_defaults') }}">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Default To (comma-separated)</label>
+            <input type="text" name="default_to" value="{{ tp_email_to or '' }}" placeholder="head@company.com, ops@company.com">
+          </div>
+          <div class="form-group">
+            <label>Default CC (optional)</label>
+            <input type="text" name="default_cc" value="{{ tp_email_cc or '' }}" placeholder="manager@company.com">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Default Subject</label>
+          <input type="text" name="default_subject" value="{{ tp_email_subject or '' }}" placeholder="RDC-TP Plant Throughput Report — June 2026">
+        </div>
+        <div class="form-group">
+          <label>Default Message Body</label>
+          <textarea name="default_body" rows="5" style="min-height:100px">{{ tp_email_body or '' }}</textarea>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">💾 Save TP Email Defaults</button>
+      </form>
     </div>
   </div>
 </div>

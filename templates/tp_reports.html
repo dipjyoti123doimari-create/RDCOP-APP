@@ -182,8 +182,8 @@
       {% endif %}
       <form method="POST" action="{{ url_for('tp_send_email') }}">
         <div class="form-grid">
-          <div class="form-group"><label>To (comma-separated)</label><input type="text" name="to" value="{{ email_cfg.default_to or '' }}" placeholder="name@company.com"></div>
-          <div class="form-group"><label>CC (optional)</label><input type="text" name="cc" value="{{ email_cfg.default_cc or '' }}" placeholder="manager@company.com"></div>
+          <div class="form-group"><label>To (comma-separated)</label><input type="text" name="to" value="{{ default_to or '' }}" placeholder="name@company.com"></div>
+          <div class="form-group"><label>CC (optional)</label><input type="text" name="cc" value="{{ default_cc or '' }}" placeholder="manager@company.com"></div>
         </div>
         <div class="form-group"><label>Subject</label><input type="text" name="subject" value="{{ default_subject }}"></div>
         <div class="form-group"><label>Message</label><textarea name="body" rows="7" style="min-height:160px">{{ default_body }}</textarea></div>
