@@ -792,6 +792,161 @@ def tp_reports():
                            ora_note=ora_note, **ctx)
 
 
+def _tp_mon_tag(month, year):
+    import calendar as _cal
+    return f"{_cal.month_abbr[month]}'{str(year)[2:]}"
+
+
+def _tp_build_excel(plant_rows, location_rows, month, year):
+    """Return color-coded, wrapped-header Excel bytes for the TP report."""
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    mon_tag = _tp_mon_tag(month, year)
+
+    RED_FILL    = PatternFill("solid", fgColor="FFD5D5")
+    YEL_FILL    = PatternFill("solid", fgColor="FFF3CC")
+    GRN_FILL    = PatternFill("solid", fgColor="D5F0D5")
+    HDR_FILL    = PatternFill("solid", fgColor="1F4E79")
+    TITLE_FILL  = PatternFill("solid", fgColor="0D2B52")
+    HDR_FONT    = Font(bold=True, color="FFFFFF", size=10)
+    TITLE_FONT  = Font(bold=True, color="FFFFFF", size=11)
+    WRAP        = Alignment(wrap_text=True, vertical="center", horizontal="center")
+    CTR         = Alignment(vertical="center", horizontal="center")
+    LEFT        = Alignment(vertical="center", horizontal="left")
+    thin        = Side(style="thin", color="CCCCCC")
+    BDR         = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def _fill(pct):
+        return RED_FILL if pct < 60 else (YEL_FILL if pct < 75 else GRN_FILL)
+
+    wb = Workbook()
+
+    # ── Location sheet ──────────────────────────────────────────────────────────
+    ws_l = wb.active
+    ws_l.title = "Location Throughput"
+    loc_heads = ["Exco Location", "Plants", "Total Qty", "Avg Throughput %"]
+    ws_l.merge_cells(f"A1:{get_column_letter(len(loc_heads))}1")
+    t = ws_l.cell(1, 1, f"Location wise Throughput - {mon_tag}")
+    t.fill = TITLE_FILL; t.font = TITLE_FONT; t.alignment = CTR
+    ws_l.row_dimensions[1].height = 22
+    for ci, h in enumerate(loc_heads, 1):
+        c = ws_l.cell(2, ci, h)
+        c.fill = HDR_FILL; c.font = HDR_FONT; c.alignment = WRAP; c.border = BDR
+    ws_l.row_dimensions[2].height = 32
+    for ri, row in enumerate(location_rows, 3):
+        pct = float(row.get("avg_throughput_pct", 0))
+        f   = _fill(pct)
+        vals = [row.get("exco_location",""), row.get("plant_count",0),
+                round(float(row.get("total_quantity",0)), 1), f"{round(pct)}%"]
+        for ci, v in enumerate(vals, 1):
+            c = ws_l.cell(ri, ci, v)
+            c.fill = f; c.border = BDR
+            c.alignment = LEFT if ci == 1 else CTR
+    for ci, w in enumerate([24, 9, 12, 18], 1):
+        ws_l.column_dimensions[get_column_letter(ci)].width = w
+
+    # ── Plant sheet ─────────────────────────────────────────────────────────────
+    ws_p = wb.create_sheet("Plant Throughput")
+    plant_heads = ["Plant Code","Plant","Exco Location","Business Head",
+                   "Plant Manager","Mixer Cap","Total Qty","Time (min)","Throughput %","Batches"]
+    ws_p.merge_cells(f"A1:{get_column_letter(len(plant_heads))}1")
+    t2 = ws_p.cell(1, 1, f"Plant Throughput report - {mon_tag}")
+    t2.fill = TITLE_FILL; t2.font = TITLE_FONT; t2.alignment = CTR
+    ws_p.row_dimensions[1].height = 22
+    for ci, h in enumerate(plant_heads, 1):
+        c = ws_p.cell(2, ci, h)
+        c.fill = HDR_FILL; c.font = HDR_FONT; c.alignment = WRAP; c.border = BDR
+    ws_p.row_dimensions[2].height = 40
+    for ri, row in enumerate(plant_rows, 3):
+        pct = float(row.get("throughput_pct", 0))
+        f   = _fill(pct)
+        vals = [row.get("lookup_code",""), row.get("plant_name",""),
+                row.get("exco_location",""), row.get("business_head",""),
+                row.get("plant_manager",""), row.get("mixer_theo_cap",""),
+                round(float(row.get("total_quantity",0)), 1),
+                round(float(row.get("total_time_min",0)), 1),
+                f"{round(pct)}%", row.get("batch_count",0)]
+        for ci, v in enumerate(vals, 1):
+            c = ws_p.cell(ri, ci, v)
+            c.fill = f; c.border = BDR
+            c.alignment = CTR if ci > 2 else LEFT
+    for ci, w in enumerate([12,22,18,20,20,10,11,11,13,9], 1):
+        ws_p.column_dimensions[get_column_letter(ci)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.read()
+
+
+def _tp_build_html_tables(plant_rows, location_rows, month, year):
+    """Return HTML string with two color-coded tables for TP report email."""
+    mon_tag = _tp_mon_tag(month, year)
+
+    TH  = ('style="background:#1F4E79;color:#fff;padding:6px 8px;border:1px solid #0A3060;'
+           'white-space:normal;word-break:break-word;max-width:120px;'
+           'text-align:center;font-size:11px;line-height:1.4;font-weight:bold"')
+    TD  = 'style="padding:5px 8px;border:1px solid #ccc;font-size:11px;vertical-align:middle;'
+    TTL = ('style="background:#0D2B52;color:#fff;font-weight:bold;'
+           'padding:8px 12px;font-size:12px;letter-spacing:0.3px;text-align:left"')
+
+    def _rs(pct):
+        if pct < 60:  return "background:#FFD5D5;color:#7A0000"
+        if pct < 75:  return "background:#FFF3CC;color:#5A4000"
+        return "background:#D5F0D5;color:#1A5C1A"
+
+    def _tbl(cols, rows_html, title, colspan):
+        ths = "".join(f"<th {TH}>{h}</th>" for h in cols)
+        return (f'<table cellpadding="0" cellspacing="0" border="0" '
+                f'style="border-collapse:collapse;width:100%;margin:18px 0 6px;font-family:Arial,sans-serif">'
+                f'<tr><td colspan="{colspan}" {TTL}>{title}</td></tr>'
+                f'<tr>{ths}</tr>{rows_html}</table>')
+
+    # Location table
+    loc_rows_html = ""
+    for r in location_rows:
+        pct = float(r.get("avg_throughput_pct", 0))
+        rs  = _rs(pct)
+        loc_rows_html += (
+            f'<tr>'
+            f'<td {TD}{rs}">{r.get("exco_location","")}</td>'
+            f'<td {TD}{rs};text-align:center">{r.get("plant_count",0)}</td>'
+            f'<td {TD}{rs};text-align:center">{round(float(r.get("total_quantity",0)),1)}</td>'
+            f'<td {TD}{rs};text-align:center;font-weight:bold">{round(pct)}%</td>'
+            f'</tr>'
+        )
+    loc_html = _tbl(["Exco Location","Plants","Total Qty","Avg Throughput %"],
+                    loc_rows_html, f"Location wise Throughput - {mon_tag}", 4)
+
+    # Plant table
+    plant_rows_html = ""
+    for r in plant_rows:
+        pct = float(r.get("throughput_pct", 0))
+        rs  = _rs(pct)
+        plant_rows_html += (
+            f'<tr>'
+            f'<td {TD}{rs};text-align:center">{r.get("lookup_code","")}</td>'
+            f'<td {TD}{rs}">{r.get("plant_name","")}</td>'
+            f'<td {TD}{rs}">{r.get("exco_location","")}</td>'
+            f'<td {TD}{rs}">{r.get("business_head","")}</td>'
+            f'<td {TD}{rs}">{r.get("plant_manager","")}</td>'
+            f'<td {TD}{rs};text-align:center">{r.get("mixer_theo_cap","")}</td>'
+            f'<td {TD}{rs};text-align:center">{round(float(r.get("total_quantity",0)),1)}</td>'
+            f'<td {TD}{rs};text-align:center">{round(float(r.get("total_time_min",0)),1)}</td>'
+            f'<td {TD}{rs};text-align:center;font-weight:bold">{round(pct)}%</td>'
+            f'<td {TD}{rs};text-align:center">{r.get("batch_count",0)}</td>'
+            f'</tr>'
+        )
+    plant_html = _tbl(
+        ["Plant Code","Plant","Exco Location","Business Head","Plant Manager",
+         "Mixer Cap","Total Qty","Time (min)","Throughput %","Batches"],
+        plant_rows_html, f"Plant Throughput report - {mon_tag}", 10)
+
+    return loc_html + plant_html
+
+
 @app.route("/tp/download-excel")
 def tp_download_excel():
     plant_rows    = _ms("tp", "report_plant_rows", _ms("tp", "plant_rows", []))
@@ -801,32 +956,9 @@ def tp_download_excel():
     if not plant_rows:
         flash("No data to download — run Calculate first.", "warning")
         return redirect(url_for("tp_reports"))
-
-    plant_df  = pd.DataFrame(plant_rows)[[
-        "lookup_code","plant_name","exco_location","business_head",
-        "plant_manager","mixer_theo_cap","total_quantity","total_time_min",
-        "throughput_pct","batch_count"
-    ]].rename(columns={
-        "lookup_code":"Plant Code","plant_name":"Plant","exco_location":"Exco Location",
-        "business_head":"Business Head","plant_manager":"Plant Manager",
-        "mixer_theo_cap":"Mixer Capacity","total_quantity":"Total Qty",
-        "total_time_min":"Total Time (min)","throughput_pct":"Throughput %",
-        "batch_count":"Batches",
-    })
-    loc_df = pd.DataFrame(location_rows)[[
-        "exco_location","plant_count","total_quantity","avg_throughput_pct"
-    ]].rename(columns={
-        "exco_location":"Exco Location","plant_count":"Plants",
-        "total_quantity":"Total Qty","avg_throughput_pct":"Avg Throughput %",
-    })
-
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        plant_df.to_excel(writer, sheet_name="Plant Throughput", index=False)
-        loc_df.to_excel(writer, sheet_name="Location Throughput", index=False)
-    buf.seek(0)
+    excel_bytes = _tp_build_excel(plant_rows, location_rows, month, year)
     fname = f"RDC_TP_{year}_{month:02d}.xlsx"
-    return send_file(buf, as_attachment=True, download_name=fname,
+    return send_file(io.BytesIO(excel_bytes), as_attachment=True, download_name=fname,
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
@@ -862,27 +994,26 @@ def tp_send_email():
         flash("Please enter at least one To email address.", "error")
         return redirect(url_for("tp_reports"))
 
-    plant_df = pd.DataFrame(plant_rows)
-    loc_df   = pd.DataFrame(location_rows)
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        plant_df.to_excel(writer, sheet_name="Plant Throughput", index=False)
-        loc_df.to_excel(writer,  sheet_name="Location Throughput", index=False)
-    buf.seek(0)
-    fname = f"RDC_TP_{year}_{month:02d}.xlsx"
-
-    import calendar
-    month_name = calendar.month_name[month]
+    import calendar as _cal
+    month_name = _cal.month_name[month]
     if not subject:
         subject = f"RDC-TP Plant Throughput Report — {month_name} {year}"
     if not body:
-        body = (f"Dear Team,\n\nPlease find attached the Plant Throughput Report "
-                f"for {month_name} {year}.\n\nRegards,\nRDC Operations")
+        body = f"Dear Team,\n\nPlease find the Plant Throughput Report for {month_name} {year} below."
+
+    # Build color-coded Excel attachment
+    excel_bytes = _tp_build_excel(plant_rows, location_rows, month, year)
+    fname = f"RDC_TP_{year}_{month:02d}.xlsx"
+
+    # Build HTML tables embedded in the email body
+    tables_html = _tp_build_html_tables(plant_rows, location_rows, month, year)
+    html_body   = email_helper.wrap_html_body(body, tables_html)
 
     result = email_helper.send_report_email(
         to_emails=to_addr, cc_emails=cc_addr,
         subject=subject, body=body,
-        attachment_bytes=buf.read(), attachment_name=fname,
+        attachment_bytes=excel_bytes, attachment_name=fname,
+        html_body=html_body,
     )
     if result.get("success"):
         flash(f"✅ Report emailed to {to_addr}.", "success")
