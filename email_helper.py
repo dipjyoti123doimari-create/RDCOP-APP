@@ -472,8 +472,8 @@ def create_tp_location_image(location_rows, month, year, output_path):
                            output_path)
 
 
-def create_tp_plant_image(plant_rows, month, year, output_path, max_rows=50):
-    """Generate Plant Throughput table PNG (no top banner, compact rows)."""
+def create_tp_plant_image(plant_rows, month, year, output_path):
+    """Generate Plant Throughput table PNG — full list, no row limit."""
     import calendar
     mon_tag = f"{calendar.month_abbr[month]}'{str(year)[-2:]}"
     PLT_COLS = [
@@ -485,9 +485,8 @@ def create_tp_plant_image(plant_rows, month, year, output_path, max_rows=50):
         ("Time (min)",      74, 'r', False),
         ("TP %",            52, 'c', False),
     ]
-    sliced = plant_rows[:max_rows]
     rows_out = []
-    for i, r in enumerate(sliced, 1):
+    for i, r in enumerate(plant_rows, 1):
         pct = round(float(r.get("throughput_pct", 0) or 0))
         rows_out.append([
             str(i),
@@ -500,11 +499,9 @@ def create_tp_plant_image(plant_rows, month, year, output_path, max_rows=50):
         ])
     def _plt_color(ri, row):
         return _tp_row_color(row[-1], "")
-    note = (f"Showing first {max_rows} of {len(plant_rows)} plants — full list in Excel."
-            if len(plant_rows) > max_rows else None)
     return _tp_build_image(PLT_COLS, rows_out, _plt_color,
                            f"Plant Throughput — {mon_tag}",
-                           output_path, footnote=note)
+                           output_path)
 
 
 def create_tp_preview_image(plant_rows, location_rows, month, year,
@@ -519,7 +516,7 @@ def create_tp_preview_image(plant_rows, location_rows, month, year,
     paths = []
     r1 = create_tp_location_image(location_rows, month, year, loc_path)
     if r1: paths.append(r1)
-    r2 = create_tp_plant_image(plant_rows, month, year, plt_path, max_rows)
+    r2 = create_tp_plant_image(plant_rows, month, year, plt_path)
     if r2: paths.append(r2)
     return paths if paths else None
 
