@@ -596,6 +596,17 @@ tbody tr.row-yellow  td { background: rgba(251,191,36,0.10) !important; }
 }
 
 
+/* ---- Searchable select (LOV search filter) ---- */
+.ss-wrap { display: flex; flex-direction: column; gap: 6px; }
+.ss-search {
+  width: 100%; padding: 7px 10px; box-sizing: border-box;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--input-bg, #0f1923); color: var(--text);
+  font-size: 13px; outline: none;
+}
+.ss-search:focus { border-color: var(--accent); }
+.ss-search::placeholder { color: var(--text-muted, #5a7090); }
+
 /* ---- Modal overlay ---- */
 .modal-overlay {
   position: fixed; inset: 0; z-index: 1000;

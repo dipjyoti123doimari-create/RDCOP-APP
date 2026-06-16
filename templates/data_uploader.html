@@ -128,7 +128,7 @@
           <form method="GET" action="{{ url_for('page_data_uploader') }}" id="edit-select-form">
             <div class="form-group">
               <label>Select Employee Code</label>
-              <select name="edit_code" onchange="document.getElementById('edit-select-form').submit()">
+              <select name="edit_code" data-searchable onchange="document.getElementById('edit-select-form').submit()">
                 <option value="">— select —</option>
                 {% for c in codes %}<option value="{{ c }}" {% if edit_emp and edit_emp.employee_code == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
               </select>
@@ -160,7 +160,7 @@
           <form method="GET" action="{{ url_for('page_data_uploader') }}" id="del-select-form">
             <div class="form-group">
               <label>Select Employee Code</label>
-              <select name="del_code" onchange="document.getElementById('del-select-form').submit()">
+              <select name="del_code" data-searchable onchange="document.getElementById('del-select-form').submit()">
                 <option value="">— select —</option>
                 {% for c in codes %}<option value="{{ c }}" {% if del_emp and del_emp.employee_code == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
               </select>

@@ -93,6 +93,45 @@ function confirmAction(msg, callback) {
   if (window.confirm(msg)) callback();
 }
 
+/* ---- Searchable SELECT (LOV filter) ---- */
+function initSearchableSelects() {
+  document.querySelectorAll('select[data-searchable]').forEach(function (sel) {
+    /* snapshot all original options */
+    var allOpts = Array.from(sel.options).map(function (o) {
+      return { value: o.value, text: o.text };
+    });
+
+    /* wrap: search input sits above the native select */
+    var wrap = document.createElement('div');
+    wrap.className = 'ss-wrap';
+    sel.parentNode.insertBefore(wrap, sel);
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.className = 'ss-search';
+    inp.placeholder = '🔍 Search…';
+    inp.autocomplete = 'off';
+    wrap.appendChild(inp);
+    wrap.appendChild(sel);
+
+    inp.addEventListener('input', function () {
+      var q = inp.value.toLowerCase().trim();
+      var prev = sel.value;
+      sel.innerHTML = '';
+      allOpts.forEach(function (o) {
+        if (!q || o.value === '' ||
+            o.text.toLowerCase().includes(q) ||
+            o.value.toLowerCase().includes(q)) {
+          var opt = document.createElement('option');
+          opt.value = o.value;
+          opt.text = o.text;
+          if (o.value === prev) opt.selected = true;
+          sel.appendChild(opt);
+        }
+      });
+    });
+  });
+}
+
 /* ---- Custom multi-select ---- */
 function msInit() {
   document.querySelectorAll('.ms-wrap').forEach(function (wrap) {
@@ -183,6 +222,9 @@ function msShowAll(wrap) {
 
 /* ---- On DOM ready ---- */
 document.addEventListener('DOMContentLoaded', function () {
+
+  /* Searchable LOV selects */
+  initSearchableSelects();
 
   /* Custom multi-selects */
   msInit();

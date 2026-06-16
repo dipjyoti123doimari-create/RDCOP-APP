@@ -124,7 +124,7 @@
           <form method="GET" action="{{ url_for('tp_data_uploader') }}" id="edit-plant-select-form">
             <div class="form-group">
               <label>Select Plant Code</label>
-              <select name="edit_code" onchange="document.getElementById('edit-plant-select-form').submit()">
+              <select name="edit_code" data-searchable onchange="document.getElementById('edit-plant-select-form').submit()">
                 <option value="">— select —</option>
                 {% for c in tp_codes %}<option value="{{ c }}" {% if edit_plant and edit_plant.plant_code == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
               </select>
@@ -153,7 +153,7 @@
           <form method="GET" action="{{ url_for('tp_data_uploader') }}" id="del-plant-select-form">
             <div class="form-group">
               <label>Select Plant Code</label>
-              <select name="del_code" onchange="document.getElementById('del-plant-select-form').submit()">
+              <select name="del_code" data-searchable onchange="document.getElementById('del-plant-select-form').submit()">
                 <option value="">— select —</option>
                 {% for c in tp_codes %}<option value="{{ c }}" {% if del_plant and del_plant.plant_code == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
               </select>
