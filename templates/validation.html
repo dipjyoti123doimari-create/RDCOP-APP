@@ -70,7 +70,7 @@
   <div class="filter-grid">
     <div class="form-group">
       <label>Filter by Source</label>
-      <select name="src" onchange="this.form.submit()">
+      <select name="src" data-searchable onchange="this.form.submit()">
         <option value="">All</option>
         {% for s in sources %}
         <option value="{{ s }}" {% if s == sel_src %}selected{% endif %}>{{ s }}</option>
@@ -79,7 +79,7 @@
     </div>
     <div class="form-group">
       <label>Filter by Error Type</label>
-      <select name="etype" onchange="this.form.submit()">
+      <select name="etype" data-searchable onchange="this.form.submit()">
         <option value="">All</option>
         {% for t in etypes %}
         <option value="{{ t }}" {% if t == sel_etype %}selected{% endif %}>{{ t }}</option>

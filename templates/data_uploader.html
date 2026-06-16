@@ -111,7 +111,7 @@
               <div class="form-group"><label>Designation</label><input type="text" name="designation"></div>
               <div class="form-group">
                 <label>Category</label>
-                <select name="category">{% for c in categories %}<option>{{ c }}</option>{% endfor %}</select>
+                <select name="category" data-searchable>{% for c in categories %}<option>{{ c }}</option>{% endfor %}</select>
               </div>
               <div class="form-group"><label>Plant</label><input type="text" name="plant"></div>
               <div class="form-group"><label>Plant Code</label><input type="text" name="plant_code"></div>
@@ -141,7 +141,7 @@
               <div class="form-group"><label>Designation</label><input type="text" name="designation" value="{{ edit_emp.designation or '' }}"></div>
               <div class="form-group">
                 <label>Category</label>
-                <select name="category">{% for cat in categories %}<option {% if cat == edit_emp.category %}selected{% endif %}>{{ cat }}</option>{% endfor %}</select>
+                <select name="category" data-searchable>{% for cat in categories %}<option {% if cat == edit_emp.category %}selected{% endif %}>{{ cat }}</option>{% endfor %}</select>
               </div>
               <div class="form-group"><label>Plant</label><input type="text" name="plant" value="{{ edit_emp.plant or '' }}"></div>
               <div class="form-group"><label>Plant Code</label><input type="text" name="plant_code" value="{{ edit_emp.plant_code or '' }}"></div>
