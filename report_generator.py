@@ -220,13 +220,14 @@ def build_email_tables_html(results_df, sections=None) -> str:
     import html as _html
     sections = sections or EMAIL_SECTIONS
 
-    BORDER = "1px solid #9A9A9A"
+    # 2px border so grid lines are clearly visible in Gmail
+    BORDER = "2px solid #9A9A9A"
     FONT   = "font-family:Arial,sans-serif;font-size:11px;"
 
-    # Solid colors matching Excel export (red = deduction, green = incentive)
+    # Vivid solid colors — clearly visible on white email background
     def _row_bg(inc, ded):
-        if ded > 0: return "#FFD5D5"
-        if inc > 0: return "#D5F0D5"
+        if ded > 0: return "#FFB3B3"   # vivid pink-red
+        if inc > 0: return "#92D492"   # vivid green
         return "#ffffff"
 
     parts = []

@@ -900,20 +900,20 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
     """Return HTML string with two color-coded tables for TP report email."""
     mon_tag = _tp_mon_tag(month, year)
 
-    # Solid row colors — same as Excel export so email and file are consistent
+    # Vivid solid row colors — clearly visible on white email background
     def _bg(pct):
-        if pct < 60:   return "#FFD5D5"   # red
-        if pct < 75:   return "#FFF3CC"   # yellow
-        return "#D5F0D5"                   # green
+        if pct < 60:   return "#FFB3B3"   # vivid pink-red
+        if pct < 75:   return "#FFE066"   # vivid amber-yellow
+        return "#92D492"                   # vivid green
 
-    # Reference-mail border: #9A9A9A
-    BORDER = "1px solid #9A9A9A"
-    HDR_BG = "#EEEEEE"   # used only for PAN India separator row
+    # 2px border so grid lines are clearly visible in Gmail
+    BORDER = "2px solid #9A9A9A"
+    HDR_BG = "#D9D9D9"   # slightly darker gray for PAN India row
     FONT   = "font-family:Arial,sans-serif;font-size:11px;"
 
     # Section title row — dark navy
     TTL = (f'style="{FONT}background:#0A2540;color:#fff;font-weight:bold;'
-           f'padding:7px 10px;font-size:12px;border:{BORDER};text-align:left"')
+           f'padding:8px 10px;font-size:12px;border:{BORDER};text-align:left"')
 
     # Column header — dark navy matching app thead, white text, wrapped
     def _th(w):
