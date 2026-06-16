@@ -900,64 +900,92 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
     """Return HTML string with two color-coded tables for TP report email."""
     mon_tag = _tp_mon_tag(month, year)
 
-    TH  = ('style="background:#1F4E79;color:#fff;padding:6px 8px;border:1px solid #0A3060;'
-           'white-space:normal;word-break:break-word;max-width:120px;'
-           'text-align:center;font-size:11px;line-height:1.4;font-weight:bold"')
-    TD  = 'style="padding:5px 8px;border:1px solid #ccc;font-size:11px;vertical-align:middle;'
-    TTL = ('style="background:#0D2B52;color:#fff;font-weight:bold;'
-           'padding:8px 12px;font-size:12px;letter-spacing:0.3px;text-align:left"')
+    # Glossy, slightly transparent row colors matching the view report
+    def _rs(pct, bold=False):
+        if pct < 60:
+            bg = "rgba(255,182,182,0.72)"; fg = "#7A0000"
+        elif pct < 75:
+            bg = "rgba(255,236,153,0.72)"; fg = "#5A3E00"
+        else:
+            bg = "rgba(168,230,168,0.72)"; fg = "#145214"
+        w = "font-weight:bold;" if bold else ""
+        return f"background:{bg};color:{fg};{w}"
 
-    def _rs(pct):
-        if pct < 60:  return "background:#FFD5D5;color:#7A0000"
-        if pct < 75:  return "background:#FFF3CC;color:#5A4000"
-        return "background:#D5F0D5;color:#1A5C1A"
+    # Column header: light, no dark fill — text wraps
+    TH = ('style="background:#eef2f7;color:#1a3558;padding:5px 6px;'
+          'border:1px solid #c0cdd8;text-align:center;font-size:10px;'
+          'font-weight:bold;white-space:normal;word-break:break-word;line-height:1.3"')
 
-    def _tbl(cols, rows_html, title, colspan):
-        ths = "".join(f"<th {TH}>{h}</th>" for h in cols)
-        return (f'<table cellpadding="0" cellspacing="0" border="0" '
-                f'style="border-collapse:collapse;width:100%;margin:18px 0 6px;font-family:Arial,sans-serif">'
-                f'<tr><td colspan="{colspan}" {TTL}>{title}</td></tr>'
-                f'<tr>{ths}</tr>{rows_html}</table>')
+    # Title row
+    TTL = ('style="background:#1a3558;color:#fff;font-weight:bold;'
+           'padding:7px 10px;font-size:12px;letter-spacing:0.2px;text-align:left"')
 
-    # Location table
-    loc_rows_html = ""
-    for r in location_rows:
-        pct = float(r.get("avg_throughput_pct", 0))
-        rs  = _rs(pct)
-        loc_rows_html += (
+    # Data cell — compact padding, thin border
+    def _td(rs, extra=""):
+        return (f'style="padding:4px 6px;border:1px solid #c8d4de;'
+                f'font-size:10.5px;vertical-align:middle;{rs}{extra}"')
+
+    # ── Location table ──────────────────────────────────────────────────────
+    loc_cols = ["#", "Exco Location", "Plants", "Total Qty", "Total Time (min)", "Avg TP %"]
+    loc_widths = ["4%","26%","8%","14%","16%","12%"]
+    col_defs = "".join(f'<col style="width:{w}">' for w in loc_widths)
+    ths = "".join(f"<th {TH}>{h}</th>" for h in loc_cols)
+    loc_body = ""
+    for i, r in enumerate(location_rows, 1):
+        pct  = float(r.get("avg_throughput_pct", 0))
+        pan  = bool(r.get("is_pan_india"))
+        rs   = _rs(pct, bold=pan)
+        num  = "—" if pan else str(i)
+        loc_body += (
             f'<tr>'
-            f'<td {TD}{rs}">{r.get("exco_location","")}</td>'
-            f'<td {TD}{rs};text-align:center">{r.get("plant_count",0)}</td>'
-            f'<td {TD}{rs};text-align:center">{round(float(r.get("total_quantity",0)),1)}</td>'
-            f'<td {TD}{rs};text-align:center;font-weight:bold">{round(pct)}%</td>'
+            f'<td {_td(rs,"text-align:center")}>{num}</td>'
+            f'<td {_td(rs)}>{r.get("exco_location","")}</td>'
+            f'<td {_td(rs,"text-align:center")}>{r.get("plant_count",0)}</td>'
+            f'<td {_td(rs,"text-align:center")}>{round(float(r.get("total_quantity",0)),1)}</td>'
+            f'<td {_td(rs,"text-align:center")}>{round(float(r.get("total_time_min",0)),1)}</td>'
+            f'<td {_td(rs,"text-align:center;font-weight:bold")}>{round(pct)}%</td>'
             f'</tr>'
         )
-    loc_html = _tbl(["Exco Location","Plants","Total Qty","Avg Throughput %"],
-                    loc_rows_html, f"Location wise Throughput - {mon_tag}", 4)
+    loc_html = (
+        f'<table cellpadding="0" cellspacing="0" border="0" '
+        f'style="border-collapse:collapse;width:100%;max-width:680px;margin:18px 0 10px;'
+        f'font-family:Arial,sans-serif;table-layout:fixed">'
+        f'{col_defs}'
+        f'<tr><td colspan="{len(loc_cols)}" {TTL}>Location wise Throughput - {mon_tag}</td></tr>'
+        f'<tr>{ths}</tr>{loc_body}</table>'
+    )
 
-    # Plant table
-    plant_rows_html = ""
-    for r in plant_rows:
+    # ── Plant table (no Plant Code, no Batches) ─────────────────────────────
+    plant_cols  = ["#","Plant","Exco Location","Business Head","Plant Manager",
+                   "Mixer Cap","Total Qty","Time (min)","TP %"]
+    plant_widths = ["4%","18%","14%","14%","14%","8%","10%","10%","8%"]
+    col_defs2 = "".join(f'<col style="width:{w}">' for w in plant_widths)
+    ths2 = "".join(f"<th {TH}>{h}</th>" for h in plant_cols)
+    plant_body = ""
+    for i, r in enumerate(plant_rows, 1):
         pct = float(r.get("throughput_pct", 0))
         rs  = _rs(pct)
-        plant_rows_html += (
+        plant_body += (
             f'<tr>'
-            f'<td {TD}{rs};text-align:center">{r.get("lookup_code","")}</td>'
-            f'<td {TD}{rs}">{r.get("plant_name","")}</td>'
-            f'<td {TD}{rs}">{r.get("exco_location","")}</td>'
-            f'<td {TD}{rs}">{r.get("business_head","")}</td>'
-            f'<td {TD}{rs}">{r.get("plant_manager","")}</td>'
-            f'<td {TD}{rs};text-align:center">{r.get("mixer_theo_cap","")}</td>'
-            f'<td {TD}{rs};text-align:center">{round(float(r.get("total_quantity",0)),1)}</td>'
-            f'<td {TD}{rs};text-align:center">{round(float(r.get("total_time_min",0)),1)}</td>'
-            f'<td {TD}{rs};text-align:center;font-weight:bold">{round(pct)}%</td>'
-            f'<td {TD}{rs};text-align:center">{r.get("batch_count",0)}</td>'
+            f'<td {_td(rs,"text-align:center")}>{i}</td>'
+            f'<td {_td(rs)}>{r.get("plant_name","")}</td>'
+            f'<td {_td(rs)}>{r.get("exco_location","")}</td>'
+            f'<td {_td(rs)}>{r.get("business_head","")}</td>'
+            f'<td {_td(rs)}>{r.get("plant_manager","")}</td>'
+            f'<td {_td(rs,"text-align:center")}>{r.get("mixer_theo_cap","")}</td>'
+            f'<td {_td(rs,"text-align:center")}>{round(float(r.get("total_quantity",0)),1)}</td>'
+            f'<td {_td(rs,"text-align:center")}>{round(float(r.get("total_time_min",0)),1)}</td>'
+            f'<td {_td(rs,"text-align:center;font-weight:bold")}>{round(pct)}%</td>'
             f'</tr>'
         )
-    plant_html = _tbl(
-        ["Plant Code","Plant","Exco Location","Business Head","Plant Manager",
-         "Mixer Cap","Total Qty","Time (min)","Throughput %","Batches"],
-        plant_rows_html, f"Plant Throughput report - {mon_tag}", 10)
+    plant_html = (
+        f'<table cellpadding="0" cellspacing="0" border="0" '
+        f'style="border-collapse:collapse;width:100%;max-width:900px;margin:10px 0 18px;'
+        f'font-family:Arial,sans-serif;table-layout:fixed">'
+        f'{col_defs2}'
+        f'<tr><td colspan="{len(plant_cols)}" {TTL}>Plant Throughput report - {mon_tag}</td></tr>'
+        f'<tr>{ths2}</tr>{plant_body}</table>'
+    )
 
     return loc_html + plant_html
 

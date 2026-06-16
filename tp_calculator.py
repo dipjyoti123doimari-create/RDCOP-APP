@@ -236,13 +236,14 @@ def build_location_rows(plant_rows: list, month: int, year: int) -> list:
             continue
         if loc not in location_map:
             location_map[loc] = {"plant_count": 0, "total_throughput_pct": 0.0,
-                                 "total_quantity": 0.0}
+                                 "total_quantity": 0.0, "total_time_min": 0.0}
         location_map[loc]["plant_count"]          += 1
         location_map[loc]["total_throughput_pct"] += pr["throughput_pct"]
         location_map[loc]["total_quantity"]        += pr["total_quantity"]
+        location_map[loc]["total_time_min"]        += pr.get("total_time_min", 0.0)
 
     location_rows = []
-    all_pct_sum = all_qty_sum = 0.0
+    all_pct_sum = all_qty_sum = all_time_sum = 0.0
     all_count = 0
     for loc, d in sorted(location_map.items()):
         cnt = d["plant_count"]
@@ -251,11 +252,13 @@ def build_location_rows(plant_rows: list, month: int, year: int) -> list:
             "plant_count":        cnt,
             "avg_throughput_pct": round(d["total_throughput_pct"] / cnt, 2) if cnt else 0.0,
             "total_quantity":     round(d["total_quantity"], 2),
+            "total_time_min":     round(d["total_time_min"], 1),
             "month": month, "year": year, "is_pan_india": False,
         })
-        all_pct_sum += d["total_throughput_pct"]
-        all_qty_sum += d["total_quantity"]
-        all_count   += cnt
+        all_pct_sum  += d["total_throughput_pct"]
+        all_qty_sum  += d["total_quantity"]
+        all_time_sum += d["total_time_min"]
+        all_count    += cnt
 
     location_rows.sort(key=lambda r: r["avg_throughput_pct"])
 
@@ -265,6 +268,7 @@ def build_location_rows(plant_rows: list, month: int, year: int) -> list:
             "plant_count":        all_count,
             "avg_throughput_pct": round(all_pct_sum / all_count, 2),
             "total_quantity":     round(all_qty_sum, 2),
+            "total_time_min":     round(all_time_sum, 1),
             "month": month, "year": year, "is_pan_india": True,
         })
 
