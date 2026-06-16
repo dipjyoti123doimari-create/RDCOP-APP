@@ -93,42 +93,112 @@ function confirmAction(msg, callback) {
   if (window.confirm(msg)) callback();
 }
 
-/* ---- Searchable SELECT (LOV filter) ---- */
+/* ---- Searchable SELECT (LOV combobox) ---- */
 function initSearchableSelects() {
   document.querySelectorAll('select[data-searchable]').forEach(function (sel) {
-    /* snapshot all original options */
     var allOpts = Array.from(sel.options).map(function (o) {
       return { value: o.value, text: o.text };
     });
 
-    /* wrap: search input sits above the native select */
+    /* hide native select; keep in DOM for form submission */
+    sel.style.display = 'none';
+
+    /* wrapper */
     var wrap = document.createElement('div');
     wrap.className = 'ss-wrap';
     sel.parentNode.insertBefore(wrap, sel);
-    var inp = document.createElement('input');
-    inp.type = 'text';
-    inp.className = 'ss-search';
-    inp.placeholder = '🔍 Search…';
-    inp.autocomplete = 'off';
-    wrap.appendChild(inp);
     wrap.appendChild(sel);
 
-    inp.addEventListener('input', function () {
-      var q = inp.value.toLowerCase().trim();
-      var prev = sel.value;
-      sel.innerHTML = '';
+    /* trigger button */
+    var btn = document.createElement('div');
+    btn.className = 'ss-btn';
+    btn.setAttribute('tabindex', '0');
+    btn.innerHTML = '<span class="ss-label placeholder">— select —</span><span class="ss-arrow">▾</span>';
+    wrap.insertBefore(btn, sel);
+    var labelEl = btn.querySelector('.ss-label');
+
+    /* panel (portalled to body on open) */
+    var panel = document.createElement('div');
+    panel.className = 'ss-panel';
+    var searchRow = document.createElement('div');
+    searchRow.className = 'ss-search-row';
+    var inp = document.createElement('input');
+    inp.type = 'text'; inp.className = 'ss-search';
+    inp.placeholder = '🔍 Search…'; inp.autocomplete = 'off';
+    searchRow.appendChild(inp);
+    var list = document.createElement('div');
+    list.className = 'ss-list';
+    panel.appendChild(searchRow);
+    panel.appendChild(list);
+
+    /* sync button label from current select value */
+    function syncLabel() {
+      var cur = allOpts.find(function (o) { return o.value === sel.value; });
+      if (cur && cur.value !== '') {
+        labelEl.textContent = cur.text;
+        labelEl.classList.remove('placeholder');
+      } else {
+        labelEl.textContent = '— select —';
+        labelEl.classList.add('placeholder');
+      }
+    }
+    syncLabel();
+
+    /* render filtered list */
+    function renderList(q) {
+      q = (q || '').toLowerCase().trim();
+      list.innerHTML = '';
       allOpts.forEach(function (o) {
-        if (!q || o.value === '' ||
-            o.text.toLowerCase().includes(q) ||
-            o.value.toLowerCase().includes(q)) {
-          var opt = document.createElement('option');
-          opt.value = o.value;
-          opt.text = o.text;
-          if (o.value === prev) opt.selected = true;
-          sel.appendChild(opt);
-        }
+        if (q && o.value !== '' &&
+            !o.text.toLowerCase().includes(q) &&
+            !o.value.toLowerCase().includes(q)) return;
+        var item = document.createElement('div');
+        item.className = 'ss-item' +
+          (o.value === '' ? ' ss-placeholder' : '') +
+          (o.value === sel.value ? ' ss-active' : '');
+        item.textContent = o.text;
+        item.addEventListener('mousedown', function (e) {
+          e.preventDefault();
+          sel.value = o.value;
+          syncLabel();
+          closePanel();
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        list.appendChild(item);
       });
+    }
+
+    var isOpen = false;
+    function openPanel() {
+      isOpen = true;
+      btn.classList.add('open');
+      inp.value = '';
+      renderList('');
+      /* position relative to button using fixed coords */
+      var r = btn.getBoundingClientRect();
+      panel.style.top    = (r.bottom + 4) + 'px';
+      panel.style.left   = r.left + 'px';
+      panel.style.width  = r.width + 'px';
+      document.body.appendChild(panel);
+      inp.focus();
+    }
+    function closePanel() {
+      isOpen = false;
+      btn.classList.remove('open');
+      if (panel.parentNode) panel.parentNode.removeChild(panel);
+    }
+
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (isOpen) closePanel(); else openPanel();
     });
+    btn.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (isOpen) closePanel(); else openPanel(); }
+      if (e.key === 'Escape') closePanel();
+    });
+    panel.addEventListener('click', function (e) { e.stopPropagation(); });
+    inp.addEventListener('input', function () { renderList(inp.value); });
+    document.addEventListener('click', function () { if (isOpen) closePanel(); });
   });
 }
 

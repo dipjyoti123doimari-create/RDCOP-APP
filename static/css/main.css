@@ -596,16 +596,44 @@ tbody tr.row-yellow  td { background: rgba(251,191,36,0.10) !important; }
 }
 
 
-/* ---- Searchable select (LOV search filter) ---- */
-.ss-wrap { display: flex; flex-direction: column; gap: 6px; }
-.ss-search {
-  width: 100%; padding: 7px 10px; box-sizing: border-box;
+/* ---- Searchable select (LOV combobox) ---- */
+.ss-wrap { position: relative; display: block; }
+.ss-btn {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 8px 12px; box-sizing: border-box;
   border: 1px solid var(--border); border-radius: 6px;
+  background: var(--input-bg, #0f1923); color: var(--text);
+  font-size: 13px; cursor: pointer; user-select: none;
+  transition: border-color 0.15s;
+}
+.ss-btn:hover, .ss-btn.open { border-color: var(--accent); }
+.ss-btn .ss-arrow { color: var(--text-muted, #5a7090); font-size: 11px; flex-shrink: 0; margin-left: 8px; }
+.ss-btn .ss-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ss-btn .ss-label.placeholder { color: var(--text-muted, #5a7090); }
+/* panel is portalled to <body> so it always sits above overflow:auto containers */
+.ss-panel {
+  position: fixed; z-index: 9999;
+  background: var(--card-bg, #101c2c); border: 1px solid var(--accent);
+  border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,0.55);
+  display: flex; flex-direction: column; max-height: 260px; overflow: hidden;
+}
+.ss-search-row { padding: 8px 8px 6px; border-bottom: 1px solid var(--border); }
+.ss-search {
+  width: 100%; padding: 6px 10px; box-sizing: border-box;
+  border: 1px solid var(--border); border-radius: 5px;
   background: var(--input-bg, #0f1923); color: var(--text);
   font-size: 13px; outline: none;
 }
 .ss-search:focus { border-color: var(--accent); }
 .ss-search::placeholder { color: var(--text-muted, #5a7090); }
+.ss-list { overflow-y: auto; flex: 1; }
+.ss-item {
+  padding: 8px 13px; cursor: pointer; font-size: 13px; color: var(--text);
+  transition: background 0.1s;
+}
+.ss-item:hover { background: rgba(79,163,224,0.14); }
+.ss-item.ss-active { background: rgba(79,163,224,0.22); font-weight: 600; }
+.ss-item.ss-placeholder { color: var(--text-muted, #5a7090); }
 
 /* ---- Modal overlay ---- */
 .modal-overlay {
