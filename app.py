@@ -1387,16 +1387,25 @@ def toggle_auto_sync():
 
 @app.route("/action/add-employee", methods=["POST"])
 def add_employee():
+    emp = {
+        "employee_code": request.form["code"].strip(),
+        "employee_name": request.form.get("name", "").strip(),
+        "designation":   request.form.get("designation", "").strip(),
+        "category":      request.form.get("category", ""),
+        "plant":         request.form.get("plant", "").strip(),
+        "plant_code":    request.form.get("plant_code", "").strip(),
+    }
     try:
         database.add_employee(
-            request.form["code"].strip(),
-            request.form.get("name", "").strip(),
-            request.form.get("designation", "").strip(),
-            request.form.get("category", ""),
-            request.form.get("plant", "").strip(),
-            request.form.get("plant_code", "").strip(),
+            emp["employee_code"], emp["employee_name"], emp["designation"],
+            emp["category"], emp["plant"], emp["plant_code"],
         )
-        flash(f"Added employee {request.form['code'].strip()}.", "success")
+        flash(f"Added employee {emp['employee_code']}.", "success")
+        res = google_sheets.push_id_employee_add(emp)
+        if res["ok"]:
+            flash(f"☁️ {res['message']}", "info")
+        else:
+            flash(f"⚠️ Saved locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as e:
         flash(str(e), "error")
     return redirect(url_for("page_data_uploader"))
@@ -1404,16 +1413,25 @@ def add_employee():
 
 @app.route("/action/update-employee/<code>", methods=["POST"])
 def update_employee(code):
+    emp = {
+        "employee_code": code,
+        "employee_name": request.form.get("name", "").strip(),
+        "designation":   request.form.get("designation", "").strip(),
+        "category":      request.form.get("category", ""),
+        "plant":         request.form.get("plant", "").strip(),
+        "plant_code":    request.form.get("plant_code", "").strip(),
+    }
     try:
         database.update_employee(
-            code,
-            request.form.get("name", "").strip(),
-            request.form.get("designation", "").strip(),
-            request.form.get("category", ""),
-            request.form.get("plant", "").strip(),
-            request.form.get("plant_code", "").strip(),
+            code, emp["employee_name"], emp["designation"],
+            emp["category"], emp["plant"], emp["plant_code"],
         )
         flash(f"Updated employee {code}.", "success")
+        res = google_sheets.push_id_employee_update(emp)
+        if res["ok"]:
+            flash(f"☁️ {res['message']}", "info")
+        else:
+            flash(f"⚠️ Saved locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as e:
         flash(str(e), "error")
     return redirect(url_for("page_data_uploader"))
@@ -1424,6 +1442,11 @@ def delete_employee(code):
     try:
         database.delete_employee(code)
         flash(f"Deleted employee {code}.", "success")
+        res = google_sheets.push_id_employee_delete(code)
+        if res["ok"]:
+            flash(f"☁️ {res['message']}", "info")
+        else:
+            flash(f"⚠️ Deleted locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as e:
         flash(str(e), "error")
     return redirect(url_for("page_data_uploader"))

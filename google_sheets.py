@@ -672,3 +672,107 @@ def push_tp_plant_delete(plant_code: str) -> dict:
         return {"ok": False, "message": str(exc)}
     except Exception as exc:
         return {"ok": False, "message": f"Sheet write failed: {exc}"}
+
+
+# ---------------------------------------------------------------------------
+# 10. RDC-I&D: Write-back — push add / update / delete to Google Sheet
+# ---------------------------------------------------------------------------
+# Sheet column order (must match MASTER_DATA_COLUMNS in config.py):
+#   A: Employee Code | B: Employee Name | C: Designation
+#   D: Category | E: Plant | F: Plant Code
+
+_ID_SHEET_HEADERS = [
+    "Employee Code", "Employee Name", "Designation",
+    "Category", "Plant", "Plant Code",
+]
+
+
+def _find_employee_row(ws, employee_code: str) -> int:
+    """Find the 1-based row index of an employee matched by Employee Code in column A."""
+    col_a = ws.col_values(1)
+    for i, val in enumerate(col_a):
+        if str(val).strip().upper() == str(employee_code).strip().upper():
+            return i + 1
+    return 0
+
+
+def _get_id_worksheet() -> object:
+    """
+    Open the I&D master data worksheet (write-capable).
+    The I&D module may store a published-to-web (2PACX-) ID which is read-only.
+    For write-back we use the TP regular sheet ID instead (same workbook).
+    """
+    ws_name  = database.get_setting("gsheet_worksheet", "BT Master Data")
+    # Prefer the TP regular sheet ID (writable); fall back to I&D setting
+    sheet_id = database.get_module_setting("tp", "gsheet_id",
+               database.get_setting("gsheet_id", ""))
+    if not sheet_id or _is_published_id(sheet_id):
+        # TP id not set either — nothing we can do
+        raise ValueError(
+            "Could not find a writable Google Sheet ID. "
+            "Please sync Plant Data for TP first to register the sheet ID."
+        )
+    return _gspread_worksheet(extract_sheet_id(sheet_id), ws_name)
+
+
+def push_id_employee_add(emp: dict) -> dict:
+    """
+    Append a new employee row to the I&D master data Google Sheet.
+    emp keys: employee_code, employee_name, designation, category, plant, plant_code
+    """
+    try:
+        ws = _get_id_worksheet()
+        row = [
+            str(emp.get("employee_code", "")),
+            str(emp.get("employee_name", "")),
+            str(emp.get("designation", "")),
+            str(emp.get("category", "")),
+            str(emp.get("plant", "")),
+            str(emp.get("plant_code", "")),
+        ]
+        ws.append_row(row, value_input_option="USER_ENTERED")
+        return {"ok": True, "message": "Row added to Google Sheet."}
+    except RuntimeError as exc:
+        return {"ok": False, "message": str(exc)}
+    except Exception as exc:
+        return {"ok": False, "message": f"Sheet write failed: {exc}"}
+
+
+def push_id_employee_update(emp: dict) -> dict:
+    """
+    Update an existing employee row in the I&D master data Google Sheet.
+    emp keys: employee_code, employee_name, designation, category, plant, plant_code
+    """
+    try:
+        ws      = _get_id_worksheet()
+        row_idx = _find_employee_row(ws, emp["employee_code"])
+        if row_idx == 0:
+            return push_id_employee_add(emp)
+        ws.update(f"A{row_idx}:F{row_idx}", [[
+            str(emp.get("employee_code", "")),
+            str(emp.get("employee_name", "")),
+            str(emp.get("designation", "")),
+            str(emp.get("category", "")),
+            str(emp.get("plant", "")),
+            str(emp.get("plant_code", "")),
+        ]], value_input_option="USER_ENTERED")
+        return {"ok": True, "message": "Row updated in Google Sheet."}
+    except RuntimeError as exc:
+        return {"ok": False, "message": str(exc)}
+    except Exception as exc:
+        return {"ok": False, "message": f"Sheet write failed: {exc}"}
+
+
+def push_id_employee_delete(employee_code: str) -> dict:
+    """Delete an employee row from the I&D master data Google Sheet."""
+    try:
+        ws      = _get_id_worksheet()
+        row_idx = _find_employee_row(ws, employee_code)
+        if row_idx == 0:
+            return {"ok": False, "message": f"Employee '{employee_code}' not found in sheet."}
+        ws.delete_rows(row_idx)
+        return {"ok": True, "message": f"Employee '{employee_code}' deleted from Google Sheet."}
+    except RuntimeError as exc:
+        return {"ok": False, "message": str(exc)}
+    except Exception as exc:
+        return {"ok": False, "message": f"Sheet write failed: {exc}"}
