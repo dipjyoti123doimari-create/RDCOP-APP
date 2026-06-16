@@ -766,6 +766,13 @@ def tp_reports():
     smtp        = email_helper.get_smtp_config()
     email_ready = email_helper.is_configured()
 
+    # TP-only email log (filter shared table by RDC_TP_ filename prefix)
+    _elog = database.read_table("email_log", order_by="id DESC")
+    if not _elog.empty and "report_file_name" in _elog.columns:
+        _elog = _elog[_elog["report_file_name"].str.startswith("RDC_TP_", na=False)]
+    tp_email_log = _records(_elog.drop(columns=["id"], errors="ignore").head(20)) \
+        if not _elog.empty else []
+
     if (fd.year, fd.month) == (td.year, td.month):
         import calendar
         month_label = f"{calendar.month_name[fd.month]} {fd.year}"
@@ -796,6 +803,7 @@ def tp_reports():
                            default_to=default_to, default_cc=default_cc,
                            default_subject=default_subject,
                            default_body=default_body,
+                           tp_email_log=tp_email_log,
                            ora_note=ora_note, **ctx)
 
 

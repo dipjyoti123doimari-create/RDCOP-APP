@@ -189,6 +189,36 @@
         <div class="form-group"><label>Message</label><textarea name="body" rows="7" style="min-height:160px">{{ default_body }}</textarea></div>
         <button type="submit" class="btn btn-primary" {% if not email_ready %}disabled{% endif %}>✉️ Send Report</button>
       </form>
+
+      {% if tp_email_log %}
+      <hr class="divider" style="margin-top:20px">
+      <div class="section-title" style="font-size:13px;margin-bottom:8px">📜 Recent Email Log</div>
+      <div class="table-wrapper" style="max-height:200px">
+        <table>
+          <thead>
+            <tr><th>To</th><th>Subject</th><th>Status</th><th>Sent At</th><th>Error</th></tr>
+          </thead>
+          <tbody>
+            {% for r in tp_email_log %}
+            <tr>
+              <td>{{ r.to_emails }}</td>
+              <td style="max-width:200px;word-break:break-word">{{ r.subject }}</td>
+              <td>
+                {% if r.status == 'Success' %}
+                  <span style="color:#4caf50;font-weight:600">✅ {{ r.status }}</span>
+                {% else %}
+                  <span style="color:#f44336;font-weight:600">❌ {{ r.status }}</span>
+                {% endif %}
+              </td>
+              <td style="white-space:nowrap">{{ r.sent_at }}</td>
+              <td style="font-size:11px;color:#f44336;max-width:160px;word-break:break-word">{{ r.error_message or '' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
     </div>
   </div>
 </div>
