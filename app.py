@@ -161,6 +161,41 @@ def _build_tp_excel(plant_rows, location_rows) -> bytes:
     return buf.read()
 
 
+def _tp_daily_oracle_fetch_job():
+    """
+    Runs every day at 00:10.
+    Fetches Oracle TP data for the previous month (full) and the current month
+    (1st → today), replaces what is stored, then purges data older than the
+    previous month. This keeps the local store always current with minimal load.
+    """
+    if not oracle_connector.is_configured():
+        return
+    today      = _date.today()
+    # Current month: 1st → today
+    cur_from   = today.replace(day=1)
+    cur_to     = today
+    # Previous month: 1st → last day
+    if today.month == 1:
+        prev_from = _date(today.year - 1, 12, 1)
+        import calendar as _cal
+        prev_to   = _date(today.year - 1, 12, _cal.monthrange(today.year - 1, 12)[1])
+    else:
+        import calendar as _cal
+        prev_from = _date(today.year, today.month - 1, 1)
+        prev_to   = _date(today.year, today.month - 1,
+                          _cal.monthrange(today.year, today.month - 1)[1])
+    try:
+        for fd, td in [(str(prev_from), str(prev_to)), (str(cur_from), str(cur_to))]:
+            raw_df, _ = oracle_connector.fetch_tp_data(fd, td)
+            if not raw_df.empty:
+                parsed, _ = tp_calculator.parse_oracle_df(raw_df)
+                oracle_connector.save_tp_oracle_data(raw_df, fd, td, parsed, replace=True)
+        database.purge_old_oracle_data()
+        print(f"[tp-daily-fetch] done — prev: {prev_from}→{prev_to}, cur: {cur_from}→{cur_to}")
+    except Exception as exc:
+        print(f"[tp-daily-fetch] error: {exc}")
+
+
 def _tp_scheduled_email_job():
     """Fires on 1st of each month — emails the previous month's TP report."""
     if database.get_module_setting("tp", "email_schedule_enabled", "false") != "true":
@@ -222,6 +257,10 @@ def _start_scheduler():
     _scheduler.add_job(_tp_scheduled_email_job,
                        CronTrigger(day=1, hour=th, minute=tm),
                        id="tp_monthly_email", replace_existing=True)
+    # RDC-TP daily Oracle fetch — keeps previous month + current month data fresh.
+    _scheduler.add_job(_tp_daily_oracle_fetch_job,
+                       CronTrigger(hour=0, minute=10),
+                       id="tp_daily_oracle_fetch", replace_existing=True)
     _scheduler.start()
 
 
