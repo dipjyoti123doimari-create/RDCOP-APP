@@ -900,11 +900,10 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
     """Return HTML string with two color-coded tables for TP report email."""
     mon_tag = _tp_mon_tag(month, year)
 
-    # rgba 0.30 — glossy + slightly transparent on white email background
     def _bg(pct):
-        if pct < 60:   return "rgba(239,68,68,0.30)"
-        if pct < 75:   return "rgba(251,191,36,0.30)"
-        return "rgba(16,185,129,0.30)"
+        if pct < 60:   return "#FFB3B3"
+        if pct < 75:   return "#FFE066"
+        return "#92D492"
 
     # 2px border so grid lines are clearly visible in Gmail
     BORDER = "2px solid #9A9A9A"

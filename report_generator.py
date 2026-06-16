@@ -224,10 +224,9 @@ def build_email_tables_html(results_df, sections=None) -> str:
     BORDER = "2px solid #9A9A9A"
     FONT   = "font-family:Arial,sans-serif;font-size:11px;"
 
-    # rgba 0.30 — glossy + slightly transparent on white email background
     def _row_bg(inc, ded):
-        if ded > 0: return "rgba(239,68,68,0.30)"
-        if inc > 0: return "rgba(16,185,129,0.30)"
+        if ded > 0: return "#FFB3B3"
+        if inc > 0: return "#92D492"
         return "#ffffff"
 
     parts = []
