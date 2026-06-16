@@ -702,17 +702,20 @@ def tp_reports():
             try:
                 raw_df, ora_warns = oracle_connector.fetch_tp_data(str(fd), str(td))
                 if not raw_df.empty:
-                    parsed, _ = tp_calculator.parse_oracle_df(raw_df)
+                    parsed, skip_log = tp_calculator.parse_oracle_df(raw_df)
+                    _mss("tp", "skip_log", skip_log)
                     import pandas as _pd
                     ora_df_live = _pd.DataFrame(parsed)
                     ora_note = f"Oracle: {len(raw_df):,} rows loaded for {fd} → {td}."
                 else:
                     ora_note = "Oracle returned no rows for this range."
+                    _mss("tp", "skip_log", [])
             except Exception as exc:
                 ora_note = f"Oracle fetch failed: {exc}"
 
-        all_plants, all_locs, _w = tp_calculator.run_tp_calculation(
+        all_plants, all_locs, calc_warns = tp_calculator.run_tp_calculation(
             month, year, from_date=str(fd), to_date=str(td), ora_df=ora_df_live)
+        _mss("tp", "calc_warnings", calc_warns)
         _mss("tp", "plant_rows", all_plants)
         _mss("tp", "location_rows", all_locs)
         _mss("tp", "calc_from", str(fd))
