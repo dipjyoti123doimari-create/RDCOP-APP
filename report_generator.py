@@ -210,63 +210,77 @@ def _cell_value(col: str, val) -> str:
     return str(val)
 
 
-# Compact CSS (one <style> block per email) keeps the message small enough to
-# avoid email clipping. Row colour matches the Excel: red = deduction row,
-# green = incentive row. Emitted once at the top of build_email_tables_html.
-_EMAIL_TABLE_CSS = (
-    "<style>"
-    ".rpt-h{font-family:Arial,sans-serif;color:#1a56db;margin:18px 0 6px;font-size:15px}"
-    ".rpt{border-collapse:collapse;font-family:Arial,sans-serif;margin:0 0 12px}"
-    ".rpt th{background:#0A2540;color:#fff;border:1px solid #2a4660;padding:4px 7px;"
-    "font-size:11px;text-align:left;white-space:nowrap}"
-    ".rpt td{border:1px solid #cbd5e1;padding:3px 7px;font-size:11px}"
-    ".rpt tr.r td{background:#F8D7DA}"      # deduction row (red)
-    ".rpt tr.g td{background:#D4EDDA}"      # incentive row (green)
-    "</style>"
-)
-
-
 def build_email_tables_html(results_df, sections=None) -> str:
     """
-    Build the HTML for the per-section report tables shown INSIDE the email body
-    (in addition to the Excel attachment). One heading + one colour-coded table
-    per section, matching the Excel: red row = deduction, green row = incentive.
-
-    Uses a single <style> block + CSS classes (not per-cell inline styles) so the
-    email stays small enough not to be clipped by Gmail.
+    Build per-section color-coded HTML tables for the I&D report email body.
+    Uses fully inline styles (no <style> block) to survive Gmail's CSS stripper.
+    Colors and gridlines match the TP report email: reference-mail #9A9A9A borders,
+    #EEEEEE column headers, glossy rgba row fills, dark-navy section title rows.
     """
     import html as _html
     sections = sections or EMAIL_SECTIONS
-    parts = [_EMAIL_TABLE_CSS]
+
+    BORDER = "1px solid #9A9A9A"
+    FONT   = "font-family:Arial,sans-serif;font-size:11px;"
+
+    def _row_bg(inc, ded):
+        if ded > 0: return "rgba(239,68,68,0.38)"
+        if inc > 0: return "rgba(16,185,129,0.38)"
+        return "#ffffff"
+
+    parts = []
 
     for idx, (title, cats) in enumerate(sections, start=1):
-        parts.append(f'<h3 class="rpt-h">{idx}. {_html.escape(title)}</h3>')
-        out = _prepare_category_df(results_df, cats)
-        if out.empty:
-            parts.append('<p style="font-family:Arial,sans-serif;font-size:12px;'
-                         'color:#777;margin:0 0 8px">No records for this section.</p>')
-            continue
-
-        headers = list(out.columns)
+        out      = _prepare_category_df(results_df, cats)
+        headers  = list(out.columns) if not out.empty else []
         ded_label = _ded_header_label(cats)
-        head_cells = "".join(
-            f'<th>{_html.escape(ded_label if h == "Deduction Amount" else str(h))}</th>'
+        num_cols  = len(headers) if headers else 1
+
+        ttl_td = (
+            f'colspan="{num_cols}" '
+            f'style="{FONT}background:#1a3558;color:#fff;font-weight:bold;'
+            f'padding:7px 10px;font-size:12px;border:{BORDER};text-align:left"'
+        )
+        th_base = (
+            f'{FONT}background:#EEEEEE;color:#222;font-weight:bold;'
+            f'padding:5px 6px;border:{BORDER};white-space:normal;'
+            f'word-break:break-word;line-height:1.3'
+        )
+
+        thead_cells = "".join(
+            f'<th style="{th_base};text-align:{"right" if _coltype(h) in ("int","num") else "left"}">'
+            f'{_html.escape(ded_label if h == "Deduction Amount" else str(h))}</th>'
             for h in headers
         )
 
-        body_rows = []
-        for _, row in out.iterrows():
-            inc = row.get("Incentive Amount", 0) or 0
-            ded = row.get("Deduction Amount", 0) or 0
-            cls = ' class="r"' if ded > 0 else (' class="g"' if inc > 0 else "")
-            cells = "".join(
-                f"<td>{_html.escape(_cell_value(h, row[h]))}</td>" for h in headers
+        tbody_rows = []
+        if out.empty:
+            empty_style = (f'{FONT}padding:5px 7px;border:{BORDER};'
+                           f'color:#777;text-align:center;background:#ffffff')
+            tbody_rows.append(
+                f'<tr><td colspan="{num_cols}" style="{empty_style}">'
+                f'No records for this section.</td></tr>'
             )
-            body_rows.append(f"<tr{cls}>{cells}</tr>")
+        else:
+            for _, row in out.iterrows():
+                inc = row.get("Incentive Amount", 0) or 0
+                ded = row.get("Deduction Amount", 0) or 0
+                bg  = _row_bg(inc, ded)
+                cells = ""
+                for h in headers:
+                    align = "right" if _coltype(h) in ("int", "num") else "left"
+                    td_s  = (f'{FONT}background:{bg};padding:4px 7px;'
+                             f'border:{BORDER};text-align:{align};vertical-align:middle')
+                    cells += f'<td style="{td_s}">{_html.escape(_cell_value(h, row[h]))}</td>'
+                tbody_rows.append(f"<tr>{cells}</tr>")
 
         parts.append(
-            f'<table class="rpt"><thead><tr>{head_cells}</tr></thead>'
-            f'<tbody>{"".join(body_rows)}</tbody></table>'
+            f'<table cellpadding="0" cellspacing="0" '
+            f'style="border-collapse:collapse;width:100%;margin:18px 0 12px">'
+            f'<tr><td {ttl_td}>{idx}. {_html.escape(title)}</td></tr>'
+            f'<thead><tr>{thead_cells}</tr></thead>'
+            f'<tbody>{"".join(tbody_rows)}</tbody>'
+            f'</table>'
         )
 
     return "".join(parts)

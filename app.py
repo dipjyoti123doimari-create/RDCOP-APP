@@ -939,19 +939,24 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
         pct = float(r.get("avg_throughput_pct", 0))
         pan = bool(r.get("is_pan_india"))
         if pan:
-            # PAN India row — dark navy (same as title), white bold text, "IN" prefix
-            PAN_CELL = (f'style="{FONT}background:#1a3558;color:#fff;font-weight:bold;'
-                        f'padding:5px 7px;border:{BORDER};text-align:center;vertical-align:middle"')
-            pan_label = '<span style="background:#4a90d9;color:#fff;font-size:9px;font-weight:bold;padding:1px 4px;border-radius:2px;margin-right:4px">IN</span>PAN India'
+            # PAN India — bold, light-gray (header color), flag emoji, top-border separator
+            PAN_CELL = (f'style="{FONT}background:{HDR_BG};color:#222;font-weight:bold;'
+                        f'padding:5px 7px;border:{BORDER};border-top:2px solid #555;'
+                        f'text-align:center;vertical-align:middle"')
+            pan_pct_cell = (f'style="{FONT}background:{_bg(pct)};color:#222;font-weight:bold;'
+                            f'padding:5px 7px;border:{BORDER};border-top:2px solid #555;'
+                            f'text-align:center;vertical-align:middle"')
+            pan_label = '&#127988; PAN India'
             loc_body += (
                 f'<tr>'
                 f'<td {PAN_CELL}>—</td>'
-                f'<td style="{FONT}background:#1a3558;color:#fff;font-weight:bold;'
-                f'padding:5px 7px;border:{BORDER};text-align:left;vertical-align:middle">{pan_label}</td>'
+                f'<td style="{FONT}background:{HDR_BG};color:#222;font-weight:bold;'
+                f'padding:5px 7px;border:{BORDER};border-top:2px solid #555;'
+                f'text-align:left;vertical-align:middle">{pan_label}</td>'
                 f'<td {PAN_CELL}>{r.get("plant_count",0)}</td>'
                 f'<td {PAN_CELL}>{round(float(r.get("total_quantity",0)),1)}</td>'
                 f'<td {PAN_CELL}>{round(float(r.get("total_time_min",0)),1)}</td>'
-                f'<td {PAN_CELL}>{round(pct)}%</td>'
+                f'<td {pan_pct_cell}>{round(pct)}%</td>'
                 f'</tr>'
             )
         else:
