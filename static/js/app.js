@@ -25,6 +25,14 @@ function showToast(msg, type) {
   }, 4500);
 }
 
+/* ---- Modal portal: move all modals to <body> so position:fixed works
+        regardless of parent transforms/filters (pageContentIn animation) ---- */
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('.modal-overlay').forEach(function (m) {
+    document.body.appendChild(m);
+  });
+});
+
 /* ---- Tabs ---- */
 function switchTab(set, id) {
   document.querySelectorAll('[data-tabset="' + set + '"][data-tab]').forEach(function (b) {

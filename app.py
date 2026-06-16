@@ -525,7 +525,7 @@ def tp_add_plant():
             flash(f"⚠️ Saved locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as exc:
         flash(str(exc), "error")
-    return redirect(url_for("tp_data_uploader") + "#sheets")
+    return redirect(url_for("tp_data_uploader") + "?open_modal=plant&tab=add")
 
 
 @app.route("/tp/action/update-plant/<code>", methods=["POST"])
@@ -548,7 +548,7 @@ def tp_update_plant(code):
             flash(f"⚠️ Saved locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as exc:
         flash(str(exc), "error")
-    return redirect(url_for("tp_data_uploader") + "#sheets")
+    return redirect(url_for("tp_data_uploader") + "?open_modal=plant&tab=edit")
 
 
 @app.route("/tp/action/delete-plant/<code>", methods=["POST"])
@@ -563,7 +563,7 @@ def tp_delete_plant(code):
             flash(f"⚠️ Deleted locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as exc:
         flash(str(exc), "error")
-    return redirect(url_for("tp_data_uploader") + "#sheets")
+    return redirect(url_for("tp_data_uploader") + "?open_modal=plant&tab=delete")
 
 
 @app.route("/tp/action/fetch-oracle", methods=["POST"])
@@ -1408,7 +1408,7 @@ def add_employee():
             flash(f"⚠️ Saved locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as e:
         flash(str(e), "error")
-    return redirect(url_for("page_data_uploader"))
+    return redirect(url_for("page_data_uploader") + "?open_modal=employee&tab=add")
 
 
 @app.route("/action/update-employee/<code>", methods=["POST"])
@@ -1434,7 +1434,7 @@ def update_employee(code):
             flash(f"⚠️ Saved locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as e:
         flash(str(e), "error")
-    return redirect(url_for("page_data_uploader"))
+    return redirect(url_for("page_data_uploader") + "?open_modal=employee&tab=edit")
 
 
 @app.route("/action/delete-employee/<code>", methods=["POST"])
@@ -1449,7 +1449,7 @@ def delete_employee(code):
             flash(f"⚠️ Deleted locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as e:
         flash(str(e), "error")
-    return redirect(url_for("page_data_uploader"))
+    return redirect(url_for("page_data_uploader") + "?open_modal=employee&tab=delete")
 
 
 @app.route("/action/upload-backend", methods=["POST"])

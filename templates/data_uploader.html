@@ -394,9 +394,10 @@
   }
   document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeManageModal(); });
 
-  // Auto-open modal if edit_code or del_code in URL
+  // Auto-open modal if edit_code, del_code, or open_modal in URL
   var params = new URLSearchParams(location.search);
-  if (params.get('edit_code')) { openManageModal('edit'); }
-  if (params.get('del_code'))  { openManageModal('delete'); }
+  if (params.get('edit_code'))  { openManageModal('edit'); }
+  if (params.get('del_code'))   { openManageModal('delete'); }
+  if (params.get('open_modal') === 'employee') { openManageModal(params.get('tab') || 'add'); }
 </script>
 {% endblock %}
