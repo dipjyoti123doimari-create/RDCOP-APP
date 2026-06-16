@@ -18,3 +18,4 @@ gspread              # Talks to Google Sheets (private sheets via service accoun
 google-auth          # Handles Google service-account login for Google Sheets
 oracledb             # Connects to Oracle database (thick mode via Instant Client)
 APScheduler>=3.10    # Background job scheduler (monthly auto-email)
+pillow               # Generates PNG preview images embedded inline in email body

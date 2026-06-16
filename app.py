@@ -1076,15 +1076,19 @@ def tp_send_email():
     excel_bytes = _tp_build_excel(plant_rows, location_rows, month, year)
     fname = f"RDC_TP_{year}_{month:02d}.xlsx"
 
-    # Build HTML tables embedded in the email body
-    tables_html = _tp_build_html_tables(plant_rows, location_rows, month, year)
-    html_body   = email_helper.wrap_html_body(body, tables_html)
+    # Generate PNG preview image and embed it inline in the email body
+    exports_dir = os.path.join(os.path.dirname(__file__), "exports")
+    img_path = email_helper.create_tp_preview_image(
+        plant_rows, location_rows, month, year,
+        os.path.join(exports_dir, "email_preview_tp.png"))
+    html_body = email_helper.wrap_html_body_with_image(body,
+                                                       excel_attached=True)
 
     result = email_helper.send_report_email(
         to_emails=to_addr, cc_emails=cc_addr,
         subject=subject, body=body,
         attachment_bytes=excel_bytes, attachment_name=fname,
-        html_body=html_body,
+        html_body=html_body, inline_image_path=img_path,
     )
     if result.get("success"):
         flash(f"✅ Report emailed to {to_addr}.", "success")
@@ -2008,16 +2012,20 @@ def send_email():
         fname     = f"incentive_report_{from_s}_to_{to_s}.xlsx"
         xlsx_data = report_generator.generate_excel_report(df_f, df_u, val_df, meta)
 
-        html_body = None
-        if incl_tables:
-            tables_html = report_generator.build_email_tables_html(df_f)
-            html_body   = email_helper.wrap_html_body(body, tables_html)
+        # Generate PNG preview image and embed it inline in the email body
+        exports_dir = os.path.join(os.path.dirname(__file__), "exports")
+        img_path = email_helper.create_report_preview_image(
+            df_f,
+            os.path.join(exports_dir, "email_preview_id.png"),
+            month_label=meta.get("date_range", ""))
+        html_body = email_helper.wrap_html_body_with_image(body,
+                                                           excel_attached=True)
 
         res = email_helper.send_report_email(
             to_emails=to_addr, cc_emails=cc_addr,
             subject=subject, body=body,
             attachment_bytes=xlsx_data, attachment_name=fname,
-            html_body=html_body,
+            html_body=html_body, inline_image_path=img_path,
         )
         if res["success"]:
             flash(f"Report emailed to {to_addr}.", "success")
