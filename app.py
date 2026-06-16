@@ -938,24 +938,34 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
     for i, r in enumerate(location_rows, 1):
         pct = float(r.get("avg_throughput_pct", 0))
         pan = bool(r.get("is_pan_india"))
-        # PAN India row: white background, bold text — no color band
-        bg  = "#ffffff" if pan else _bg(pct)
-        bw  = "font-weight:bold;" if pan else ""
-        num = "—" if pan else str(i)
-        _td_pan = (f'style="{FONT}background:{bg};padding:4px 7px;'
-                   f'border:{BORDER};text-align:center;vertical-align:middle;{bw}"')
-        loc_body += (
-            f'<tr>'
-            f'<td {_td_pan}>{num}</td>'
-            f'<td style="{FONT}background:{bg};padding:4px 7px;border:{BORDER};'
-            f'text-align:left;vertical-align:middle;{bw}">{r.get("exco_location","")}</td>'
-            f'<td {_td_pan}>{r.get("plant_count",0)}</td>'
-            f'<td {_td_pan}>{round(float(r.get("total_quantity",0)),1)}</td>'
-            f'<td {_td_pan}>{round(float(r.get("total_time_min",0)),1)}</td>'
-            f'<td style="{FONT}background:{bg};padding:4px 7px;border:{BORDER};'
-            f'text-align:center;vertical-align:middle;font-weight:bold">{round(pct)}%</td>'
-            f'</tr>'
-        )
+        if pan:
+            # PAN India row — dark navy (same as title), white bold text, "IN" prefix
+            PAN_CELL = (f'style="{FONT}background:#1a3558;color:#fff;font-weight:bold;'
+                        f'padding:5px 7px;border:{BORDER};text-align:center;vertical-align:middle"')
+            pan_label = '<span style="background:#4a90d9;color:#fff;font-size:9px;font-weight:bold;padding:1px 4px;border-radius:2px;margin-right:4px">IN</span>PAN India'
+            loc_body += (
+                f'<tr>'
+                f'<td {PAN_CELL}>—</td>'
+                f'<td style="{FONT}background:#1a3558;color:#fff;font-weight:bold;'
+                f'padding:5px 7px;border:{BORDER};text-align:left;vertical-align:middle">{pan_label}</td>'
+                f'<td {PAN_CELL}>{r.get("plant_count",0)}</td>'
+                f'<td {PAN_CELL}>{round(float(r.get("total_quantity",0)),1)}</td>'
+                f'<td {PAN_CELL}>{round(float(r.get("total_time_min",0)),1)}</td>'
+                f'<td {PAN_CELL}>{round(pct)}%</td>'
+                f'</tr>'
+            )
+        else:
+            bg = _bg(pct)
+            loc_body += (
+                f'<tr>'
+                f'<td style="{FONT}background:{bg};padding:4px 7px;border:{BORDER};text-align:center;vertical-align:middle">{i}</td>'
+                f'<td style="{FONT}background:{bg};padding:4px 7px;border:{BORDER};text-align:left;vertical-align:middle">{r.get("exco_location","")}</td>'
+                f'<td style="{FONT}background:{bg};padding:4px 7px;border:{BORDER};text-align:center;vertical-align:middle">{r.get("plant_count",0)}</td>'
+                f'<td style="{FONT}background:{bg};padding:4px 7px;border:{BORDER};text-align:center;vertical-align:middle">{round(float(r.get("total_quantity",0)),1)}</td>'
+                f'<td style="{FONT}background:{bg};padding:4px 7px;border:{BORDER};text-align:center;vertical-align:middle">{round(float(r.get("total_time_min",0)),1)}</td>'
+                f'<td style="{FONT}background:{bg};padding:4px 7px;border:{BORDER};text-align:center;vertical-align:middle;font-weight:bold">{round(pct)}%</td>'
+                f'</tr>'
+            )
 
     colspan_l = len(L_COLS)
     loc_html = (
