@@ -218,9 +218,9 @@ def get_tp_oracle_cols() -> dict:
     Defaults can be overridden in Settings → RDC-TP → Oracle Column Names.
     """
     return {
-        "plant":  (database.get_module_setting("tp", "oracle_plant_col", "PLANT") or "PLANT").strip(),
-        "batch":  (database.get_module_setting("tp", "oracle_batch_col", "BATCH_NO")   or "BATCH_NO").strip(),
-        "time":   (database.get_module_setting("tp", "oracle_time_col",  "MIXING_TIME") or "MIXING_TIME").strip(),
+        "plant":  (database.get_module_setting("tp", "oracle_plant_col", "PLANTNO")   or "PLANTNO").strip(),
+        "batch":  (database.get_module_setting("tp", "oracle_batch_col", "BATCHCODE") or "BATCHCODE").strip(),
+        "time":   (database.get_module_setting("tp", "oracle_time_col",  "TIMETAKEN") or "TIMETAKEN").strip(),
     }
 
 
