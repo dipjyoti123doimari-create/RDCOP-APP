@@ -602,8 +602,9 @@ tbody tr.row-yellow  td { background: rgba(251,191,36,0.10) !important; }
   background: rgba(0,0,0,0.58);
   backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
   display: flex; align-items: center; justify-content: center;
-  padding: 20px;
+  padding: 16px;
   animation: fadeIn 0.18s ease;
+  overflow-y: auto;
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
@@ -611,11 +612,14 @@ tbody tr.row-yellow  td { background: rgba(251,191,36,0.10) !important; }
   background: #0D1F3C;
   border: 1px solid rgba(99,91,255,0.30);
   border-radius: var(--radius-lg);
-  width: 100%; max-width: 720px;
-  max-height: 88vh;
-  overflow-y: auto;
+  width: 100%; max-width: 760px;
+  /* grow with content but never exceed the viewport */
+  max-height: calc(100vh - 32px);
+  display: flex; flex-direction: column;
   box-shadow: 0 24px 64px rgba(0,0,0,0.55);
   animation: slideUp 0.22s ease;
+  /* prevent the box itself from scrolling — body does it */
+  overflow: hidden;
 }
 @keyframes slideUp { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
@@ -623,7 +627,8 @@ tbody tr.row-yellow  td { background: rgba(251,191,36,0.10) !important; }
   display: flex; align-items: center; justify-content: space-between;
   padding: 18px 24px; border-bottom: 1px solid var(--border);
   font-size: 16px; font-weight: 700; color: var(--text);
-  position: sticky; top: 0; background: #0D1F3C; z-index: 10;
+  flex-shrink: 0; /* header never compresses */
+  background: #0D1F3C; z-index: 10;
 }
 .modal-close {
   background: rgba(255,255,255,0.07); border: 1px solid var(--border);
@@ -632,7 +637,11 @@ tbody tr.row-yellow  td { background: rgba(251,191,36,0.10) !important; }
   transition: var(--transition);
 }
 .modal-close:hover { background: rgba(239,68,68,0.14); color: var(--error-text); border-color: var(--error-bdr); }
-.modal-body { padding: 22px 24px; }
+.modal-body {
+  padding: 22px 24px;
+  overflow-y: auto;   /* only the body scrolls when content is tall */
+  flex: 1;
+}
 
 /* ---- Report category sections ---- */
 .report-cat-section { margin-bottom: 28px; border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--border); box-shadow: var(--shadow); }
