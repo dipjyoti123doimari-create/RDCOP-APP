@@ -112,10 +112,14 @@ def wrap_html_body(message_text, tables_html="") -> str:
     )
 
 
-def wrap_html_body_with_image(message_text, excel_attached=True) -> str:
+def wrap_html_body_with_image(message_text, excel_attached=True,
+                              num_images=1) -> str:
     """
-    HTML email body that references an inline PNG via CID (Content-ID).
-    The caller must attach the image separately with Content-ID <report_preview>.
+    HTML email body with one or two inline CID images.
+
+    num_images=1  → single <img src="cid:report_preview">   (I&D, TP location-only)
+    num_images=2  → two images: cid:report_preview (location) +
+                                cid:report_preview_2 (plant)
     """
     import html as _html
     safe = _html.escape(message_text or "").replace("\n", "<br>")
@@ -124,17 +128,29 @@ def wrap_html_body_with_image(message_text, excel_attached=True) -> str:
         '&#128206; Full detailed report is attached as an Excel file.</p>'
         if excel_attached else ""
     )
+    img_style = ('max-width:100%;height:auto;border-radius:10px;'
+                 'display:block;margin:auto;box-shadow:0 2px 8px rgba(0,0,0,0.12)')
+    if num_images >= 2:
+        imgs = (
+            f'<div style="margin:14px 0">'
+            f'<img src="cid:report_preview" alt="Location Throughput" style="{img_style}">'
+            f'</div>'
+            f'<div style="margin:14px 0">'
+            f'<img src="cid:report_preview_2" alt="Plant Throughput" style="{img_style}">'
+            f'</div>'
+        )
+    else:
+        imgs = (f'<div style="margin:14px 0">'
+                f'<img src="cid:report_preview" alt="Report Preview" style="{img_style}">'
+                f'</div>')
     return (
         '<!DOCTYPE html><html><body>'
         '<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;'
         'color:#0A2540;line-height:1.6;max-width:960px;margin:0 auto;padding:20px">'
-        f'<div style="margin-bottom:18px">{safe}</div>'
-        '<div style="margin:18px 0">'
-        '<img src="cid:report_preview" alt="Report Preview" '
-        'style="max-width:100%;height:auto;border-radius:14px;display:block;margin:auto">'
-        '</div>'
+        f'<div style="margin-bottom:14px">{safe}</div>'
+        f'{imgs}'
         f'{note}'
-        '<p style="color:#333;margin-top:18px">Regards</p>'
+        '<p style="color:#333;margin-top:14px">Regards</p>'
         '</div></body></html>'
     )
 
@@ -147,33 +163,31 @@ def wrap_html_body_with_image(message_text, excel_attached=True) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _S    = 2    # 2× Retina scale factor
-_OP   = 26   # outer image padding (virtual px)
-_CP   = 8    # cell inner padding (virtual px)
-_BH   = 62   # main banner height (virtual px)
-_SH   = 38   # section title row height
-_HH   = 42   # column header row height
-_DROW = 30   # base data row height
-_LH   = 17   # text line height (virtual px)
-_GAP  = 16   # gap between table sections
+_OP   = 14   # outer image padding (virtual px)
+_CP   = 6    # cell inner padding (virtual px)
+_SH   = 28   # section title row height
+_HH   = 32   # column header row height
+_DROW = 20   # base data row height (compact — fits more rows)
+_LH   = 14   # text line height (virtual px)
+_GAP  = 8    # gap between table sections
 
-# Premium dark palette — all opaque RGB, simulating glass/gloss on dark bg
+# Frosted-glass palette — light tinted rows on white background, dark navy headers
 _D = {
-    "bg":      (255, 255, 255),  # #FFFFFF clean white image background
-    "banner":  ( 4,  14,  30),   # #060E1E main title bar (dark)
-    "sec":     ( 8,  43,  73),   # #082B49 section title bg (dark)
-    "hdr":     (10,  37,  64),   # #0A2540 column header bg (dark)
-    "row_odd": (245, 247, 250),  # #F5F7FA neutral odd row (very light)
-    "row_even":(255, 255, 255),  # #FFFFFF neutral even row (white)
-    "pan_row": (220, 228, 240),  # #DCE4F0 PAN India light blue-gray
-    "red":     (90,  20,  30),   # #5A141E deduction / below threshold (dark glossy)
-    "amber":   (90,  62,  14),   # #5A3E0E warning / mid range (dark glossy)
-    "green":   (14,  72,  46),   # #0E482E good / incentive (dark glossy)
-    "bdr_out": ( 49,  68,  92),  # #31445C outer border (dark blue-gray)
-    "bdr_hdr": ( 95, 120, 149),  # #5F7895 header cell borders
-    "bdr_in":  (100, 118, 140),  # #64768C inner cell borders — visible on both white and dark rows
-    "txt":     (248, 250, 252),  # #F8FAFC white text (for dark bg elements)
-    "txt_dark":(30,  41,  59),   # #1E293B dark text (for light bg neutral rows)
-    "txt_mut": (100, 116, 139),  # #64748B muted footer text
+    "bg":       (255, 255, 255),  # white image background
+    "sec":      (  8,  47,  84),  # #082F54 section title — dark steel blue
+    "hdr":      ( 12,  56, 100),  # #0C3864 column header — slightly lighter steel blue
+    "row_odd":  (247, 249, 252),  # very light gray (neutral odd row)
+    "row_even": (255, 255, 255),  # white (neutral even row)
+    "pan_row":  (218, 232, 250),  # #DAE8FA light blue (PAN India)
+    "red":      (255, 210, 214),  # #FFD2D6 frosted rose-red (below threshold)
+    "amber":    (255, 238, 190),  # #FEEEBE frosted gold-amber (mid range)
+    "green":    (196, 244, 218),  # #C4F4DA frosted mint-green (good/incentive)
+    "bdr_out":  ( 60,  90, 130),  # outer table border
+    "bdr_hdr":  ( 88, 118, 158),  # header cell dividers
+    "bdr_in":   (185, 193, 208),  # #B9C1D0 inner gridlines — visible on all light bg
+    "txt":      (248, 250, 252),  # white text (dark header/sec elements)
+    "txt_dark": ( 25,  38,  58),  # #19263A dark navy text (on light rows)
+    "txt_mut":  (100, 116, 139),  # muted footer text
 }
 
 
@@ -259,14 +273,14 @@ def _fill_gradient(img, c_top, c_bot):
 
 
 def _draw_premium_table(draw, sec_title, col_defs, data_rows, row_color_fn,
-                        x, y, f_sec, f_hdr, f_data):
+                        x, y, f_sec, f_hdr, f_data, f_bold=None):
     """
-    Draw one premium dark table section.
+    Draw one frosted-glass table section on white background.
 
-    col_defs  = [(label, scaled_px_width, align, wrap_data), ...]
-                align: 'l'|'c'|'r'   wrap_data: True wraps text in data cells
-    data_rows = [[str, ...], ...]
-    row_color_fn(row_idx, row_list) -> RGB tuple
+    col_defs     = [(label, scaled_px_width, align, wrap_data), ...]
+    data_rows    = [[str, ...], ...]
+    row_color_fn(ri, row) -> RGB tuple OR (RGB, is_bold bool)
+    f_bold       = bold font for special rows (PAN India etc.); falls back to f_data
 
     Returns new y position after drawing.
     """
@@ -327,19 +341,22 @@ def _draw_premium_table(draw, sec_title, col_defs, data_rows, row_color_fn,
     # Data rows: fill → border → text (order ensures borders stay visible)
     for ri, (row, rh, cells_lines) in enumerate(
             zip(data_rows, all_rh, all_wrapped)):
-        bg = row_color_fn(ri, row)
+        result  = row_color_fn(ri, row)
+        bg, is_bold = (result if isinstance(result, tuple) and len(result) == 2
+                       and isinstance(result[1], bool) else (result, False))
+        f_cell  = (f_bold or f_data) if is_bold else f_data
+        txt_col = _auto_txt(bg)
         cx = x
         for (_, w, align, _), lines in zip(col_defs, cells_lines):
             draw.rectangle([cx, y, cx + w, y + rh], fill=bg)
             draw.line([cx + w, y, cx + w, y + rh], fill=_D["bdr_in"], width=S)
             draw.line([cx, y + rh, cx + w, y + rh], fill=_D["bdr_in"], width=S)
             tby = y + max(cp // 2, (rh - len(lines) * lh) // 2)
-            txt_col = _auto_txt(bg)
             for line in lines:
-                tw = _fw(f_data, line)
+                tw = _fw(f_cell, line)
                 tx = (cx + max(cp, (w - tw) // 2) if align == 'c'
                       else (cx + w - tw - cp if align == 'r' else cx + cp))
-                draw.text((tx, tby), line, fill=txt_col, font=f_data)
+                draw.text((tx, tby), line, fill=txt_col, font=f_cell)
                 tby += lh
             cx += w
         draw.line([x, y,   x,  y + rh], fill=_D["bdr_out"], width=S)
@@ -351,169 +368,166 @@ def _draw_premium_table(draw, sec_title, col_defs, data_rows, row_color_fn,
 
 
 def _tp_row_color(pct_str, name):
-    """Map TP % string + location name to dark glossy RGB color."""
+    """Return (bg_color, is_bold) for a TP row based on % and name."""
     if "■" in name or "PAN" in name.upper():
-        return _D["pan_row"]
+        return (_D["pan_row"], True)   # PAN India → bold
     try:
         pct = float(str(pct_str).replace("%", "").strip())
     except ValueError:
-        return _D["row_odd"]
-    if pct < 50: return _D["red"]
-    if pct < 70: return _D["amber"]
-    return _D["green"]
+        return (_D["row_odd"], False)
+    if pct < 50: return (_D["red"],   False)
+    if pct < 70: return (_D["amber"], False)
+    return (_D["green"], False)
 
 
-def create_tp_preview_image(plant_rows, location_rows, month, year,
-                            output_path, max_rows=30):
+def _tp_build_image(col_defs_raw, data_rows_out, row_color_fn,
+                    sec_title, output_path, footnote=None):
     """
-    Generate TP Plant Throughput Report preview PNG — premium dark glossy style.
-    Dark gradient background, white text, visible cell borders, colored rows.
+    Internal helper: render a single TP table (no banner) into output_path.
+    col_defs_raw = [(label, base_width_px, align, wrap_data), ...]
     Returns output_path on success, None on failure.
     """
     try:
-        import calendar
         from PIL import Image, ImageDraw
-
-        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-
         S  = _S
         op = _OP * S
-        bh = _BH * S
         gh = _GAP * S
-
-        mon_name = calendar.month_name[month]
-        mon_tag  = f"{calendar.month_abbr[month]}'{str(year)[-2:]}"
-
-        # Column defs: (label, base_width, align, wrap_data)
-        LOC_COLS = [
-            ("#",                 28, 'c', False),
-            ("Exco Location",    140, 'l', False),
-            ("Plants",            50, 'c', False),
-            ("Total Qty",         85, 'r', False),
-            ("Total Time (min)", 115, 'r', False),
-            ("Avg TP %",          65, 'c', False),
-        ]
-        PLT_COLS = [
-            ("#",                 28, 'c', False),
-            ("Plant",            195, 'l', True),   # ← wraps long plant names
-            ("Exco Location",     95, 'l', False),
-            ("Business Head",    115, 'l', False),
-            ("Total Qty",         85, 'r', False),
-            ("Time (min)",        80, 'r', False),
-            ("TP %",              55, 'c', False),
-        ]
-
-        f_ban  = _pil_font(14, bold=True)
-        f_sec  = _pil_font(11, bold=True)
-        f_hdr  = _pil_font(9,  bold=True)
-        f_data = _pil_font(9,  bold=False)
-        f_foot = _pil_font(8,  bold=False)
-
-        loc_defs = [(h, w * S, a, wp) for h, w, a, wp in LOC_COLS]
-        plt_defs = [(h, w * S, a, wp) for h, w, a, wp in PLT_COLS]
-        loc_w = sum(d[1] for d in loc_defs)
-        plt_w = sum(d[1] for d in plt_defs)
-        tbl_w = max(loc_w, plt_w)
-        img_w = tbl_w + 2 * op
-
-        # Build row data
-        loc_rows_out = []
-        for i, r in enumerate(location_rows, 1):
-            pan = r.get("is_pan_india", False)
-            pct = round(float(r.get("avg_throughput_pct", 0) or 0))
-            loc_rows_out.append([
-                "—" if pan else str(i),
-                ("■ " if pan else "") + str(r.get("exco_location", "")),
-                str(r.get("plant_count", "")),
-                _img_fmt(r.get("total_quantity", 0)),
-                _img_fmt(r.get("total_time_min", 0)),
-                f"{pct}%",
-            ])
-
-        plt_rows_out = []
-        for i, r in enumerate(plant_rows[:max_rows], 1):
-            pct = round(float(r.get("throughput_pct", 0) or 0))
-            plt_rows_out.append([
-                str(i),
-                str(r.get("plant_name", "")),
-                str(r.get("exco_location", "")),
-                str(r.get("business_head", "")),
-                _img_fmt(r.get("total_quantity", 0)),
-                _img_fmt(r.get("total_time_min", 0)),
-                f"{pct}%",
-            ])
-
-        def _loc_color(ri, row):
-            return _tp_row_color(row[-1], row[1] if len(row) > 1 else "")
-
-        def _plt_color(ri, row):
-            return _tp_row_color(row[-1], "")
-
-        # Pre-calc table heights before creating image
-        cp   = _CP   * S
-        lh   = _LH   * S
+        cp = _CP  * S
+        lh = _LH  * S
         drow = _DROW * S
         hh_b = _HH   * S
         sh   = _SH   * S
 
-        def _tbl_height(col_defs, data_rows):
-            hdr_lines = [_wrap(d[0], f_hdr, d[1] - cp * 2) for d in col_defs]
-            hh = max(hh_b, max(len(ls) for ls in hdr_lines) * lh + cp * 2)
-            row_hs = []
-            for row in data_rows:
-                max_l = max(
-                    len(_wrap(str(row[ci]), f_data, d[1] - cp * 2) if d[3]
-                        else [_clip(str(row[ci]), f_data, d[1] - cp * 2)])
-                    for ci, d in enumerate(col_defs) if ci < len(row)
-                )
-                row_hs.append(max(drow, max_l * lh + cp * 2))
-            return sh + hh + sum(row_hs) + S * 2   # +2 bottom border
+        f_sec  = _pil_font(10, bold=True)
+        f_hdr  = _pil_font(8,  bold=True)
+        f_data = _pil_font(8,  bold=False)
+        f_bold = _pil_font(8,  bold=True)
+        f_foot = _pil_font(7,  bold=False)
 
-        loc_h = _tbl_height(loc_defs, loc_rows_out)
-        plt_h = _tbl_height(plt_defs, plt_rows_out)
-        footer_h = 30 * S if len(plant_rows) > max_rows else 0
+        col_defs = [(h, w * S, a, wp) for h, w, a, wp in col_defs_raw]
+        tbl_w    = sum(d[1] for d in col_defs)
+        img_w    = tbl_w + 2 * op
 
-        total_h = 2 * op + bh + gh + loc_h + gh + plt_h + gh + footer_h
+        # Pre-calc table height
+        hdr_lines = [_wrap(d[0], f_hdr, d[1] - cp * 2) for d in col_defs]
+        hh = max(hh_b, max(len(ls) for ls in hdr_lines) * lh + cp * 2)
+        row_hs = []
+        for row in data_rows_out:
+            max_l = max(
+                len(_wrap(str(row[ci]), f_data, d[1] - cp * 2) if d[3]
+                    else [_clip(str(row[ci]), f_data, d[1] - cp * 2)])
+                for ci, d in enumerate(col_defs) if ci < len(row)
+            )
+            row_hs.append(max(drow, max_l * lh + cp * 2))
+        foot_h = (18 * S if footnote else 0)
+        total_h = op + sh + hh + sum(row_hs) + S * 2 + gh + foot_h + op
 
+        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         img  = Image.new("RGB", (img_w, total_h), _D["bg"])
         draw = ImageDraw.Draw(img)
 
-        # Main banner (dark bar at top)
-        draw.rectangle([0, 0, img_w, bh], fill=_D["banner"])
-        draw.line([0, bh, img_w, bh], fill=_D["bdr_hdr"], width=S)
-        draw.text((op, (bh - 14 * S) // 2),
-                  f"RDC-TP Plant Throughput Report  —  {mon_name} {year}",
-                  fill=_D["txt"], font=f_ban)
-        y = bh + gh
-
-        y = _draw_premium_table(
-            draw, f"Location wise Throughput — {mon_tag}",
-            loc_defs, loc_rows_out, _loc_color, op, y, f_sec, f_hdr, f_data)
-        y += gh
-        y = _draw_premium_table(
-            draw, f"Plant Throughput report — {mon_tag}",
-            plt_defs, plt_rows_out, _plt_color, op, y, f_sec, f_hdr, f_data)
-
-        if len(plant_rows) > max_rows:
-            y += 6 * S
-            draw.text((op, y),
-                      (f"Showing first {max_rows} of {len(plant_rows)} plants. "
-                       "Full report in attached Excel."),
-                      fill=_D["txt_mut"], font=f_foot)
+        y = op
+        y = _draw_premium_table(draw, sec_title, col_defs, data_rows_out,
+                                row_color_fn, op, y, f_sec, f_hdr, f_data, f_bold)
+        if footnote:
+            y += 4 * S
+            draw.text((op, y), footnote, fill=_D["txt_mut"], font=f_foot)
 
         img.save(output_path, "PNG", dpi=(144, 144))
         return output_path
-
     except Exception as exc:
-        print(f"[email_helper] TP preview image error: {exc}")
+        print(f"[email_helper] TP image error ({output_path}): {exc}")
         import traceback; traceback.print_exc()
         return None
 
 
+def create_tp_location_image(location_rows, month, year, output_path):
+    """Generate Location wise Throughput table PNG (no top banner)."""
+    import calendar
+    mon_tag = f"{calendar.month_abbr[month]}'{str(year)[-2:]}"
+    LOC_COLS = [
+        ("#",                28, 'c', False),
+        ("Exco Location",   145, 'l', False),
+        ("Plants",           48, 'c', False),
+        ("Total Qty",        80, 'r', False),
+        ("Total Time (min)",110, 'r', False),
+        ("Avg TP %",         62, 'c', False),
+    ]
+    rows_out = []
+    for i, r in enumerate(location_rows, 1):
+        pan = r.get("is_pan_india", False)
+        pct = round(float(r.get("avg_throughput_pct", 0) or 0))
+        rows_out.append([
+            "—" if pan else str(i),
+            ("■ " if pan else "") + str(r.get("exco_location", "")),
+            str(r.get("plant_count", "")),
+            _img_fmt(r.get("total_quantity", 0)),
+            _img_fmt(r.get("total_time_min", 0)),
+            f"{pct}%",
+        ])
+    def _loc_color(ri, row):
+        return _tp_row_color(row[-1], row[1] if len(row) > 1 else "")
+    return _tp_build_image(LOC_COLS, rows_out, _loc_color,
+                           f"Location wise Throughput — {mon_tag}",
+                           output_path)
+
+
+def create_tp_plant_image(plant_rows, month, year, output_path, max_rows=50):
+    """Generate Plant Throughput table PNG (no top banner, compact rows)."""
+    import calendar
+    mon_tag = f"{calendar.month_abbr[month]}'{str(year)[-2:]}"
+    PLT_COLS = [
+        ("#",               26, 'c', False),
+        ("Plant",          188, 'l', True),
+        ("Exco Location",   90, 'l', False),
+        ("Business Head",  110, 'l', False),
+        ("Total Qty",       78, 'r', False),
+        ("Time (min)",      74, 'r', False),
+        ("TP %",            52, 'c', False),
+    ]
+    sliced = plant_rows[:max_rows]
+    rows_out = []
+    for i, r in enumerate(sliced, 1):
+        pct = round(float(r.get("throughput_pct", 0) or 0))
+        rows_out.append([
+            str(i),
+            str(r.get("plant_name", "")),
+            str(r.get("exco_location", "")),
+            str(r.get("business_head", "")),
+            _img_fmt(r.get("total_quantity", 0)),
+            _img_fmt(r.get("total_time_min", 0)),
+            f"{pct}%",
+        ])
+    def _plt_color(ri, row):
+        return _tp_row_color(row[-1], "")
+    note = (f"Showing first {max_rows} of {len(plant_rows)} plants — full list in Excel."
+            if len(plant_rows) > max_rows else None)
+    return _tp_build_image(PLT_COLS, rows_out, _plt_color,
+                           f"Plant Throughput — {mon_tag}",
+                           output_path, footnote=note)
+
+
+def create_tp_preview_image(plant_rows, location_rows, month, year,
+                            output_path, max_rows=50):
+    """
+    Generate two TP PNG images (location + plant) and return list of paths.
+    output_path base is used to derive _loc.png and _plant.png filenames.
+    """
+    base     = output_path.replace(".png", "")
+    loc_path = base + "_loc.png"
+    plt_path = base + "_plant.png"
+    paths = []
+    r1 = create_tp_location_image(location_rows, month, year, loc_path)
+    if r1: paths.append(r1)
+    r2 = create_tp_plant_image(plant_rows, month, year, plt_path, max_rows)
+    if r2: paths.append(r2)
+    return paths if paths else None
+
+
 def create_report_preview_image(df, output_path, max_rows=30, month_label=""):
     """
-    Generate I&D Incentive & Deduction Report preview PNG — premium dark glossy style.
-    Category-wise sections, dark gradient bg, white text, colored rows.
+    Generate I&D Incentive & Deduction Report preview PNG — frosted glass style.
+    Category-wise sections, white background, colored rows, dark navy headers.
     Returns output_path on success, None on failure.
     """
     try:
@@ -522,26 +536,25 @@ def create_report_preview_image(df, output_path, max_rows=30, month_label=""):
 
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
-        S  = _S
-        op = _OP * S
-        bh = _BH * S
-        gh = _GAP * S
-        cp = _CP  * S
-        lh = _LH  * S
+        S    = _S
+        op   = _OP   * S
+        gh   = _GAP  * S
+        cp   = _CP   * S
+        lh   = _LH   * S
         drow = _DROW * S
         hh_b = _HH   * S
         sh   = _SH   * S
 
         # Columns: (renamed_key, display_header, base_width, align, wrap_data)
         COLS = [
-            ("#",               "#",             28,  'c', False),
-            ("Employee Name",   "Employee Name", 145, 'l', True),   # wrap names
-            ("Category",        "Category",      118, 'l', False),
-            ("Plant",           "Plant",          68, 'l', False),
-            ("Total Quantity",  "Total Qty",      80, 'r', False),
-            ("Incentive Amount","Incentive Amt",  95, 'r', False),
-            ("Deduction Amount","Deduction Amt",  95, 'r', False),
-            ("Remarks",         "Remarks",         62, 'l', False),
+            ("#",               "#",             26,  'c', False),
+            ("Employee Name",   "Employee Name", 140, 'l', True),
+            ("Category",        "Category",      115, 'l', False),
+            ("Plant",           "Plant",          65, 'l', False),
+            ("Total Quantity",  "Total Qty",      75, 'r', False),
+            ("Incentive Amount","Incentive Amt",  90, 'r', False),
+            ("Deduction Amount","Deduction Amt",  90, 'r', False),
+            ("Remarks",         "Remarks",         60, 'l', False),
         ]
         col_keys = [c[0] for c in COLS]
         col_defs = [(c[1], c[2] * S, c[3], c[4]) for c in COLS]
@@ -559,15 +572,14 @@ def create_report_preview_image(df, output_path, max_rows=30, month_label=""):
                 inc = float(str(row[inc_idx]).replace(",", "")) if inc_idx < len(row) else 0
             except ValueError:
                 inc = 0
-            if ded > 0: return _D["red"]
-            if inc > 0: return _D["green"]
-            return _D["row_odd"] if ri % 2 == 0 else _D["row_even"]
+            if ded > 0: return (_D["red"],   False)
+            if inc > 0: return (_D["green"], False)
+            return (_D["row_odd"] if ri % 2 == 0 else _D["row_even"], False)
 
-        f_ban  = _pil_font(14, bold=True)
-        f_sec  = _pil_font(11, bold=True)
-        f_hdr  = _pil_font(9,  bold=True)
-        f_data = _pil_font(9,  bold=False)
-        f_foot = _pil_font(8,  bold=False)
+        f_sec  = _pil_font(10, bold=True)
+        f_hdr  = _pil_font(8,  bold=True)
+        f_data = _pil_font(8,  bold=False)
+        f_foot = _pil_font(7,  bold=False)
 
         # Gather section data
         sections_out = []
@@ -595,7 +607,7 @@ def create_report_preview_image(df, output_path, max_rows=30, month_label=""):
                 rows_out.append(cells)
             sections_out.append((title, rows_out))
 
-        # Pre-calc total image height
+        # Pre-calc total image height (no banner — starts with first section)
         def _sec_height(data_rows):
             hdr_lines = [_wrap(d[0], f_hdr, d[1] - cp * 2) for d in col_defs]
             hh = max(hh_b, max(len(ls) for ls in hdr_lines) * lh + cp * 2)
@@ -609,23 +621,15 @@ def create_report_preview_image(df, output_path, max_rows=30, month_label=""):
                 row_hs.append(max(drow, max_l * lh + cp * 2))
             return sh + hh + sum(row_hs) + S * 2
 
-        footer_h = 30 * S if total_shown >= max_rows else 0
-        total_h  = 2 * op + bh + gh
+        footer_h = 18 * S if total_shown >= max_rows else 0
+        total_h  = op
         for _, rows in sections_out:
             total_h += _sec_height(rows) + gh
-        total_h += footer_h + (60 * S if not sections_out else 0)
+        total_h += footer_h + op + (60 * S if not sections_out else 0)
 
         img  = Image.new("RGB", (img_w, total_h), _D["bg"])
         draw = ImageDraw.Draw(img)
-
-        # Main banner
-        draw.rectangle([0, 0, img_w, bh], fill=_D["banner"])
-        draw.line([0, bh, img_w, bh], fill=_D["bdr_hdr"], width=S)
-        draw.text((op, (bh - 14 * S) // 2),
-                  ("Batching Incentive & Deduction Report"
-                   + (f"  —  {month_label}" if month_label else "")),
-                  fill=_D["txt"], font=f_ban)
-        y = bh + gh
+        y    = op
 
         for title, rows in sections_out:
             y = _draw_premium_table(
@@ -634,9 +638,8 @@ def create_report_preview_image(df, output_path, max_rows=30, month_label=""):
             y += gh
 
         if total_shown >= max_rows:
-            draw.text((op, y + 4 * S),
-                      (f"Showing first {max_rows} rows only. "
-                       "Full report is in the attached Excel file."),
+            draw.text((op, y + 2 * S),
+                      (f"Showing first {max_rows} rows. Full report in attached Excel."),
                       fill=_D["txt_mut"], font=f_foot)
 
         img.save(output_path, "PNG", dpi=(144, 144))
@@ -654,19 +657,16 @@ def create_report_preview_image(df, output_path, max_rows=30, month_label=""):
 
 def send_report_email(to_emails, cc_emails, subject, body,
                       attachment_bytes=None, attachment_name=None,
-                      html_body=None, inline_image_path=None) -> dict:
+                      html_body=None, inline_image_path=None,
+                      extra_inline_image_path=None) -> dict:
     """
-    Send the report email with optional inline PNG preview and Excel attachment.
+    Send the report email with optional inline PNG preview(s) and Excel attachment.
 
-    When inline_image_path points to an existing PNG file the message uses a
-    multipart/related structure so the image is embedded inline (CID reference).
-    html_body must include <img src="cid:report_preview"> to display it.
+    inline_image_path       → first inline image  (CID: report_preview)
+    extra_inline_image_path → second inline image (CID: report_preview_2) — TP plant table
 
-    Falls back to a plain EmailMessage (no inline image) when the image file
-    is missing or image generation failed.
-
+    Falls back to plain EmailMessage when no valid image paths are provided.
     Returns {"success": bool, "error": str | None}.
-    Every attempt is recorded in the email_log table.
     """
     cfg     = get_smtp_config()
     to_list = _split_emails(to_emails)
@@ -682,10 +682,14 @@ def send_report_email(to_emails, cc_emails, subject, body,
             use_image = bool(inline_image_path and os.path.isfile(inline_image_path))
 
             if use_image:
+                img2 = (extra_inline_image_path
+                        if extra_inline_image_path and os.path.isfile(extra_inline_image_path)
+                        else None)
                 msg = _build_mime_with_inline_image(
                     cfg, to_list, cc_list, subject, body,
                     html_body, inline_image_path,
-                    attachment_bytes, attachment_name)
+                    attachment_bytes, attachment_name,
+                    image_path_2=img2)
             else:
                 # Fallback: standard EmailMessage (no inline image)
                 msg = EmailMessage()
@@ -727,13 +731,15 @@ def send_report_email(to_emails, cc_emails, subject, body,
 
 def _build_mime_with_inline_image(cfg, to_list, cc_list, subject, body,
                                   html_body, image_path,
-                                  attachment_bytes, attachment_name):
+                                  attachment_bytes, attachment_name,
+                                  image_path_2=None):
     """
     Build multipart/mixed message:
       mixed
       ├── related
-      │   ├── HTML (with <img src="cid:report_preview">)
-      │   └── PNG  (Content-ID: <report_preview>, inline)
+      │   ├── HTML (with <img src="cid:report_preview"> and optionally cid:report_preview_2)
+      │   ├── PNG  (Content-ID: <report_preview>)
+      │   └── PNG  (Content-ID: <report_preview_2>)  ← optional second image
       └── Excel attachment (if provided)
     """
     from email.mime.multipart import MIMEMultipart
@@ -749,7 +755,6 @@ def _build_mime_with_inline_image(cfg, to_list, cc_list, subject, body,
         outer["Cc"] = ", ".join(cc_list)
     outer["Subject"] = subject or cfg["subject"]
 
-    # related = HTML body + inline image
     related = MIMEMultipart("related")
     html = html_body or f"<p>{body or 'Please find the report preview below.'}</p>"
     related.attach(MIMEText(html, "html", "utf-8"))
@@ -761,9 +766,18 @@ def _build_mime_with_inline_image(cfg, to_list, cc_list, subject, body,
     img_part.add_header("Content-Disposition", "inline",
                         filename="report_preview.png")
     related.attach(img_part)
+
+    if image_path_2:
+        with open(image_path_2, "rb") as fh:
+            img_data2 = fh.read()
+        img_part2 = MIMEImage(img_data2, _subtype="png")
+        img_part2.add_header("Content-ID", "<report_preview_2>")
+        img_part2.add_header("Content-Disposition", "inline",
+                             filename="report_preview_2.png")
+        related.attach(img_part2)
+
     outer.attach(related)
 
-    # Excel attachment
     if attachment_bytes:
         xlsx = MIMEBase(_XLSX_MAINTYPE, _XLSX_SUBTYPE)
         xlsx.set_payload(attachment_bytes)
