@@ -158,23 +158,22 @@ _GAP  = 16   # gap between table sections
 
 # Premium dark palette — all opaque RGB, simulating glass/gloss on dark bg
 _D = {
-    "bg_top":  ( 8,  26,  51),   # #081A33 gradient top
-    "bg_bot":  (11,  22,  40),   # #0B1628 gradient bottom
-    "banner":  ( 4,  14,  30),   # #060E1E main title bar
-    "sec":     ( 8,  43,  73),   # #082B49 section title bg
-    "hdr":     (10,  37,  64),   # #0A2540 column header bg
-    "row_odd": (14,  33,  56),   # #0E2138 neutral odd row
-    "row_even":(11,  26,  46),   # #0B1A2E neutral even row
-    "pan_row": (18,  45,  74),   # #122D4A PAN India special row
-    "red":     (90,  20,  30),   # #5A141E deduction / below threshold
-    "amber":   (90,  62,  14),   # #5A3E0E warning / mid range
-    "green":   (14,  72,  46),   # #0E482E good / incentive
-    "bdr_out": (143, 163, 184),  # #8FA3B8 outer border (2 px)
+    "bg":      (255, 255, 255),  # #FFFFFF clean white image background
+    "banner":  ( 4,  14,  30),   # #060E1E main title bar (dark)
+    "sec":     ( 8,  43,  73),   # #082B49 section title bg (dark)
+    "hdr":     (10,  37,  64),   # #0A2540 column header bg (dark)
+    "row_odd": (245, 247, 250),  # #F5F7FA neutral odd row (very light)
+    "row_even":(255, 255, 255),  # #FFFFFF neutral even row (white)
+    "pan_row": (220, 228, 240),  # #DCE4F0 PAN India light blue-gray
+    "red":     (90,  20,  30),   # #5A141E deduction / below threshold (dark glossy)
+    "amber":   (90,  62,  14),   # #5A3E0E warning / mid range (dark glossy)
+    "green":   (14,  72,  46),   # #0E482E good / incentive (dark glossy)
+    "bdr_out": ( 49,  68,  92),  # #31445C outer border (dark blue-gray)
     "bdr_hdr": ( 95, 120, 149),  # #5F7895 header cell borders
-    "bdr_in":  ( 49,  68,  92),  # #31445C inner data cell borders
-    "txt":     (248, 250, 252),  # #F8FAFC main white text
-    "txt_dim": (203, 213, 225),  # #CBD5E1 secondary text
-    "txt_mut": (148, 163, 184),  # #94A3B8 muted footer text
+    "bdr_in":  (100, 118, 140),  # #64768C inner cell borders — visible on both white and dark rows
+    "txt":     (248, 250, 252),  # #F8FAFC white text (for dark bg elements)
+    "txt_dark":(30,  41,  59),   # #1E293B dark text (for light bg neutral rows)
+    "txt_mut": (100, 116, 139),  # #64748B muted footer text
 }
 
 
@@ -190,6 +189,13 @@ def _pil_font(pt, bold=False):
         except OSError:
             pass
     return ImageFont.load_default()
+
+
+def _auto_txt(bg):
+    """White text on dark backgrounds, dark text on light backgrounds."""
+    r, g, b = bg
+    lum = 0.299 * r + 0.587 * g + 0.114 * b
+    return _D["txt"] if lum < 140 else _D["txt_dark"]
 
 
 def _fw(font, text):
@@ -297,14 +303,14 @@ def _draw_premium_table(draw, sec_title, col_defs, data_rows, row_color_fn,
     draw.line([x, y,   x1, y],   fill=_D["bdr_out"], width=S)
     draw.line([x, y,   x,  y + sh], fill=_D["bdr_out"], width=S)
     draw.line([x1, y,  x1, y + sh], fill=_D["bdr_out"], width=S)
-    draw.line([x, y + sh, x1, y + sh], fill=_D["bdr_hdr"], width=1)
+    draw.line([x, y + sh, x1, y + sh], fill=_D["bdr_hdr"], width=S)
     y += sh
 
     # Column header row
     cx = x
     for (_, w, align, _), lines in zip(col_defs, hdr_lines):
         draw.rectangle([cx, y, cx + w, y + hh], fill=_D["hdr"])
-        draw.line([cx + w, y, cx + w, y + hh], fill=_D["bdr_hdr"], width=1)
+        draw.line([cx + w, y, cx + w, y + hh], fill=_D["bdr_hdr"], width=S)
         tby = y + max(cp // 2, (hh - len(lines) * lh) // 2)
         for line in lines:
             tw = _fw(f_hdr, line)
@@ -325,14 +331,15 @@ def _draw_premium_table(draw, sec_title, col_defs, data_rows, row_color_fn,
         cx = x
         for (_, w, align, _), lines in zip(col_defs, cells_lines):
             draw.rectangle([cx, y, cx + w, y + rh], fill=bg)
-            draw.line([cx + w, y, cx + w, y + rh], fill=_D["bdr_in"], width=1)
-            draw.line([cx, y + rh, cx + w, y + rh], fill=_D["bdr_in"], width=1)
+            draw.line([cx + w, y, cx + w, y + rh], fill=_D["bdr_in"], width=S)
+            draw.line([cx, y + rh, cx + w, y + rh], fill=_D["bdr_in"], width=S)
             tby = y + max(cp // 2, (rh - len(lines) * lh) // 2)
+            txt_col = _auto_txt(bg)
             for line in lines:
                 tw = _fw(f_data, line)
                 tx = (cx + max(cp, (w - tw) // 2) if align == 'c'
                       else (cx + w - tw - cp if align == 'r' else cx + cp))
-                draw.text((tx, tby), line, fill=_D["txt"], font=f_data)
+                draw.text((tx, tby), line, fill=txt_col, font=f_data)
                 tby += lh
             cx += w
         draw.line([x, y,   x,  y + rh], fill=_D["bdr_out"], width=S)
@@ -468,8 +475,7 @@ def create_tp_preview_image(plant_rows, location_rows, month, year,
 
         total_h = 2 * op + bh + gh + loc_h + gh + plt_h + gh + footer_h
 
-        img  = Image.new("RGB", (img_w, total_h), _D["bg_top"])
-        _fill_gradient(img, _D["bg_top"], _D["bg_bot"])
+        img  = Image.new("RGB", (img_w, total_h), _D["bg"])
         draw = ImageDraw.Draw(img)
 
         # Main banner (dark bar at top)
@@ -609,8 +615,7 @@ def create_report_preview_image(df, output_path, max_rows=30, month_label=""):
             total_h += _sec_height(rows) + gh
         total_h += footer_h + (60 * S if not sections_out else 0)
 
-        img  = Image.new("RGB", (img_w, total_h), _D["bg_top"])
-        _fill_gradient(img, _D["bg_top"], _D["bg_bot"])
+        img  = Image.new("RGB", (img_w, total_h), _D["bg"])
         draw = ImageDraw.Draw(img)
 
         # Main banner
