@@ -246,6 +246,19 @@
       <a href="{{ url_for('tp_validation') }}">View skip log →</a>
     </div>
     {% endif %}
+
+    <hr style="margin:18px 0;border-color:#333">
+    <div class="section-title" style="font-size:13px;margin-bottom:8px">🔍 Find Correct Column Names</div>
+    <p class="caption" style="margin-bottom:10px">Not sure which column holds plant data? Click below to see all columns in the Oracle table and then update them in <a href="{{ url_for('tp_settings') }}">Settings → Oracle Column Names</a>.</p>
+    <button class="btn btn-secondary" id="show-cols-btn" onclick="loadTableColumns()" {% if not ora_ready %}disabled{% endif %}>🔍 Show Table Columns</button>
+    <div id="cols-result" style="margin-top:12px;display:none">
+      <div id="cols-loading" class="caption" style="display:none">Loading…</div>
+      <div id="cols-error" class="alert alert-error" style="display:none"></div>
+      <div id="cols-list" style="display:none">
+        <p class="caption" style="margin-bottom:6px">Columns in <strong>rdc_batch_trx_headers</strong>:</p>
+        <div id="cols-tags" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -259,6 +272,41 @@
   document.getElementById('oracle-form').addEventListener('submit', function() {
     document.getElementById('oracle-loading').classList.add('active');
   });
+
+  function loadTableColumns() {
+    var btn = document.getElementById('show-cols-btn');
+    var wrap = document.getElementById('cols-result');
+    var loading = document.getElementById('cols-loading');
+    var errDiv = document.getElementById('cols-error');
+    var listDiv = document.getElementById('cols-list');
+    var tagsDiv = document.getElementById('cols-tags');
+    btn.disabled = true;
+    wrap.style.display = 'block';
+    loading.style.display = 'block';
+    errDiv.style.display = 'none';
+    listDiv.style.display = 'none';
+    fetch('/tp/api/table-columns')
+      .then(r => r.json())
+      .then(data => {
+        loading.style.display = 'none';
+        if (!data.ok) {
+          errDiv.textContent = 'Error: ' + data.error;
+          errDiv.style.display = 'block';
+        } else {
+          tagsDiv.innerHTML = data.columns.map(c =>
+            '<span style="background:#1e2a3a;border:1px solid #334;border-radius:4px;padding:3px 8px;font-size:12px;font-family:monospace;color:#7ec8f7">' + c + '</span>'
+          ).join('');
+          listDiv.style.display = 'block';
+        }
+        btn.disabled = false;
+      })
+      .catch(e => {
+        loading.style.display = 'none';
+        errDiv.textContent = 'Network error: ' + e;
+        errDiv.style.display = 'block';
+        btn.disabled = false;
+      });
+  }
   var hash = location.hash.replace('#','');
   if (['sheets','oracle'].includes(hash)) switchTab('main', hash);
 

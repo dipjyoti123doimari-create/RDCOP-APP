@@ -1602,6 +1602,16 @@ def api_oracle_status():
                     "state": state, "label": label})
 
 
+@app.route("/tp/api/table-columns")
+def tp_api_table_columns():
+    """Return all column names in rdc_batch_trx_headers so the user can find the right plant column."""
+    try:
+        cols = oracle_connector.get_table_columns()
+        return jsonify({"ok": True, "columns": cols})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+
+
 # ── DOWNLOAD ENDPOINTS ────────────────────────────────────────────────────────
 
 def _snapshot_dfs():

@@ -192,6 +192,26 @@ def fetch_backend_data(from_date, to_date) -> tuple:
 
 # ── RDC-TP: fetch throughput data from same Oracle table ─────────────────────
 
+def get_table_columns() -> list:
+    """
+    Return all column names in rdc_batch_trx_headers from Oracle's data dict.
+    Used to help the user identify the correct plant/batch/time column names.
+    """
+    cfg = get_oracle_config()
+    _init_thick(cfg["instantclient"])
+    conn = oracledb.connect(user=cfg["user"], password=cfg["password"], dsn=_dsn(cfg))
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COLUMN_NAME FROM ALL_TAB_COLUMNS "
+            "WHERE TABLE_NAME = 'RDC_BATCH_TRX_HEADERS' "
+            "ORDER BY COLUMN_ID"
+        )
+        return [row[0] for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 def get_tp_oracle_cols() -> dict:
     """
     Return the Oracle column names used for the TP module.
