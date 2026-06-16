@@ -147,7 +147,7 @@
   <div class="kpi-card">
     <div class="kpi-label">PAN India Avg</div>
     <div class="kpi-value" style="font-size:24px">
-      {% for r in location_rows if r.is_pan_india %}{{ r.avg_throughput_pct }}%{% endfor %}
+      {% for r in location_rows if r.is_pan_india %}{{ r.avg_throughput_pct | round(0) | int }}%{% endfor %}
     </div>
   </div>
 </div>
@@ -223,7 +223,7 @@
           <td>{{ r.mixer_theo_cap }}</td>
           <td>{{ r.total_quantity | round(1) }}</td>
           <td>{{ r.total_time_min | round(1) }}</td>
-          <td><strong>{{ tp }}%</strong></td>
+          <td><strong>{{ tp | round(0) | int }}%</strong></td>
           <td>{{ r.batch_count }}</td>
         </tr>
         {% endfor %}
@@ -246,7 +246,7 @@
           <td>{% if r.is_pan_india %}<span style="color:var(--accent)">🇮🇳 {{ r.exco_location }}</span>{% else %}{{ r.exco_location }}{% endif %}</td>
           <td>{{ r.plant_count }}</td>
           <td>{{ r.total_quantity | round(1) }}</td>
-          <td><strong>{{ r.avg_throughput_pct }}%</strong></td>
+          <td><strong>{{ r.avg_throughput_pct | round(0) | int }}%</strong></td>
         </tr>
         {% endfor %}
       </tbody>
