@@ -184,7 +184,7 @@ _D = {
     "green":    (196, 244, 218),  # #C4F4DA frosted mint-green (good/incentive)
     "bdr_out":  ( 60,  90, 130),  # outer table border
     "bdr_hdr":  ( 88, 118, 158),  # header cell dividers
-    "bdr_in":   (185, 193, 208),  # #B9C1D0 inner gridlines — visible on all light bg
+    "bdr_in":   (140, 155, 180),  # inner gridlines — clearly visible on white/light rows
     "txt":      (248, 250, 252),  # white text (dark header/sec elements)
     "txt_dark": ( 25,  38,  58),  # #19263A dark navy text (on light rows)
     "txt_mut":  (100, 116, 139),  # muted footer text
@@ -446,12 +446,12 @@ def create_tp_location_image(location_rows, month, year, output_path):
     import calendar
     mon_tag = f"{calendar.month_abbr[month]}'{str(year)[-2:]}"
     LOC_COLS = [
-        ("#",                28, 'c', False),
-        ("Exco Location",   145, 'l', False),
-        ("Plants",           48, 'c', False),
-        ("Total Qty",        80, 'r', False),
-        ("Total Time (min)",110, 'r', False),
-        ("Avg TP %",         62, 'c', False),
+        ("#",              24, 'c', False),
+        ("Exco Location", 110, 'l', False),
+        ("Plants",         40, 'c', False),
+        ("Total Qty",      70, 'r', False),
+        ("Time (min)",     82, 'r', False),
+        ("Avg TP %",       54, 'c', False),
     ]
     rows_out = []
     for i, r in enumerate(location_rows, 1):
