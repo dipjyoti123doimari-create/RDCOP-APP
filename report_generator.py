@@ -55,7 +55,7 @@ _COL_MAP = {
 }
 
 # Which Excel columns are numbers (so we right-align + number-format them).
-_INT_COLS = {"Month", "Year", "Row Number"}
+_INT_COLS = {"Month", "Year", "Row Number", "Sr. no."}
 _NUM_COLS = {
     "Total Quantity", "YTD Maintenance Cost", "Incentive Rate",
     "Incentive Amount", "Deduction Target", "Shortfall Quantity",
@@ -112,7 +112,7 @@ def _build_formats(wb):
     })
     fmts["label"] = wb.add_format({"bold": True, "align": "left", "border": 1})
 
-    bands = {"normal": None, "green": "#D4EDDA", "red": "#F8D7DA"}
+    bands = {"normal": None, "green": "#92D492", "red": "#FFB3B3"}
     types = {"text": None, "int": "#,##0", "num": "#,##0.00"}
     for bname, bcolor in bands.items():
         for tname, numfmt in types.items():
@@ -126,10 +126,14 @@ def _build_formats(wb):
     return fmts
 
 
-def _write_table(ws, fmts, out_df, header_overrides=None):
+def _write_table(ws, fmts, out_df, header_overrides=None, add_srno=True):
     """Write a DataFrame to a worksheet with header, colours and widths."""
     headers = list(out_df.columns)
     overrides = header_overrides or {}
+
+    # Prepend Sr. no. column
+    if add_srno:
+        headers = ["Sr. no."] + headers
 
     # Header row (frozen)
     for c, h in enumerate(headers):
@@ -139,28 +143,40 @@ def _write_table(ws, fmts, out_df, header_overrides=None):
     if out_df.empty:
         ws.write(1, 0, "No records.", fmts["normal_text"])
         for c, h in enumerate(headers):
-            ws.set_column(c, c, max(len(str(overrides.get(h, h))) + 2, 10))
+            ws.set_column(c, c, max(len(str(overrides.get(h, h))) + 1, 8))
         return
 
     # Data rows
+    data_headers = headers[1:] if add_srno else headers
     for r, (_, row) in enumerate(out_df.iterrows(), start=1):
         inc = row.get("Incentive Amount", 0) or 0
         ded = row.get("Deduction Amount", 0) or 0
         band = "red" if ded > 0 else ("green" if inc > 0 else "normal")
-        for c, h in enumerate(headers):
+        col_offset = 0
+        if add_srno:
+            ws.write(r, 0, r, fmts[f"{band}_int"])
+            col_offset = 1
+        for c, h in enumerate(data_headers):
             fmt = fmts[f"{band}_{_coltype(h)}"]
             val = row[h]
             if pd.isna(val):
-                ws.write_blank(r, c, None, fmt)
+                ws.write_blank(r, c + col_offset, None, fmt)
             else:
-                ws.write(r, c, val, fmt)
+                ws.write(r, c + col_offset, val, fmt)
 
-    # Auto column widths (header length vs longest value)
+    # Auto column widths (header length vs longest value) — capped tighter
     for c, h in enumerate(headers):
-        longest = out_df[h].astype(str).str.len().max()
-        longest = 0 if pd.isna(longest) else int(longest)
-        width = max(len(str(overrides.get(h, h))), longest) + 2
-        ws.set_column(c, c, min(max(width, 9), 42))
+        if add_srno and c == 0:
+            ws.set_column(0, 0, 7)
+            continue
+        data_col = h
+        if data_col in out_df.columns:
+            longest = out_df[data_col].astype(str).str.len().max()
+            longest = 0 if pd.isna(longest) else int(longest)
+        else:
+            longest = 0
+        width = max(len(str(overrides.get(h, h))), longest) + 1
+        ws.set_column(c, c, min(max(width, 8), 28))
 
 
 def _prepare_category_df(results_df, categories) -> pd.DataFrame:
@@ -367,11 +383,11 @@ def generate_excel_report(results_df, unmapped_df, validation_df, meta) -> bytes
 
     # 3) Unmapped Employees
     _write_table(wb.add_worksheet("Unmapped Employees"), fmts,
-                 _prepare_unmapped_df(unmapped_df))
+                 _prepare_unmapped_df(unmapped_df), add_srno=False)
 
     # 4) Validation Errors
     _write_table(wb.add_worksheet("Validation Errors"), fmts,
-                 _prepare_validation_df(validation_df))
+                 _prepare_validation_df(validation_df), add_srno=False)
 
     writer.close()
     return output.getvalue()
