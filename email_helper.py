@@ -163,13 +163,13 @@ def wrap_html_body_with_image(message_text, excel_attached=True,
 # ─────────────────────────────────────────────────────────────────────────────
 
 _S    = 2    # 2× Retina scale factor
-_OP   = 14   # outer image padding (virtual px)
-_CP   = 6    # cell inner padding (virtual px)
-_SH   = 28   # section title row height
-_HH   = 32   # column header row height
-_DROW = 20   # base data row height (compact — fits more rows)
-_LH   = 14   # text line height (virtual px)
-_GAP  = 8    # gap between table sections
+_OP   = 10   # outer image padding (virtual px)
+_CP   = 4    # cell inner padding (virtual px)
+_SH   = 24   # section title row height
+_HH   = 28   # column header row height
+_DROW = 14   # base data row height (compact)
+_LH   = 12   # text line height (virtual px)
+_GAP  = 6    # gap between table sections
 
 # Frosted-glass palette — light tinted rows on white background, dark navy headers
 _D = {
@@ -398,11 +398,11 @@ def _tp_build_image(col_defs_raw, data_rows_out, row_color_fn,
         hh_b = _HH   * S
         sh   = _SH   * S
 
-        f_sec  = _pil_font(10, bold=True)
-        f_hdr  = _pil_font(8,  bold=True)
-        f_data = _pil_font(8,  bold=False)
-        f_bold = _pil_font(8,  bold=True)
-        f_foot = _pil_font(7,  bold=False)
+        f_sec  = _pil_font(9,  bold=True)
+        f_hdr  = _pil_font(7,  bold=True)
+        f_data = _pil_font(7,  bold=False)
+        f_bold = _pil_font(7,  bold=True)
+        f_foot = _pil_font(6,  bold=False)
 
         col_defs = [(h, w * S, a, wp) for h, w, a, wp in col_defs_raw]
         tbl_w    = sum(d[1] for d in col_defs)
@@ -480,13 +480,13 @@ def create_tp_plant_image(plant_rows, month, year, output_path):
     import calendar
     mon_tag = f"{calendar.month_abbr[month]}'{str(year)[-2:]}"
     PLT_COLS = [
-        ("#",               26, 'c', False),
-        ("Plant",          188, 'l', True),
-        ("Exco Location",   90, 'l', False),
-        ("Business Head",  110, 'l', False),
-        ("Total Qty",       78, 'r', False),
-        ("Time (min)",      74, 'r', False),
-        ("TP %",            52, 'c', False),
+        ("#",               22, 'c', False),
+        ("Plant",          160, 'l', True),
+        ("Exco Location",   76, 'l', False),
+        ("Business Head",   90, 'l', False),
+        ("Total Qty",       68, 'r', False),
+        ("Time (min)",      64, 'r', False),
+        ("TP %",            46, 'c', False),
     ]
     rows_out = []
     for i, r in enumerate(plant_rows, 1):
