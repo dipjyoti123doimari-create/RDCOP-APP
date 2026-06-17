@@ -466,7 +466,10 @@ def create_tp_location_image(location_rows, month, year, output_path):
             f"{pct}%",
         ])
     def _loc_color(ri, row):
-        return _tp_row_color(row[-1], row[1] if len(row) > 1 else "")
+        name = row[1] if len(row) > 1 else ""
+        if "■" in name or "PAN" in name.upper():
+            return (_D["pan_row"], True)
+        return (_D["row_odd"] if ri % 2 == 0 else _D["row_even"], False)
     return _tp_build_image(LOC_COLS, rows_out, _loc_color,
                            f"Location wise Throughput — {mon_tag}",
                            output_path)
