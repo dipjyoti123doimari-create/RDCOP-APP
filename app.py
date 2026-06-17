@@ -923,7 +923,7 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
                 f'white-space:normal;word-break:break-word;line-height:1.2;width:{w}"')
 
     # ── Location table — plain rows, PAN India row colored ───────────────────
-    L_COLS = [("Sr. no.","5%"),("Exco Location","25%"),("Plants","8%"),
+    L_COLS = [("Sr. no.","3%"),("Exco Location","27%"),("Plants","8%"),
               ("Total Qty","16%"),("Time (min)","16%"),("Avg TP %","10%")]
     ths = "".join(f'<th {_th(w)}>{h}</th>' for h, w in L_COLS)
 
@@ -972,7 +972,7 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
     )
 
     # ── Plant table — full list, color-coded by TP % ─────────────────────────
-    P_COLS = [("Sr. no.","5%"),("Plant","21%"),("Exco Location","11%"),
+    P_COLS = [("Sr. no.","3%"),("Plant","23%"),("Exco Location","11%"),
               ("Business Head","11%"),("Plant Manager","11%"),
               ("Mixer Cap","7%"),("Total Qty","10%"),("Time (min)","10%"),("TP %","8%")]
     ths2 = "".join(f'<th {_th(w)}>{h}</th>' for h, w in P_COLS)
@@ -987,7 +987,7 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
         plant_body += (
             f'<tr>'
             f'<td style="{TD};text-align:center">{i}</td>'
-            f'<td style="{TD};text-align:left">{r.get("plant_name","")}</td>'
+            f'<td style="{TD};text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{r.get("plant_name","")}</td>'
             f'<td style="{TD};text-align:left">{r.get("exco_location","")}</td>'
             f'<td style="{TD};text-align:left">{r.get("business_head","")}</td>'
             f'<td style="{TD};text-align:left">{r.get("plant_manager","")}</td>'
