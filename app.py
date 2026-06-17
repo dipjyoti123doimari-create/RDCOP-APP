@@ -813,81 +813,107 @@ def _tp_mon_tag(month, year):
 
 
 def _tp_build_excel(plant_rows, location_rows, month, year):
-    """Return color-coded, wrapped-header Excel bytes for the TP report."""
+    """Return Excel bytes matching exactly the HTML email tables (same headers, columns, colors)."""
     from openpyxl import Workbook
     from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
 
     mon_tag = _tp_mon_tag(month, year)
 
-    RED_FILL    = PatternFill("solid", fgColor="FFD5D5")
-    YEL_FILL    = PatternFill("solid", fgColor="FFF3CC")
-    GRN_FILL    = PatternFill("solid", fgColor="D5F0D5")
-    HDR_FILL    = PatternFill("solid", fgColor="1F4E79")
-    TITLE_FILL  = PatternFill("solid", fgColor="0D2B52")
-    HDR_FONT    = Font(bold=True, color="FFFFFF", size=10)
-    TITLE_FONT  = Font(bold=True, color="FFFFFF", size=11)
-    WRAP        = Alignment(wrap_text=True, vertical="center", horizontal="center")
-    CTR         = Alignment(vertical="center", horizontal="center")
-    LEFT        = Alignment(vertical="center", horizontal="left")
-    thin        = Side(style="thin", color="CCCCCC")
-    BDR         = Border(left=thin, right=thin, top=thin, bottom=thin)
+    # Colors matching the HTML email exactly
+    RED_FILL   = PatternFill("solid", fgColor="FFB3B3")
+    YEL_FILL   = PatternFill("solid", fgColor="FFE066")
+    GRN_FILL   = PatternFill("solid", fgColor="92D492")
+    PAN_FILL   = PatternFill("solid", fgColor="D9D9D9")
+    HDR_FILL   = PatternFill("solid", fgColor="0A2540")
+    PLAIN_FILL = PatternFill("solid", fgColor="FFFFFF")
 
-    def _fill(pct):
-        return RED_FILL if pct < 60 else (YEL_FILL if pct < 75 else GRN_FILL)
+    # Font colors complementing each background (matching HTML _fg())
+    RED_FONT   = Font(color="7B1F1F", size=10)
+    YEL_FONT   = Font(color="5C4200", size=10)
+    GRN_FONT   = Font(color="1A5C1A", size=10)
+    PAN_FONT   = Font(bold=True, color="222222", size=10)
+    HDR_FONT   = Font(bold=True, color="FFFFFF", size=10)
+    TITLE_FONT = Font(bold=True, color="FFFFFF", size=11)
+    PLAIN_FONT = Font(color="19263A", size=10)
+
+    CTR   = Alignment(vertical="center", horizontal="center")
+    LEFT  = Alignment(vertical="center", horizontal="left")
+    WRAP  = Alignment(wrap_text=True, vertical="center", horizontal="center")
+    thin  = Side(style="thin", color="9A9A9A")
+    BDR   = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def _fill_font(pct):
+        if pct < 60:  return RED_FILL, RED_FONT
+        if pct < 75:  return YEL_FILL, YEL_FONT
+        return GRN_FILL, GRN_FONT
 
     wb = Workbook()
 
-    # ── Location sheet ──────────────────────────────────────────────────────────
+    # ── Location sheet — Sr. no., Exco Location, Plants, Total Qty, Time (min), Avg TP %
     ws_l = wb.active
     ws_l.title = "Location Throughput"
-    loc_heads = ["Exco Location", "Plants", "Total Qty", "Avg Throughput %"]
-    ws_l.merge_cells(f"A1:{get_column_letter(len(loc_heads))}1")
+    LOC_HEADS = ["Sr. no.", "Exco Location", "Plants", "Total Qty", "Time (min)", "Avg TP %"]
+    ws_l.merge_cells(f"A1:{get_column_letter(len(LOC_HEADS))}1")
     t = ws_l.cell(1, 1, f"Location wise Throughput - {mon_tag}")
-    t.fill = TITLE_FILL; t.font = TITLE_FONT; t.alignment = CTR
+    t.fill = HDR_FILL; t.font = TITLE_FONT; t.alignment = CTR
     ws_l.row_dimensions[1].height = 22
-    for ci, h in enumerate(loc_heads, 1):
+    for ci, h in enumerate(LOC_HEADS, 1):
         c = ws_l.cell(2, ci, h)
         c.fill = HDR_FILL; c.font = HDR_FONT; c.alignment = WRAP; c.border = BDR
-    ws_l.row_dimensions[2].height = 32
+    ws_l.row_dimensions[2].height = 28
+    srno = 1
     for ri, row in enumerate(location_rows, 3):
         pct = float(row.get("avg_throughput_pct", 0))
-        f   = _fill(pct)
-        vals = [row.get("exco_location",""), row.get("plant_count",0),
-                round(float(row.get("total_quantity",0)), 1), f"{round(pct)}%"]
+        pan = bool(row.get("is_pan_india"))
+        pct_fill, pct_font = _fill_font(pct)
+        if pan:
+            row_fill, row_font = PAN_FILL, PAN_FONT
+            srno_val = "—"
+        else:
+            row_fill, row_font = PLAIN_FILL, PLAIN_FONT
+            srno_val = srno; srno += 1
+        vals = [srno_val, row.get("exco_location",""), row.get("plant_count",0),
+                round(float(row.get("total_quantity",0)), 1),
+                round(float(row.get("total_time_min",0)), 1), f"{round(pct)}%"]
         for ci, v in enumerate(vals, 1):
             c = ws_l.cell(ri, ci, v)
-            c.fill = f; c.border = BDR
-            c.alignment = LEFT if ci == 1 else CTR
-    for ci, w in enumerate([24, 9, 12, 18], 1):
+            c.border = BDR
+            c.alignment = LEFT if ci == 2 else CTR
+            if ci == len(LOC_HEADS):          # Avg TP % cell always gets pct color
+                c.fill = pct_fill; c.font = Font(bold=pan, color=pct_font.color, size=10)
+            else:
+                c.fill = row_fill; c.font = row_font
+    for ci, w in enumerate([6, 22, 8, 12, 12, 10], 1):
         ws_l.column_dimensions[get_column_letter(ci)].width = w
 
-    # ── Plant sheet ─────────────────────────────────────────────────────────────
+    # ── Plant sheet — Sr. no., Plant, Exco Location, Business Head, Plant Manager,
+    #                 Mixer Cap, Total Qty, Time (min), TP %
     ws_p = wb.create_sheet("Plant Throughput")
-    plant_heads = ["Plant Code","Plant","Exco Location","Business Head",
-                   "Plant Manager","Mixer Cap","Total Qty","Time (min)","Throughput %","Batches"]
-    ws_p.merge_cells(f"A1:{get_column_letter(len(plant_heads))}1")
+    PLT_HEADS = ["Sr. no.", "Plant", "Exco Location", "Business Head",
+                 "Plant Manager", "Mixer Cap", "Total Qty", "Time (min)", "TP %"]
+    ws_p.merge_cells(f"A1:{get_column_letter(len(PLT_HEADS))}1")
     t2 = ws_p.cell(1, 1, f"Plant Throughput report - {mon_tag}")
-    t2.fill = TITLE_FILL; t2.font = TITLE_FONT; t2.alignment = CTR
+    t2.fill = HDR_FILL; t2.font = TITLE_FONT; t2.alignment = CTR
     ws_p.row_dimensions[1].height = 22
-    for ci, h in enumerate(plant_heads, 1):
+    for ci, h in enumerate(PLT_HEADS, 1):
         c = ws_p.cell(2, ci, h)
         c.fill = HDR_FILL; c.font = HDR_FONT; c.alignment = WRAP; c.border = BDR
-    ws_p.row_dimensions[2].height = 40
+    ws_p.row_dimensions[2].height = 28
     for ri, row in enumerate(plant_rows, 3):
-        pct = float(row.get("throughput_pct", 0))
-        f   = _fill(pct)
-        vals = [row.get("lookup_code",""), row.get("plant_name",""),
-                row.get("exco_location",""), row.get("business_head",""),
-                row.get("plant_manager",""), row.get("mixer_theo_cap",""),
+        pct  = float(row.get("throughput_pct", 0))
+        fill, fnt = _fill_font(pct)
+        vals = [ri - 2, row.get("plant_name",""), row.get("exco_location",""),
+                row.get("business_head",""), row.get("plant_manager",""),
+                row.get("mixer_theo_cap",""),
                 round(float(row.get("total_quantity",0)), 1),
                 round(float(row.get("total_time_min",0)), 1),
-                f"{round(pct)}%", row.get("batch_count",0)]
+                f"{round(pct)}%"]
         for ci, v in enumerate(vals, 1):
             c = ws_p.cell(ri, ci, v)
-            c.fill = f; c.border = BDR
-            c.alignment = CTR if ci > 2 else LEFT
-    for ci, w in enumerate([12,22,18,20,20,10,11,11,13,9], 1):
+            c.fill = fill; c.font = fnt; c.border = BDR
+            c.alignment = LEFT if ci == 2 else CTR
+    for ci, w in enumerate([6, 28, 16, 18, 18, 10, 11, 11, 8], 1):
         ws_p.column_dimensions[get_column_letter(ci)].width = w
 
     buf = io.BytesIO()
