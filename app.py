@@ -967,11 +967,13 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
     TTL     = (f'style="{F}font-size:12px;font-weight:bold;background:#082B49;color:#fff;'
                f'padding:6px 8px;border:1px solid #7A7A7A;text-align:left"')
 
-    def _th(align="center", wrap=False):
+    def _th(align="center", wrap=False, w=None):
         ws = "" if wrap else "white-space:nowrap;"
-        return (f'style="{F}background:#082B49;color:#fff;font-weight:bold;'
+        wd = f"width:{w}px;" if w else ""
+        wa = f'width="{w}" ' if w else ""
+        return (f'{wa}style="{F}background:#082B49;color:#fff;font-weight:bold;'
                 f'padding:6px 8px;border:1px solid #7A7A7A;text-align:{align};'
-                f'{ws}line-height:1.2;vertical-align:middle"')
+                f'{ws}{wd}line-height:1.2;vertical-align:middle"')
 
     def _td(bg, fg, align, bold=False, top_bdr="", wrap=False):
         fw  = "font-weight:bold;" if bold else ""
@@ -1022,7 +1024,7 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
         f'<table cellpadding="0" cellspacing="0" style="{TBL_LOC}">'
         f'<tr><td colspan="6" {TTL}>Location wise Throughput - {mon_tag}</td></tr>'
         f'<tr>'
-        f'<th {_th("center")}>Sr. no.</th>'
+        f'<th {_th("center", w=45)}>Sr. no.</th>'
         f'<th {_th("left")}>Exco Location</th>'
         f'<th {_th("center")}>Plants</th>'
         f'<th {_th("right")}>Total Qty</th>'
@@ -1059,7 +1061,7 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
         f'<table cellpadding="0" cellspacing="0" style="{TBL_PLT}">'
         f'<tr><td colspan="8" {TTL}>Plant Throughput Report - {mon_tag}</td></tr>'
         f'<tr>'
-        f'<th {_th("center")}>Sr. no.</th>'
+        f'<th {_th("center", w=45)}>Sr. no.</th>'
         f'<th {_th("center", wrap=True)}>Plant</th>'
         f'<th {_th("center")}>Business Head</th>'
         f'<th {_th("center")}>Plant Manager</th>'
