@@ -49,10 +49,12 @@ document.addEventListener('DOMContentLoaded', function () {
     bar.appendChild(fill);
     el.appendChild(bar);
 
-    /* drive width + percentage via setInterval when .active is toggled */
+    /* drive width + percentage via setInterval when .active is toggled
+       (skipped when _realProgress=true — real polling takes over instead) */
     var timer = null; var p = 0;
     new MutationObserver(function () {
       if (el.classList.contains('active')) {
+        if (el._realProgress) return;        // real-time polling is driving this
         p = 0; fill.style.width = '0%'; pct.textContent = '0%';
         clearInterval(timer);
         timer = setInterval(function () {
@@ -64,10 +66,57 @@ document.addEventListener('DOMContentLoaded', function () {
         clearInterval(timer);
         fill.style.width = '0%';
         pct.textContent  = '';
+        el._realProgress = false;
       }
     }).observe(el, { attributes: true, attributeFilter: ['class'] });
   });
 });
+
+/* ---- AJAX form submit with real-time server progress polling ---- */
+function submitFormAjax(formEl, loadEl, btnEl) {
+  formEl.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (btnEl) btnEl.disabled = true;
+
+    var fill = loadEl.querySelector('.loading-bar-fill');
+    var pct  = loadEl.querySelector('.loading-pct');
+
+    function setBar(v, msg) {
+      if (fill) fill.style.width = v + '%';
+      if (pct)  pct.textContent  = Math.round(v) + '%';
+    }
+
+    /* flag MutationObserver to skip fake timer, then activate */
+    loadEl._realProgress = true;
+    loadEl.classList.add('active');
+    setBar(0);
+
+    /* poll /api/progress every 250 ms */
+    var pollTimer = setInterval(function () {
+      fetch('/api/progress')
+        .then(function (r) { return r.json(); })
+        .then(function (j) { setBar(j.pct, j.msg); })
+        .catch(function () {});
+    }, 250);
+
+    /* submit via fetch */
+    fetch(formEl.action, { method: 'POST', body: new FormData(formEl) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        clearInterval(pollTimer);
+        setBar(100);
+        setTimeout(function () {
+          window.location.href = j.redirect || window.location.pathname;
+        }, 350);
+      })
+      .catch(function (err) {
+        clearInterval(pollTimer);
+        loadEl.classList.remove('active');
+        if (btnEl) btnEl.disabled = false;
+        showToast('Error: ' + err.message, 'error');
+      });
+  });
+}
 
 /* ---- Tabs ---- */
 function switchTab(set, id) {

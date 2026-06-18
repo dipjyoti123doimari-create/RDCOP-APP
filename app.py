@@ -20,6 +20,7 @@ import subprocess
 import sys
 import threading
 import traceback
+import uuid
 from datetime import date as _date, datetime as _dt, timedelta
 
 import pandas as pd
@@ -88,6 +89,17 @@ def _ms(module: str, key: str, default=None):
 
 def _mss(module: str, key: str, val):
     _S[f"{module}.{key}"] = val
+
+
+# ── Real-time operation progress (single-user, single active job at a time) ───
+_progress: dict = {"pct": 0, "msg": ""}
+_progress_lock = threading.Lock()
+
+
+def _set_progress(pct: int, msg: str = ""):
+    with _progress_lock:
+        _progress["pct"] = pct
+        _progress["msg"] = msg
 
 
 # ── Boot ─────────────────────────────────────────────────────────────────────
@@ -595,12 +607,16 @@ def tp_fetch_oracle():
     to_date   = request.form.get("to_date", "")
     if not from_date or not to_date:
         flash("Please select both From and To dates.", "error")
-        return redirect(url_for("tp_data_uploader"))
+        return jsonify({"ok": False, "redirect": url_for("tp_data_uploader")})
     try:
+        _set_progress(20, "Fetching TP data from Oracle…")
         raw_df, ora_warnings = oracle_connector.fetch_tp_data(from_date, to_date)
+        _set_progress(55, "Parsing plant records…")
         parsed, skip_log     = tp_calculator.parse_oracle_df(raw_df)
+        _set_progress(75, "Saving to database…")
         oracle_connector.save_tp_oracle_data(raw_df, from_date, to_date, parsed, replace=True)
-        database.purge_old_oracle_data()   # keep only previous + current month
+        _set_progress(90, "Cleaning old records…")
+        database.purge_old_oracle_data()
         _mss("tp", "skip_log", skip_log)
         _mss("tp", "ora_from", from_date)
         _mss("tp", "ora_to",   to_date)
@@ -609,7 +625,8 @@ def tp_fetch_oracle():
         flash(f"✅ {len(parsed)} rows fetched & saved ({len(skip_log)} skipped).", "success")
     except Exception as exc:
         flash(f"Oracle error: {exc}", "error")
-    return redirect(url_for("tp_data_uploader"))
+    _set_progress(100, "Complete")
+    return jsonify({"ok": True, "redirect": url_for("tp_data_uploader")})
 
 
 @app.route("/tp/action/sync-sheets", methods=["POST"])
@@ -618,15 +635,17 @@ def tp_sync_sheets():
                    or database.get_module_setting("tp", "gsheet_id",
                                                    database.get_setting("gsheet_id", "")))
     worksheet   = request.form.get("worksheet", "Plant Data for TP").strip()
+    _set_progress(20, "Syncing plant data from Google Sheets…")
     result      = google_sheets.sync_tp_plant_data(sheet_id, worksheet)
+    _set_progress(85, "Saving settings…")
     if result["error"]:
         flash(f"Sync failed: {result['error']}", "error")
     else:
-        # Remember the TP sheet id/worksheet so future syncs reuse them.
         database.set_module_setting("tp", "gsheet_id", google_sheets.extract_sheet_id(sheet_id))
         database.set_module_setting("tp", "gsheet_worksheet", worksheet)
         flash(f"✅ {result['rows_synced']} plant rows synced from Google Sheets ({result['mode']} mode).", "success")
-    return redirect(url_for("tp_data_uploader"))
+    _set_progress(100, "Complete")
+    return jsonify({"ok": True, "redirect": url_for("tp_data_uploader")})
 
 
 # ── Calculate ─────────────────────────────────────────────────────────────────
@@ -645,14 +664,16 @@ def tp_calculate():
             td = _date.fromisoformat(to_s)
         except (ValueError, TypeError):
             flash("Please select valid From and To dates.", "error")
-            return redirect(url_for("tp_calculate"))
+            return jsonify({"ok": False, "redirect": url_for("tp_calculate")})
         if fd > td:
             flash("'From Date' must be on or before 'To Date'.", "error")
-            return redirect(url_for("tp_calculate"))
+            return jsonify({"ok": False, "redirect": url_for("tp_calculate")})
 
         month, year = fd.month, fd.year
+        _set_progress(20, "Loading Oracle data…")
         plant_rows, location_rows, warnings = tp_calculator.run_tp_calculation(
             month, year, from_date=str(fd), to_date=str(td))
+        _set_progress(80, "Saving throughput results…")
         _mss("tp", "plant_rows",    plant_rows)
         _mss("tp", "location_rows", location_rows)
         _mss("tp", "calc_warnings", warnings)
@@ -669,7 +690,8 @@ def tp_calculate():
                   f"{len([l for l in location_rows if not l['is_pan_india']])} locations.", "success")
         else:
             flash("No results produced — check data and warnings.", "warning")
-        return redirect(url_for("tp_calculate"))
+        _set_progress(100, "Complete")
+        return jsonify({"ok": True, "redirect": url_for("tp_calculate")})
 
     today = _date.today()
     ctx = _tp_ctx()
@@ -1634,9 +1656,11 @@ def sync_gsheet():
     worksheet = request.form.get("worksheet", "Sheet1").strip()
     if not sheet_id:
         flash("Please enter a Google Sheet ID.", "error")
-        return redirect(url_for("page_data_uploader"))
+        return jsonify({"ok": False, "redirect": url_for("page_data_uploader")})
     try:
+        _set_progress(15, "Connecting to Google Sheets…")
         clean_id = google_sheets.extract_sheet_id(sheet_id)
+        _set_progress(35, "Fetching master data…")
         df_sync  = google_sheets.fetch_master_data(clean_id, worksheet)
         now = _dt.now().isoformat(timespec="seconds")
         rows = [{"employee_code": str(r["Employee Code"]),
@@ -1647,13 +1671,16 @@ def sync_gsheet():
                  "plant_code":    str(r["Plant Code"]),
                  "updated_at":    now}
                 for _, r in df_sync.iterrows()]
+        _set_progress(70, "Saving employee records…")
         inserted = database.replace_table_rows("master_data", rows)
+        _set_progress(90, "Updating settings…")
         database.set_settings_bulk({"gsheet_id": clean_id, "gsheet_worksheet": worksheet,
                                     "gsheet_last_sync": now, "gsheet_last_count": str(inserted)})
         flash(f"Synced {inserted:,} employees from Google Sheets.", "success")
     except Exception as exc:
         flash(f"Sync failed: {exc}", "error")
-    return redirect(url_for("page_data_uploader"))
+    _set_progress(100, "Complete")
+    return jsonify({"ok": True, "redirect": url_for("page_data_uploader")})
 
 
 @app.route("/action/toggle-auto-sync", methods=["POST"])
@@ -1773,22 +1800,28 @@ def fetch_oracle():
     try:
         fd = _date.fromisoformat(from_s)
         td = _date.fromisoformat(to_s)
+        _set_progress(15, "Testing Oracle connection…")
         result = oracle_connector.test_connection()
         if not result["success"]:
             flash(f"Oracle connection failed: {result['error']}", "error")
-            return redirect(url_for("page_data_uploader") + "#oracle")
+            _set_progress(100, "Complete")
+            return jsonify({"ok": False, "redirect": url_for("page_data_uploader") + "#oracle"})
+        _set_progress(35, "Fetching data from Oracle…")
         df_ora, warns = oracle_connector.fetch_backend_data(fd, td)
         for w in warns:
             flash(w, "warning")
+        _set_progress(70, "Saving to database…")
         if df_ora.empty:
             flash("Oracle returned no rows for the selected date range.", "warning")
         else:
             saved = oracle_connector.save_oracle_backend_data(df_ora, fd, td, replace=replace)
-            database.purge_old_oracle_data()   # keep only previous + current month
+            _set_progress(90, "Cleaning old records…")
+            database.purge_old_oracle_data()
             flash(f"{'Replaced' if replace else 'Appended'} {saved:,} rows from Oracle.", "success")
     except Exception as exc:
         flash(f"Oracle fetch failed: {exc}", "error")
-    return redirect(url_for("page_data_uploader") + "#oracle")
+    _set_progress(100, "Complete")
+    return jsonify({"ok": True, "redirect": url_for("page_data_uploader") + "#oracle"})
 
 
 @app.route("/action/run-calculation", methods=["POST"])
@@ -1800,11 +1833,13 @@ def run_calculation():
         td = _date.fromisoformat(to_s)
         if fd > td:
             flash("'From Date' must be on or before 'To Date'.", "error")
-            return redirect(url_for("page_calculate"))
+            return jsonify({"ok": False, "redirect": url_for("page_calculate")})
+        _set_progress(15, "Loading employee data…")
         result = calculator.run_calculation(
             month=fd.month, year=fd.year,
             start_date=str(fd), end_date=str(td),
         )
+        _set_progress(90, "Saving results…")
         if result["error"]:
             flash(f"Calculation failed: {result['error']}", "error")
         else:
@@ -1812,16 +1847,21 @@ def run_calculation():
         _ss("calc_ran", True)
     except Exception as exc:
         flash(f"Calculation error: {exc}", "error")
-    return redirect(url_for("page_calculate"))
+    _set_progress(100, "Complete")
+    return jsonify({"ok": True, "redirect": url_for("page_calculate")})
 
 
 @app.route("/action/run-validation", methods=["POST"])
 def run_validation():
     try:
         errs: list = []
+        _set_progress(15, "Validating master data…")
         validations._validate_master_data(errs)
+        _set_progress(45, "Validating backend data…")
         validations._validate_backend_data(errs)
+        _set_progress(70, "Validating maintenance costs…")
         validations._validate_maintenance_cost(errs)
+        _set_progress(85, "Saving validation results…")
         validations.clear_validation_errors()
         if errs:
             database.insert_rows("validation_errors", errs)
@@ -1833,7 +1873,8 @@ def run_validation():
         flash(f"Validation complete — {len(errs)} error(s) found.", "success" if not errs else "warning")
     except Exception as exc:
         flash(f"Validation error: {exc}", "error")
-    return redirect(url_for("page_validation"))
+    _set_progress(100, "Complete")
+    return jsonify({"ok": True, "redirect": url_for("page_validation")})
 
 
 @app.route("/action/clear-validation", methods=["POST"])
@@ -1980,6 +2021,13 @@ def api_oracle_status():
         state, label = "unreachable", "Oracle unreachable (check office network / VPN)"
     return jsonify({"configured": configured, "reachable": reachable,
                     "state": state, "label": label})
+
+
+# ── Real-time progress polling endpoint ───────────────────────────────────────
+@app.route("/api/progress")
+def api_progress():
+    with _progress_lock:
+        return jsonify(dict(_progress))
 
 
 @app.route("/tp/api/table-columns")

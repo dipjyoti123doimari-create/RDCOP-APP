@@ -370,9 +370,16 @@
   document.getElementById('backend-form').addEventListener('submit', function() {
     document.getElementById('backend-loading').classList.add('active');
   });
-  document.getElementById('oracle-form').addEventListener('submit', function() {
-    document.getElementById('oracle-loading').classList.add('active');
-  });
+  submitFormAjax(
+    document.getElementById('sync-form'),
+    document.getElementById('sync-loading'),
+    document.getElementById('sync-btn')
+  );
+  submitFormAjax(
+    document.getElementById('oracle-form'),
+    document.getElementById('oracle-loading'),
+    null
+  );
 
   // Restore active tab from URL hash or session
   var hash = location.hash.replace('#','');

@@ -107,9 +107,10 @@
 {% endblock %}
 {% block scripts %}
 <script>
-document.getElementById('calc-form').addEventListener('submit', function() {
-  document.getElementById('run-btn').disabled = true;
-  document.getElementById('calc-loading').classList.add('active');
-});
+submitFormAjax(
+  document.getElementById('calc-form'),
+  document.getElementById('calc-loading'),
+  document.getElementById('run-btn')
+);
 </script>
 {% endblock %}
