@@ -946,8 +946,9 @@ def _tp_build_excel(plant_rows, location_rows, month, year):
 
 
 def _tp_build_html_tables(plant_rows, location_rows, month, year):
-    """Return compact HTML tables for TP report email body.
-    Fixed px column widths, nowrap, compact padding, inline CSS for Gmail/Outlook.
+    """Return HTML tables for TP report email.
+    width:100% + table-layout:auto lets each column size itself to its content.
+    Plant name column wraps; all other columns stay on one line (nowrap).
     """
     mon_tag = _tp_mon_tag(month, year)
 
@@ -961,43 +962,25 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
                 "#92D492": "#1A5C1A", "#D9D9D9": "#222222"}.get(bg, "#19263A")
 
     F   = "font-family:Arial,sans-serif;font-size:11px;"
-    # table-layout:fixed ONLY enforces column widths when the table has an explicit px width.
-    # L_TOT = sum of Location column widths; P_TOT = sum of Plant column widths.
-    L_TOT = 455   # 40+120+55+80+80+65+border-padding
-    P_TOT = 720   # 35+70+130+75+90+90+55+65+65+55
+    TBL = "border-collapse:collapse;width:100%;margin:10px 0 18px"
     TTL = (f'style="{F}font-size:12px;font-weight:bold;background:#082B49;color:#fff;'
            f'padding:6px 8px;border:1px solid #7A7A7A;text-align:left"')
 
-    def _tbl_style(tot_px):
-        return (f"border-collapse:collapse;width:{tot_px}px;table-layout:fixed;"
-                f"margin:10px 0 18px")
+    def _th(align="center", wrap=False):
+        ws = "" if wrap else "white-space:nowrap;"
+        return (f'style="{F}background:#082B49;color:#fff;font-weight:bold;'
+                f'padding:6px 8px;border:1px solid #7A7A7A;text-align:{align};'
+                f'{ws}line-height:1.2;vertical-align:middle"')
 
-    def _th(w):
-        return (f'width="{w}" style="{F}background:#082B49;color:#fff;font-weight:bold;'
-                f'padding:6px 6px;border:1px solid #7A7A7A;text-align:center;'
-                f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
-                f'line-height:1.2;vertical-align:middle;width:{w}px"')
-
-    def _td(bg, fg, align, bold=False, top_bdr=""):
+    def _td(bg, fg, align, bold=False, top_bdr="", wrap=False):
         fw  = "font-weight:bold;" if bold else ""
         top = f"border-top:{top_bdr};" if top_bdr else ""
-        return (f'style="{F}padding:4px 6px;border:1px solid #9E9E9E;{top}'
+        ws  = "" if wrap else "white-space:nowrap;"
+        return (f'style="{F}padding:4px 8px;border:1px solid #9E9E9E;{top}'
                 f'background:{bg};color:{fg};text-align:{align};'
-                f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
-                f'line-height:1.2;vertical-align:middle;{fw}"')
+                f'{ws}line-height:1.4;vertical-align:middle;{fw}"')
 
-    # ── Location table — (Sr. no. | Exco Location | Plants | Total Qty | Time | Avg TP %)
-    # Column: (header, px_width, align)
-    L_COLS = [
-        ("Sr. no.",      40,  "center"),
-        ("Exco Location",120, "left"),
-        ("Plants",       55,  "center"),
-        ("Total Qty",    80,  "right"),
-        ("Time (min)",   80,  "right"),
-        ("Avg TP %",     65,  "center"),
-    ]
-    ths_l = "".join(f'<th {_th(w)}>{h}</th>' for h, w, _ in L_COLS)
-
+    # ── Location table ────────────────────────────────────────────────────────
     loc_body = ""
     srno = 1
     for r in location_rows:
@@ -1013,7 +996,7 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
             loc_body += (
                 f'<tr>'
                 f'<td {_td(bg, fg, "center", bold=True, top_bdr="2px solid #555")}>—</td>'
-                f'<td {_td(bg, fg, "left",   bold=True, top_bdr="2px solid #555")} title="PAN India">&#127988; PAN India</td>'
+                f'<td {_td(bg, fg, "left",   bold=True, top_bdr="2px solid #555")}>&#127988; PAN India</td>'
                 f'<td {_td(bg, fg, "center", bold=True, top_bdr="2px solid #555")}>{plants}</td>'
                 f'<td {_td(bg, fg, "right",  bold=True, top_bdr="2px solid #555")}>{qty}</td>'
                 f'<td {_td(bg, fg, "right",  bold=True, top_bdr="2px solid #555")}>{mins}</td>'
@@ -1025,7 +1008,7 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
             loc_body += (
                 f'<tr>'
                 f'<td {_td(bg, fg, "center")}>{srno}</td>'
-                f'<td {_td(bg, fg, "left")} title="{loc}">{loc}</td>'
+                f'<td {_td(bg, fg, "left")}>{loc}</td>'
                 f'<td {_td(bg, fg, "center")}>{plants}</td>'
                 f'<td {_td(bg, fg, "right")}>{qty}</td>'
                 f'<td {_td(bg, fg, "right")}>{mins}</td>'
@@ -1034,28 +1017,20 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
             )
             srno += 1
 
-    colspan_l = len(L_COLS)
     loc_html = (
-        f'<table cellpadding="0" cellspacing="0" style="{_tbl_style(L_TOT)}">'
-        f'<tr><td colspan="{colspan_l}" {TTL}>Location wise Throughput - {mon_tag}</td></tr>'
-        f'<tr>{ths_l}</tr>{loc_body}</table>'
+        f'<table cellpadding="0" cellspacing="0" style="{TBL}">'
+        f'<tr><td colspan="6" {TTL}>Location wise Throughput - {mon_tag}</td></tr>'
+        f'<tr>'
+        f'<th {_th("center")}>#</th>'
+        f'<th {_th("left")}>Exco Location</th>'
+        f'<th {_th("center")}>Plants</th>'
+        f'<th {_th("right")}>Total Qty</th>'
+        f'<th {_th("right")}>Time (min)</th>'
+        f'<th {_th("center")}>Avg TP %</th>'
+        f'</tr>{loc_body}</table>'
     )
 
-    # ── Plant table — (# | Plant Code | Plant | Exco Location | BH | PM | Mixer | Qty | Time | TP%)
-    P_COLS = [
-        ("Sr. no.",       35,  "center"),
-        ("Plant Code",    70,  "center"),
-        ("Plant",        130,  "left"),
-        ("Exco Location", 75,  "left"),
-        ("Business Head", 90,  "left"),
-        ("Plant Manager", 90,  "left"),
-        ("Mixer Cap",     55,  "right"),
-        ("Total Qty",     65,  "right"),
-        ("Time (min)",    65,  "right"),
-        ("TP %",          55,  "center"),
-    ]
-    ths_p = "".join(f'<th {_th(w)}>{h}</th>' for h, w, _ in P_COLS)
-
+    # ── Plant table ───────────────────────────────────────────────────────────
     plant_body = ""
     for i, r in enumerate(plant_rows, 1):
         pct  = float(r.get("throughput_pct", 0))
@@ -1071,11 +1046,11 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
         plant_body += (
             f'<tr>'
             f'<td {_td(bg, fg, "center")}>{i}</td>'
-            f'<td {_td(bg, fg, "center")} title="{code}">{code}</td>'
-            f'<td {_td(bg, fg, "left")} title="{name}">{name}</td>'
-            f'<td {_td(bg, fg, "left")} title="{loc}">{loc}</td>'
-            f'<td {_td(bg, fg, "left")} title="{bh}">{bh}</td>'
-            f'<td {_td(bg, fg, "left")} title="{pm}">{pm}</td>'
+            f'<td {_td(bg, fg, "center")}>{code}</td>'
+            f'<td {_td(bg, fg, "left", wrap=True)}>{name}</td>'
+            f'<td {_td(bg, fg, "left")}>{loc}</td>'
+            f'<td {_td(bg, fg, "left")}>{bh}</td>'
+            f'<td {_td(bg, fg, "left")}>{pm}</td>'
             f'<td {_td(bg, fg, "right")}>{cap}</td>'
             f'<td {_td(bg, fg, "right")}>{qty}</td>'
             f'<td {_td(bg, fg, "right")}>{mins}</td>'
@@ -1083,11 +1058,21 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
             f'</tr>'
         )
 
-    colspan_p = len(P_COLS)
     plant_html = (
-        f'<table cellpadding="0" cellspacing="0" style="{_tbl_style(P_TOT)}">'
-        f'<tr><td colspan="{colspan_p}" {TTL}>Plant Throughput Report - {mon_tag}</td></tr>'
-        f'<tr>{ths_p}</tr>{plant_body}</table>'
+        f'<table cellpadding="0" cellspacing="0" style="{TBL}">'
+        f'<tr><td colspan="10" {TTL}>Plant Throughput Report - {mon_tag}</td></tr>'
+        f'<tr>'
+        f'<th {_th("center")}>#</th>'
+        f'<th {_th("center")}>Plant Code</th>'
+        f'<th {_th("left", wrap=True)}>Plant</th>'
+        f'<th {_th("left")}>Exco Location</th>'
+        f'<th {_th("left")}>Business Head</th>'
+        f'<th {_th("left")}>Plant Manager</th>'
+        f'<th {_th("right")}>Mixer Cap</th>'
+        f'<th {_th("right")}>Total Qty</th>'
+        f'<th {_th("right")}>Time (min)</th>'
+        f'<th {_th("center")}>TP %</th>'
+        f'</tr>{plant_body}</table>'
     )
 
     return loc_html + plant_html
