@@ -31,6 +31,14 @@ document.addEventListener('DOMContentLoaded', function () {
   document.querySelectorAll('.modal-overlay').forEach(function (m) {
     document.body.appendChild(m);
   });
+
+  /* Inject animated progress bar into every .loading indicator */
+  document.querySelectorAll('.loading').forEach(function (el) {
+    var bar  = document.createElement('div');  bar.className  = 'loading-bar';
+    var fill = document.createElement('div');  fill.className = 'loading-bar-fill';
+    bar.appendChild(fill);
+    el.appendChild(bar);
+  });
 });
 
 /* ---- Tabs ---- */

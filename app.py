@@ -2062,23 +2062,16 @@ def send_email():
     incl_tables = "include_tables" in request.form
 
     try:
-        fname     = f"incentive_report_{from_s}_to_{to_s}.xlsx"
-        xlsx_data = report_generator.generate_excel_report(df_f, df_u, val_df, meta)
-
-        # Generate PNG preview image and embed it inline in the email body
-        exports_dir = os.path.join(os.path.dirname(__file__), "exports")
-        img_path = email_helper.create_report_preview_image(
-            df_f,
-            os.path.join(exports_dir, "email_preview_id.png"),
-            month_label=meta.get("date_range", ""))
-        html_body = email_helper.wrap_html_body_with_image(body,
-                                                           excel_attached=True)
+        fname      = f"incentive_report_{from_s}_to_{to_s}.xlsx"
+        xlsx_data  = report_generator.generate_excel_report(df_f, df_u, val_df, meta)
+        tables_html = report_generator.build_email_tables_html(df_f)
+        html_body  = email_helper.wrap_html_body(body, tables_html)
 
         res = email_helper.send_report_email(
             to_emails=to_addr, cc_emails=cc_addr,
             subject=subject, body=body,
             attachment_bytes=xlsx_data, attachment_name=fname,
-            html_body=html_body, inline_image_path=img_path,
+            html_body=html_body,
         )
         if res["success"]:
             flash(f"Report emailed to {to_addr}.", "success")

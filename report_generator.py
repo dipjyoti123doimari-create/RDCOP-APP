@@ -236,9 +236,9 @@ def build_email_tables_html(results_df, sections=None) -> str:
     import html as _html
     sections = sections or EMAIL_SECTIONS
 
-    # 2px border so grid lines are clearly visible in Gmail
-    BORDER = "2px solid #9A9A9A"
-    FONT   = "font-family:Arial,sans-serif;font-size:11px;"
+    F        = "font-family:Arial,sans-serif;font-size:11px;"
+    HDR_BDR  = "border:1px solid #7A7A7A"
+    CELL_BDR = "border:1px solid #9E9E9E"
 
     def _row_bg(inc, ded):
         if ded > 0: return "#FFB3B3"
@@ -248,35 +248,33 @@ def build_email_tables_html(results_df, sections=None) -> str:
     parts = []
 
     for idx, (title, cats) in enumerate(sections, start=1):
-        out      = _prepare_category_df(results_df, cats)
-        headers  = list(out.columns) if not out.empty else []
+        out       = _prepare_category_df(results_df, cats)
+        headers   = list(out.columns) if not out.empty else []
         ded_label = _ded_header_label(cats)
         num_cols  = len(headers) if headers else 1
 
         ttl_td = (
             f'colspan="{num_cols}" '
-            f'style="{FONT}background:#0A2540;color:#fff;font-weight:bold;'
-            f'padding:7px 10px;font-size:12px;border:{BORDER};text-align:left"'
+            f'style="{F}font-size:12px;font-weight:bold;background:#082B49;color:#fff;'
+            f'padding:6px 8px;{HDR_BDR};text-align:left"'
         )
-        # Column header: dark navy matching app thead
         th_base = (
-            f'{FONT}background:#0A2540;color:#fff;font-weight:bold;'
-            f'padding:5px 6px;border:{BORDER};white-space:normal;'
-            f'word-break:break-word;line-height:1.3'
+            f'{F}background:#082B49;color:#fff;font-weight:bold;'
+            f'padding:6px 8px;{HDR_BDR};white-space:nowrap;line-height:1.2;'
+            f'vertical-align:middle'
         )
 
         thead_cells = "".join(
-            f'<th style="{th_base};text-align:{"right" if _coltype(h) in ("int","num") else "left"}">'
+            f'<th style="{th_base};text-align:center">'
             f'{_html.escape(ded_label if h == "Deduction Amount" else str(h))}</th>'
             for h in headers
         )
 
         tbody_rows = []
         if out.empty:
-            empty_style = (f'{FONT}padding:5px 7px;border:{BORDER};'
-                           f'color:#777;text-align:center;background:#ffffff')
             tbody_rows.append(
-                f'<tr><td colspan="{num_cols}" style="{empty_style}">'
+                f'<tr><td colspan="{num_cols}" style="{F}padding:5px 8px;{CELL_BDR};'
+                f'color:#777;text-align:center;background:#ffffff">'
                 f'No records for this section.</td></tr>'
             )
         else:
@@ -287,14 +285,14 @@ def build_email_tables_html(results_df, sections=None) -> str:
                 cells = ""
                 for h in headers:
                     align = "right" if _coltype(h) in ("int", "num") else "left"
-                    td_s  = (f'{FONT}background:{bg};padding:4px 7px;'
-                             f'border:{BORDER};text-align:{align};vertical-align:middle')
+                    td_s  = (f'{F}background:{bg};padding:4px 8px;{CELL_BDR};'
+                             f'text-align:{align};white-space:nowrap;vertical-align:middle')
                     cells += f'<td style="{td_s}">{_html.escape(_cell_value(h, row[h]))}</td>'
                 tbody_rows.append(f"<tr>{cells}</tr>")
 
         parts.append(
             f'<table cellpadding="0" cellspacing="0" '
-            f'style="border-collapse:collapse;width:100%;margin:18px 0 12px">'
+            f'style="border-collapse:collapse;width:100%;margin:14px 0 10px">'
             f'<tr><td {ttl_td}>{idx}. {_html.escape(title)}</td></tr>'
             f'<thead><tr>{thead_cells}</tr></thead>'
             f'<tbody>{"".join(tbody_rows)}</tbody>'

@@ -442,8 +442,21 @@ tbody tr.row-yellow  td { background: rgba(251,191,36,0.10) !important; }
   animation: spin 0.7s linear infinite; flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.loading { display: none; align-items: center; gap: 9px; color: var(--text-muted); font-size: 14px; padding: 10px 0; }
+.loading { display: none; flex-wrap: wrap; align-items: center; gap: 9px; color: var(--text-muted); font-size: 14px; padding: 10px 0; }
 .loading.active { display: flex; }
+
+/* Progress bar — injected by JS into every .loading div */
+.loading-bar { flex: 0 0 100%; height: 3px; background: rgba(255,255,255,0.07); border-radius: 2px; overflow: hidden; margin-top: 2px; }
+.loading-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--purple), var(--cyan)); border-radius: 2px; }
+.loading.active .loading-bar-fill { animation: loading-progress 6s ease-out forwards; }
+@keyframes loading-progress {
+  0%   { width: 0%; }
+  15%  { width: 30%; }
+  35%  { width: 52%; }
+  60%  { width: 68%; }
+  80%  { width: 79%; }
+  100% { width: 87%; }
+}
 
 /* ---- Badge ---- */
 .badge {
