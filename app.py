@@ -967,12 +967,12 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
            f'padding:6px 8px;font-size:11px;border:{BORDER};text-align:left"')
 
     def _th(w):
-        return (f'style="{FONT}background:#0A2540;color:#fff;font-weight:bold;'
+        return (f'width="{w}" style="{FONT}background:#0A2540;color:#fff;font-weight:bold;'
                 f'padding:3px 5px;border:{BORDER};text-align:center;'
                 f'white-space:normal;word-break:break-word;line-height:1.2;width:{w}"')
 
     # ── Location table — plain rows, PAN India row colored ───────────────────
-    L_COLS = [("Sr. no.","3%"),("Exco Location","27%"),("Plants","8%"),
+    L_COLS = [("Sr. no.","30"),("Exco Location","27%"),("Plants","8%"),
               ("Total Qty","16%"),("Time (min)","16%"),("Avg TP %","10%")]
     ths = "".join(f'<th {_th(w)}>{h}</th>' for h, w in L_COLS)
 
@@ -1021,7 +1021,7 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
     )
 
     # ── Plant table — full list, color-coded by TP % ─────────────────────────
-    P_COLS = [("Sr. no.","3%"),("Plant","23%"),("Exco Location","11%"),
+    P_COLS = [("Sr. no.","30"),("Plant","23%"),("Exco Location","11%"),
               ("Business Head","11%"),("Plant Manager","11%"),
               ("Mixer Cap","7%"),("Total Qty","10%"),("Time (min)","10%"),("TP %","8%")]
     ths2 = "".join(f'<th {_th(w)}>{h}</th>' for h, w in P_COLS)
