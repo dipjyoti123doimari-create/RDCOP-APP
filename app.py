@@ -963,8 +963,8 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
     F   = "font-family:Arial,sans-serif;font-size:11px;"
     # table-layout:fixed ONLY enforces column widths when the table has an explicit px width.
     # L_TOT = sum of Location column widths; P_TOT = sum of Plant column widths.
-    L_TOT = 555   # 50+130+70+110+110+85
-    P_TOT = 1085  # 45+95+190+120+130+130+85+105+105+80
+    L_TOT = 455   # 40+120+55+80+80+65+border-padding
+    P_TOT = 720   # 35+70+130+75+90+90+55+65+65+55
     TTL = (f'style="{F}font-size:12px;font-weight:bold;background:#082B49;color:#fff;'
            f'padding:6px 8px;border:1px solid #7A7A7A;text-align:left"')
 
@@ -989,12 +989,12 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
     # ── Location table — (Sr. no. | Exco Location | Plants | Total Qty | Time | Avg TP %)
     # Column: (header, px_width, align)
     L_COLS = [
-        ("Sr. no.",      50,  "center"),
-        ("Exco Location",130, "left"),
-        ("Plants",       70,  "center"),
-        ("Total Qty",    110, "right"),
-        ("Time (min)",   110, "right"),
-        ("Avg TP %",     85,  "center"),
+        ("Sr. no.",      40,  "center"),
+        ("Exco Location",120, "left"),
+        ("Plants",       55,  "center"),
+        ("Total Qty",    80,  "right"),
+        ("Time (min)",   80,  "right"),
+        ("Avg TP %",     65,  "center"),
     ]
     ths_l = "".join(f'<th {_th(w)}>{h}</th>' for h, w, _ in L_COLS)
 
@@ -1043,16 +1043,16 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
 
     # ── Plant table — (# | Plant Code | Plant | Exco Location | BH | PM | Mixer | Qty | Time | TP%)
     P_COLS = [
-        ("Sr. no.",       45,  "center"),
-        ("Plant Code",    95,  "center"),
-        ("Plant",        190,  "left"),
-        ("Exco Location",120,  "left"),
-        ("Business Head",130,  "left"),
-        ("Plant Manager",130,  "left"),
-        ("Mixer Cap",     85,  "right"),
-        ("Total Qty",    105,  "right"),
-        ("Time (min)",   105,  "right"),
-        ("TP %",          80,  "center"),
+        ("Sr. no.",       35,  "center"),
+        ("Plant Code",    70,  "center"),
+        ("Plant",        130,  "left"),
+        ("Exco Location", 75,  "left"),
+        ("Business Head", 90,  "left"),
+        ("Plant Manager", 90,  "left"),
+        ("Mixer Cap",     55,  "right"),
+        ("Total Qty",     65,  "right"),
+        ("Time (min)",    65,  "right"),
+        ("TP %",          55,  "center"),
     ]
     ths_p = "".join(f'<th {_th(w)}>{h}</th>' for h, w, _ in P_COLS)
 
