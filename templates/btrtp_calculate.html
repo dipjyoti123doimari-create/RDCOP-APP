@@ -1,0 +1,117 @@
+{% extends "btrtp_base.html" %}
+{% block title %}Calculate{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Calculate Batcher Throughput</h1>
+  <p>Choose a date range and run the batcher-wise throughput calculation</p>
+</div>
+
+<div class="card">
+  <form method="POST" action="{{ url_for('btrtp_calculate') }}" id="calc-form">
+    <div class="date-row">
+      <div class="form-group">
+        <label>From Date</label>
+        <input type="date" name="from_date" value="{{ default_from }}" required>
+      </div>
+      <div class="form-group">
+        <label>To Date</label>
+        <input type="date" name="to_date" value="{{ default_to }}" required>
+      </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <button type="submit" class="btn btn-primary" id="run-btn">⚡ Run Calculation</button>
+      </div>
+    </div>
+  </form>
+  <div class="loading" id="calc-loading"><div class="spinner"></div> Running calculation…</div>
+</div>
+
+{% if warnings %}
+<div class="card">
+  <div class="section-title">⚠️ Warnings</div>
+  {% for w in warnings %}
+  <div class="alert alert-warning">{{ w }}</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if ran and batcher_rows %}
+
+<!-- Summary KPIs -->
+<div class="kpi-grid" style="margin-top:20px">
+  <div class="kpi-card">
+    <div class="kpi-label">Batcher-Plant Rows</div>
+    <div class="kpi-value">{{ batcher_rows | length | format_int }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Unique Batchers</div>
+    <div class="kpi-value">{{ (batcher_rows | map(attribute='batcher_id') | unique | list | length) | format_int }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Below 60%</div>
+    <div class="kpi-value">{{ (batcher_rows | selectattr('throughput_pct','lt',60) | list | length) | format_int }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">75% &amp; Above</div>
+    <div class="kpi-value">{{ (batcher_rows | selectattr('throughput_pct','ge',75) | list | length) | format_int }}</div>
+  </div>
+</div>
+
+<!-- Legend -->
+<div class="legend">
+  <span class="legend-item legend-red">🔴 0–59%</span>
+  <span class="legend-item legend-yellow">🟡 60–74%</span>
+  <span class="legend-item legend-green">🟢 ≥ 75%</span>
+</div>
+
+<div class="report-toolbar">
+  <p class="caption" style="margin:0">Batcher Throughput preview · sorted by plant, highest TP% first</p>
+  <a href="{{ url_for('btrtp_reports') }}" class="btn btn-primary btn-sm">📋 View Full Reports →</a>
+</div>
+
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr>
+        <th>Batcher ID</th><th>Batcher Name</th><th>Plant</th><th>Exco Location</th>
+        <th>Mixer Cap</th><th>Total Qty</th><th>Time (hr)</th>
+        <th>TP %</th><th>Batches</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in batcher_rows %}
+      {% set tp = r.throughput_pct %}
+      <tr class="{% if tp < 60 %}row-red{% elif tp < 75 %}row-yellow{% else %}row-green{% endif %}">
+        <td>{{ r.batcher_id }}</td>
+        <td>{{ r.batcher_name }}</td>
+        <td>{{ r.plant_name }}</td>
+        <td>{{ r.exco_location }}</td>
+        <td>{{ r.mixer_theo_cap }}</td>
+        <td>{{ r.total_quantity | round(1) }}</td>
+        <td>{{ r.total_time_hrs | round(2) }}</td>
+        <td><strong>{{ tp }}%</strong></td>
+        <td>{{ r.batch_count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% elif ran %}
+<div class="glass-card" style="text-align:center;padding:28px;margin-top:20px">
+  <h3>No results</h3>
+  <p>Ensure Oracle data and Plant Data (RDC-TP) are loaded first, then run again.</p>
+</div>
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<script>
+submitFormAjax(
+  document.getElementById('calc-form'),
+  document.getElementById('calc-loading'),
+  document.getElementById('run-btn')
+);
+</script>
+{% endblock %}

@@ -250,6 +250,56 @@ TABLE_SCHEMAS = {
             generated_at   TEXT
         )
     """,
+
+    # ── RDC-BTRTP tables ────────────────────────────────────────────────────
+
+    # Raw Oracle rows with batcher (CREATED_BY) column
+    "btrtp_oracle_data": """
+        CREATE TABLE IF NOT EXISTS btrtp_oracle_data (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            production_date TEXT,
+            batcher_id      TEXT,
+            plant_code      TEXT,
+            mixer_variant   TEXT,
+            lookup_code     TEXT,
+            batch_ref       TEXT,
+            quantity        REAL,
+            time_taken_min  REAL,
+            fetched_at      TEXT
+        )
+    """,
+
+    # BT Master synced from Google Sheets (batcher_id → batcher_name)
+    "btrtp_master_data": """
+        CREATE TABLE IF NOT EXISTS btrtp_master_data (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            batcher_id   TEXT UNIQUE,
+            batcher_name TEXT,
+            updated_at   TEXT
+        )
+    """,
+
+    # Calculated batcher-wise throughput results
+    "btrtp_results": """
+        CREATE TABLE IF NOT EXISTS btrtp_results (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            month          INTEGER,
+            year           INTEGER,
+            batcher_id     TEXT,
+            batcher_name   TEXT,
+            lookup_code    TEXT,
+            plant_name     TEXT,
+            exco_location  TEXT,
+            business_head  TEXT,
+            plant_manager  TEXT,
+            mixer_theo_cap REAL,
+            total_quantity REAL,
+            total_time_hrs REAL,
+            throughput_pct REAL,
+            batch_count    INTEGER,
+            generated_at   TEXT
+        )
+    """,
 }
 
 
@@ -347,10 +397,9 @@ def replace_table_rows(table, rows):
 # Shared by ALL modules — add new modules' Oracle tables here so the rolling
 # retention policy covers them automatically.
 ORACLE_DATA_TABLES = {
-    "backend_data":   "date",             # RDC-I&D
-    "tp_oracle_data": "production_date",   # RDC-TP
-    # "btrtp_oracle_data": "production_date",  # future
-    # "jldc_oracle_data":  "production_date",  # future
+    "backend_data":      "date",             # RDC-I&D
+    "tp_oracle_data":    "production_date",  # RDC-TP
+    "btrtp_oracle_data": "production_date",  # RDC-BTRTP
 }
 
 

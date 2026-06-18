@@ -1,0 +1,179 @@
+{% extends "btrtp_base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Settings</h1>
+  <p>Click any card to configure that section</p>
+</div>
+
+<!-- ── Settings cards grid ─────────────────────────────────────── -->
+<div class="settings-card-grid">
+
+  <!-- Oracle column -->
+  <div class="settings-tile" onclick="openModal('modal-oracle-cols')">
+    <div class="settings-tile-icon">🔌</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Oracle Batcher Column</div>
+      <div class="settings-tile-status {% if ora_configured %}status-ok{% else %}status-warn{% endif %}">
+        {% if ora_configured %}⚙️ Configured · Batcher col: {{ batcher_col }}{% else %}❌ Oracle not configured{% endif %}
+      </div>
+    </div>
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
+  <!-- Google Sheet -->
+  <div class="settings-tile" onclick="openModal('modal-sheet')">
+    <div class="settings-tile-icon">📊</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Google Sheet — BT Master</div>
+      <div class="settings-tile-status {% if last_sync.last_sync %}status-ok{% else %}status-warn{% endif %}">
+        {% if last_sync.last_sync %}✅ {{ last_sync.last_count }} rows · {{ worksheet }}{% else %}⚠️ Not synced yet{% endif %}
+      </div>
+    </div>
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
+  <!-- Email defaults -->
+  <div class="settings-tile" onclick="openModal('modal-email')">
+    <div class="settings-tile-icon">✉️</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Email (SMTP &amp; Defaults)</div>
+      <div class="settings-tile-status {% if email_configured %}status-ok{% else %}status-warn{% endif %}">
+        {% if email_configured %}✅ Shared sender — {{ smtp.sender }}{% else %}⚠️ Not configured{% endif %}
+      </div>
+    </div>
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════
+     MODAL: Oracle Batcher Column
+══════════════════════════════════════════════════════════════ -->
+<div id="modal-oracle-cols" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-oracle-cols')">
+  <div class="modal-box" style="max-width:560px">
+    <div class="modal-header">
+      <span>🔌 Oracle Batcher Column</span>
+      <button class="modal-close" onclick="closeModal('modal-oracle-cols')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="caption" style="margin-bottom:12px">
+        The Oracle column that identifies <strong>who performed the batch</strong>.
+        Default is <code>CREATED_BY</code> in APPSREAD.rdc_batch_trx_headers.
+      </p>
+      <p class="caption" style="margin-bottom:12px">
+        Plant / batch / time column names are shared with RDC-TP and can be changed in
+        <a href="{{ url_for('tp_settings') }}">RDC-TP → Settings → Oracle Column Mapping</a>.
+      </p>
+      <form method="POST" action="{{ url_for('btrtp_save_oracle_cols') }}">
+        <div class="form-group">
+          <label>Batcher ID Column</label>
+          <input type="text" name="batcher_col" value="{{ batcher_col }}" placeholder="CREATED_BY">
+        </div>
+        <button type="submit" class="btn btn-primary">💾 Save Column Setting</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════
+     MODAL: Google Sheet — BT Master
+══════════════════════════════════════════════════════════════ -->
+<div id="modal-sheet" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-sheet')">
+  <div class="modal-box" style="max-width:620px">
+    <div class="modal-header">
+      <span>📊 Google Sheet — BT Master</span>
+      <button class="modal-close" onclick="closeModal('modal-sheet')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="caption" style="margin-bottom:12px">
+        The BT Master sheet maps Oracle batcher IDs to human-readable names.
+        Required columns: <strong>Batcher ID, Batcher Name</strong>
+      </p>
+      <form method="POST" action="{{ url_for('btrtp_save_sheet') }}">
+        <div class="form-group">
+          <label>Google Sheet URL or ID</label>
+          <input type="text" name="sheet_id" value="{{ sheet_id }}" placeholder="Paste Sheet URL or ID">
+        </div>
+        <div class="form-group">
+          <label>Worksheet / Tab Name</label>
+          <input type="text" name="worksheet" value="{{ worksheet }}" placeholder="BT Master">
+        </div>
+        <button type="submit" class="btn btn-primary">💾 Save Sheet Settings</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════
+     MODAL: Email (shared SMTP + BTRTP defaults)
+══════════════════════════════════════════════════════════════ -->
+<div id="modal-email" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-email')">
+  <div class="modal-box" style="max-width:560px">
+    <div class="modal-header">
+      <span>✉️ Email (SMTP &amp; Defaults)</span>
+      <button class="modal-close" onclick="closeModal('modal-email')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="caption" style="margin-bottom:12px">The <strong>sender mailbox &amp; App Password are shared</strong> across all modules. To change the shared sender, open RDC-I&amp;D settings.</p>
+      {% if email_configured %}
+      <div class="alert alert-success" style="margin-bottom:10px">✅ Shared sender — <strong>{{ smtp.sender }}</strong></div>
+      {% else %}
+      <div class="alert alert-warning" style="margin-bottom:10px">⚠️ SMTP not configured yet.</div>
+      {% endif %}
+      <a href="{{ url_for('page_settings') }}" class="btn btn-secondary btn-sm">⚙️ Open shared SMTP settings →</a>
+
+      <hr style="margin:18px 0;border-color:#2a3a4a">
+
+      <div class="section-title" style="font-size:13px;margin-bottom:12px">📧 RDC-BTRTP Default Recipients &amp; Message</div>
+      <p class="caption" style="margin-bottom:12px">These pre-fill the email form on the View Reports page. You can still edit them before sending.</p>
+      <form method="POST" action="{{ url_for('btrtp_save_email_defaults') }}">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Default To (comma-separated)</label>
+            <input type="text" name="default_to" value="{{ btrtp_email_to or '' }}" placeholder="head@company.com, ops@company.com">
+          </div>
+          <div class="form-group">
+            <label>Default CC (optional)</label>
+            <input type="text" name="default_cc" value="{{ btrtp_email_cc or '' }}" placeholder="manager@company.com">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Default Subject</label>
+          <input type="text" name="default_subject" value="{{ btrtp_email_subject or '' }}" placeholder="RDC-BTRTP Batcher Throughput Report — June 2026">
+        </div>
+        <div class="form-group">
+          <label>Default Message Body</label>
+          <textarea name="default_body" rows="5" style="min-height:100px">{{ btrtp_email_body or '' }}</textarea>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">💾 Save BTRTP Email Defaults</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function openModal(id) {
+  var m = document.getElementById(id);
+  if (m) { m.style.display = 'flex'; document.body.style.overflow = 'hidden'; }
+}
+function closeModal(id) {
+  var m = document.getElementById(id);
+  if (m) { m.style.display = 'none'; document.body.style.overflow = ''; }
+}
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay').forEach(function(m) { m.style.display = 'none'; });
+    document.body.style.overflow = '';
+  }
+});
+var which = new URLSearchParams(location.search).get('m');
+if (which) openModal('modal-' + which);
+</script>
+{% endblock %}

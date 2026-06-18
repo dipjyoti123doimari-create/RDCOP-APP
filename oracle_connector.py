@@ -283,6 +283,80 @@ def fetch_tp_data(from_date, to_date) -> tuple:
         conn.close()
 
 
+def fetch_btrtp_data(from_date, to_date) -> tuple:
+    """
+    Fetch production rows for RDC-BTRTP from Oracle.
+    Same table as TP but adds CREATED_BY as batcher_id.
+
+    Returns (DataFrame, warnings_list).
+    DataFrame columns: production_date, batcher_id, plant_col, batch_ref, quantity, time_taken_min
+    """
+    cfg  = get_oracle_config()
+    cols = get_tp_oracle_cols()
+    batcher_col = (database.get_module_setting("btrtp", "oracle_batcher_col", "CREATED_BY") or "CREATED_BY").strip()
+    warnings = []
+
+    _init_thick(cfg["instantclient"])
+    conn = oracledb.connect(user=cfg["user"], password=cfg["password"], dsn=_dsn(cfg))
+    try:
+        cur = conn.cursor()
+        params = {"from_date": str(from_date), "to_date": str(to_date)}
+        status_clause = ""
+        if cfg["status_filter"]:
+            status_clause = "AND STATUS = :status"
+            params["status"] = cfg["status_filter"]
+
+        sql = f"""
+            SELECT
+                PRODDATE                   AS production_date,
+                {batcher_col}              AS batcher_id,
+                {cols['plant']}            AS plant_col,
+                {cols['batch']}            AS batch_ref,
+                PRODUCED_QUANTITY          AS quantity,
+                {cols['time']}             AS time_taken_min
+            FROM {_TABLE}
+            WHERE PRODDATE >= :from_date
+              AND PRODDATE <= :to_date
+              {status_clause}
+            ORDER BY PRODDATE, {batcher_col}
+        """
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+        col_names = [d[0].lower() for d in cur.description]
+
+        if not rows:
+            warnings.append(f"No rows found in Oracle for {from_date} → {to_date}.")
+            return pd.DataFrame(columns=["production_date","batcher_id","plant_col","batch_ref","quantity","time_taken_min"]), warnings
+
+        df = pd.DataFrame(rows, columns=col_names)
+        df["quantity"]       = pd.to_numeric(df["quantity"],       errors="coerce").fillna(0)
+        df["time_taken_min"] = pd.to_numeric(df["time_taken_min"], errors="coerce").fillna(0)
+
+        blank_batcher = df["batcher_id"].isna() | (df["batcher_id"].astype(str).str.strip() == "")
+        if blank_batcher.sum():
+            warnings.append(f"{blank_batcher.sum()} row(s) have blank {batcher_col} — skipped.")
+        df = df[~blank_batcher].reset_index(drop=True)
+
+        blank_batch = df["batch_ref"].isna() | (df["batch_ref"].astype(str).str.strip() == "")
+        if blank_batch.sum():
+            warnings.append(f"{blank_batch.sum()} row(s) have blank batch reference — skipped.")
+        df = df[~blank_batch].reset_index(drop=True)
+
+        return df, warnings
+    finally:
+        conn.close()
+
+
+def save_btrtp_oracle_data(parsed_rows: list, replace: bool = True) -> int:
+    """Save parsed BTRTP rows into btrtp_oracle_data table."""
+    now = datetime.now().isoformat(timespec="seconds")
+    for r in parsed_rows:
+        r["fetched_at"] = now
+    if replace:
+        return database.replace_table_rows("btrtp_oracle_data", parsed_rows)
+    return database.insert_rows("btrtp_oracle_data", parsed_rows)
+
+
 def save_tp_oracle_data(df: pd.DataFrame, from_date, to_date,
                          parsed_rows: list, replace: bool = True) -> int:
     """

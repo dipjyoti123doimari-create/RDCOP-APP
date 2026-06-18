@@ -511,6 +511,61 @@ def sync_tp_plant_data(sheet_id: str, worksheet_name: str = "Plant Data for TP")
         return {"rows_synced": 0, "synced_at": None, "error": str(exc), "mode": mode}
 
 
+def sync_btrtp_master_data(sheet_id: str, worksheet_name: str = "BT Master") -> dict:
+    """
+    Fetch the BT Master sheet and save to btrtp_master_data table.
+    Expected sheet columns: Batcher ID, Batcher Name
+    Returns {"rows_synced": int, "synced_at": str|None, "error": str|None, "mode": str}
+    """
+    mode = "private" if credentials_exist() else "public"
+    try:
+        clean_id = extract_sheet_id(sheet_id)
+        if credentials_exist():
+            raw_df = _fetch_private(clean_id, worksheet_name)
+        else:
+            raw_df = _fetch_public(clean_id, worksheet_name)
+
+        raw_df.columns = [str(c).strip() for c in raw_df.columns]
+
+        id_col   = next((c for c in raw_df.columns if "id" in c.lower()), None)
+        name_col = next((c for c in raw_df.columns if "name" in c.lower()), None)
+
+        if not id_col or not name_col:
+            raise ValueError(
+                f"Sheet must have 'Batcher ID' and 'Batcher Name' columns. Found: {list(raw_df.columns)}"
+            )
+
+        now = datetime.now().isoformat(timespec="seconds")
+        rows = [
+            {
+                "batcher_id":   str(r[id_col]).strip(),
+                "batcher_name": str(r[name_col]).strip(),
+                "updated_at":   now,
+            }
+            for _, r in raw_df.iterrows()
+            if str(r[id_col]).strip() not in ("", "nan")
+        ]
+
+        inserted = database.replace_table_rows("btrtp_master_data", rows)
+        database.set_module_setting("btrtp", "gsheet_last_sync",  now)
+        database.set_module_setting("btrtp", "gsheet_last_count", str(inserted))
+        database.set_module_setting("btrtp", "gsheet_worksheet",  worksheet_name)
+
+        return {"rows_synced": inserted, "synced_at": now, "error": None, "mode": mode}
+
+    except Exception as exc:
+        return {"rows_synced": 0, "synced_at": None, "error": str(exc), "mode": mode}
+
+
+def get_btrtp_last_sync_info() -> dict:
+    """Return last BTRTP master sync info."""
+    return {
+        "last_sync":  database.get_module_setting("btrtp", "gsheet_last_sync",  ""),
+        "last_count": database.get_module_setting("btrtp", "gsheet_last_count", "0"),
+        "worksheet":  database.get_module_setting("btrtp", "gsheet_worksheet",  "BT Master"),
+    }
+
+
 def _to_float(val) -> float:
     """Convert a cell value to float, returning 0.0 on failure."""
     try:

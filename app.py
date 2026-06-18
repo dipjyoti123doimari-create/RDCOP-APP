@@ -38,6 +38,7 @@ import email_helper
 import google_sheets
 import oracle_connector
 import report_generator
+import btrtp_calculator
 import tp_calculator
 import validations
 
@@ -1284,11 +1285,533 @@ def tp_toggle_email_schedule():
     return redirect(url_for("tp_settings", m="schedule"))
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# RDC-BTRTP MODULE — Batcher-wise Throughput Calculator
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _btrtp_ctx():
+    """Base context dict for every BTRTP page."""
+    return dict(
+        active_page="",
+        bg_auto=bg_auto(), bg_animate=bg_animate(), bg_theme=bg_theme(),
+    )
+
+
+def _btrtp_band(pct):
+    """Throughput colour band for a percentage (same thresholds as TP)."""
+    if pct < 60:
+        return "red"
+    if pct < 75:
+        return "yellow"
+    return "green"
+
+
 @app.route("/btrtp")
 def page_btrtp():
-    return render_template("module_placeholder.html",
-                           module_name="RDC-BTRTP",
-                           module_desc="Calculates batcher wise Throughput for individual efficiency tracking")
+    return redirect(url_for("btrtp_dashboard"))
+
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+@app.route("/btrtp/dashboard")
+def btrtp_dashboard():
+    all_counts = database.get_table_counts()
+    counts = {
+        "btrtp_oracle_data": all_counts.get("btrtp_oracle_data", 0),
+        "btrtp_master_data": all_counts.get("btrtp_master_data", 0),
+        "btrtp_results":     all_counts.get("btrtp_results",     0),
+        "tp_plant_data":     all_counts.get("tp_plant_data",     0),
+    }
+    last_sync = google_sheets.get_btrtp_last_sync_info()
+    ora_ready = oracle_connector.is_configured()
+    ctx = _btrtp_ctx()
+    ctx["active_page"] = "dashboard"
+    return render_template("btrtp_dashboard.html", counts=counts,
+                           last_sync=last_sync, ora_ready=ora_ready, **ctx)
+
+
+# ── Data Uploader ─────────────────────────────────────────────────────────────
+@app.route("/btrtp/data-uploader")
+def btrtp_data_uploader():
+    ora_ready   = oracle_connector.is_configured()
+    last_sync   = google_sheets.get_btrtp_last_sync_info()
+    sheet_id    = database.get_module_setting("btrtp", "gsheet_id",
+                                              database.get_setting("gsheet_id", ""))
+    worksheet   = database.get_module_setting("btrtp", "gsheet_worksheet", "BT Master")
+    ora_counts  = database.get_table_counts().get("btrtp_oracle_data", 0)
+    master_rows = database.read_table("btrtp_master_data")
+    master_count = len(master_rows) if not master_rows.empty else 0
+    ctx = _btrtp_ctx()
+    ctx["active_page"] = "data_uploader"
+    return render_template("btrtp_data_uploader.html",
+                           ora_ready=ora_ready, last_sync=last_sync,
+                           sheet_id=sheet_id, worksheet=worksheet,
+                           ora_counts=ora_counts, master_count=master_count,
+                           **ctx)
+
+
+@app.route("/btrtp/action/fetch-oracle", methods=["POST"])
+def btrtp_fetch_oracle():
+    from_date = request.form.get("from_date", "")
+    to_date   = request.form.get("to_date", "")
+    if not from_date or not to_date:
+        flash("Please select both From and To dates.", "error")
+        return jsonify({"ok": False, "redirect": url_for("btrtp_data_uploader")})
+    try:
+        _set_progress(20, "Fetching BTRTP data from Oracle…")
+        raw_df, ora_warnings = oracle_connector.fetch_btrtp_data(from_date, to_date)
+        _set_progress(55, "Parsing batcher records…")
+        parsed, skip_log     = btrtp_calculator.parse_btrtp_oracle_df(raw_df)
+        _set_progress(75, "Saving to database…")
+        oracle_connector.save_btrtp_oracle_data(parsed, replace=True)
+        _set_progress(90, "Cleaning old records…")
+        database.purge_old_oracle_data()
+        _mss("btrtp", "skip_log",  skip_log)
+        _mss("btrtp", "ora_from",  from_date)
+        _mss("btrtp", "ora_to",    to_date)
+        for w in ora_warnings:
+            flash(w, "warning")
+        flash(f"✅ {len(parsed)} rows fetched & saved ({len(skip_log)} skipped).", "success")
+    except Exception as exc:
+        flash(f"Oracle error: {exc}", "error")
+    _set_progress(100, "Complete")
+    return jsonify({"ok": True, "redirect": url_for("btrtp_data_uploader")})
+
+
+@app.route("/btrtp/action/sync-master", methods=["POST"])
+def btrtp_sync_master():
+    sheet_id  = (request.form.get("sheet_id", "").strip()
+                 or database.get_module_setting("btrtp", "gsheet_id",
+                                                database.get_setting("gsheet_id", "")))
+    worksheet = request.form.get("worksheet", "BT Master").strip()
+    _set_progress(20, "Syncing BT Master from Google Sheets…")
+    result = google_sheets.sync_btrtp_master_data(sheet_id, worksheet)
+    _set_progress(85, "Saving settings…")
+    if result["error"]:
+        flash(f"Sync failed: {result['error']}", "error")
+    else:
+        database.set_module_setting("btrtp", "gsheet_id",
+                                    google_sheets.extract_sheet_id(sheet_id))
+        database.set_module_setting("btrtp", "gsheet_worksheet", worksheet)
+        flash(f"✅ {result['rows_synced']} batcher rows synced from Google Sheets ({result['mode']} mode).",
+              "success")
+    _set_progress(100, "Complete")
+    return jsonify({"ok": True, "redirect": url_for("btrtp_data_uploader")})
+
+
+# ── Calculate ─────────────────────────────────────────────────────────────────
+@app.route("/btrtp/calculate", methods=["GET", "POST"])
+def btrtp_calculate():
+    batcher_rows = _ms("btrtp", "batcher_rows", [])
+    warnings     = _ms("btrtp", "calc_warnings", [])
+    ran          = _ms("btrtp", "calc_ran", False)
+
+    if request.method == "POST":
+        from_s = request.form.get("from_date", "")
+        to_s   = request.form.get("to_date", "")
+        try:
+            fd = _date.fromisoformat(from_s)
+            td = _date.fromisoformat(to_s)
+        except (ValueError, TypeError):
+            flash("Please select valid From and To dates.", "error")
+            return jsonify({"ok": False, "redirect": url_for("btrtp_calculate")})
+        if fd > td:
+            flash("'From Date' must be on or before 'To Date'.", "error")
+            return jsonify({"ok": False, "redirect": url_for("btrtp_calculate")})
+
+        month, year = fd.month, fd.year
+        _set_progress(20, "Loading Oracle data…")
+        batcher_rows, warnings = btrtp_calculator.run_btrtp_calculation(
+            month, year, from_date=str(fd), to_date=str(td))
+        _set_progress(80, "Saving results…")
+        _mss("btrtp", "batcher_rows",  batcher_rows)
+        _mss("btrtp", "calc_warnings", warnings)
+        _mss("btrtp", "calc_month",    month)
+        _mss("btrtp", "calc_year",     year)
+        _mss("btrtp", "calc_from",     str(fd))
+        _mss("btrtp", "calc_to",       str(td))
+        _mss("btrtp", "calc_ran",      True)
+        ran = True
+
+        if batcher_rows:
+            btrtp_calculator.save_btrtp_results(batcher_rows, month, year)
+            flash(f"✅ Calculated batcher throughput for {fd} → {td} — "
+                  f"{len(batcher_rows)} batcher-plant rows.", "success")
+        else:
+            flash("No results produced — check data and warnings.", "warning")
+        _set_progress(100, "Complete")
+        return jsonify({"ok": True, "redirect": url_for("btrtp_calculate")})
+
+    today = _date.today()
+    ctx = _btrtp_ctx()
+    ctx["active_page"] = "calculate"
+    return render_template("btrtp_calculate.html",
+                           batcher_rows=batcher_rows, warnings=warnings, ran=ran,
+                           default_from=_ms("btrtp", "calc_from", str(today.replace(day=1))),
+                           default_to=_ms("btrtp", "calc_to", str(today)),
+                           **ctx)
+
+
+# ── Reports ───────────────────────────────────────────────────────────────────
+def _apply_btrtp_filters(rows, excos, bheads, plants, batchers, band, search):
+    """Filter batcher rows by Exco, Business Head, Plant, Batcher, band, and search."""
+    out = []
+    s = (search or "").strip().lower()
+    for r in rows:
+        if excos   and r.get("exco_location") not in excos:
+            continue
+        if bheads  and r.get("business_head") not in bheads:
+            continue
+        if plants  and r.get("plant_name") not in plants:
+            continue
+        if batchers and r.get("batcher_name") not in batchers:
+            continue
+        if band and band != "All" and _btrtp_band(r.get("throughput_pct", 0)) != band:
+            continue
+        if s and s not in str(r.get("batcher_id", "")).lower() \
+             and s not in str(r.get("batcher_name", "")).lower() \
+             and s not in str(r.get("plant_name", "")).lower():
+            continue
+        out.append(r)
+    return out
+
+
+@app.route("/btrtp/reports")
+def btrtp_reports():
+    today = _date.today()
+
+    from_s = request.args.get("from_date",
+                              _ms("btrtp", "calc_from", str(today.replace(day=1))))
+    to_s   = request.args.get("to_date",
+                              _ms("btrtp", "calc_to", str(today)))
+    try:
+        fd = _date.fromisoformat(from_s)
+        td = _date.fromisoformat(to_s)
+    except ValueError:
+        fd, td = today.replace(day=1), today
+
+    # Re-run calculation if user picks a date range directly from Reports
+    if "from_date" in request.args:
+        month, year = fd.month, fd.year
+        all_rows, calc_warns = btrtp_calculator.run_btrtp_calculation(
+            month, year, from_date=str(fd), to_date=str(td))
+        _mss("btrtp", "batcher_rows",  all_rows)
+        _mss("btrtp", "calc_warnings", calc_warns)
+        _mss("btrtp", "calc_from",  str(fd))
+        _mss("btrtp", "calc_to",    str(td))
+        _mss("btrtp", "calc_month", month)
+        _mss("btrtp", "calc_year",  year)
+    else:
+        all_rows = _ms("btrtp", "batcher_rows", [])
+
+    excos   = request.args.getlist("exco")
+    bheads  = request.args.getlist("bhead")
+    plants  = request.args.getlist("plant")
+    batchers = request.args.getlist("batcher")
+    band    = request.args.get("band", "All")
+    search  = request.args.get("search", "")
+
+    unique_excos    = sorted({r.get("exco_location", "") for r in all_rows if r.get("exco_location")})
+    unique_bheads   = sorted({r.get("business_head", "")  for r in all_rows if r.get("business_head")})
+    unique_plants   = sorted({r.get("plant_name", "")     for r in all_rows if r.get("plant_name")})
+    unique_batchers = sorted({r.get("batcher_name", "")   for r in all_rows if r.get("batcher_name")})
+
+    batcher_rows = _apply_btrtp_filters(all_rows, excos, bheads, plants, batchers, band, search)
+
+    _mss("btrtp", "report_rows", batcher_rows)
+
+    smtp        = email_helper.get_smtp_config()
+    email_ready = email_helper.is_configured()
+
+    _elog = database.read_table("email_log", order_by="id DESC")
+    if not _elog.empty and "report_file_name" in _elog.columns:
+        _elog = _elog[_elog["report_file_name"].str.startswith("RDC_BTRTP_", na=False)]
+    btrtp_email_log = _records(_elog.drop(columns=["id"], errors="ignore").head(20)) \
+        if not _elog.empty else []
+
+    if (fd.year, fd.month) == (td.year, td.month):
+        import calendar
+        month_label = f"{calendar.month_name[fd.month]} {fd.year}"
+    else:
+        month_label = f"{fd:%d %b %Y} → {td:%d %b %Y}"
+
+    default_to      = database.get_module_setting("btrtp", "email_default_to", "") or smtp.get("default_to", "")
+    default_cc      = database.get_module_setting("btrtp", "email_default_cc", "") or smtp.get("default_cc", "")
+    default_subject = (database.get_module_setting("btrtp", "email_default_subject", "")
+                       or f"RDC-BTRTP Batcher Throughput Report — {month_label}")
+    default_body    = (database.get_module_setting("btrtp", "email_default_body", "")
+                       or f"Dear Team,\n\nPlease find attached the Batcher Throughput "
+                          f"Report for {month_label}.\n\nRegards,\nRDC Operations")
+
+    ctx = _btrtp_ctx()
+    ctx["active_page"] = "reports"
+    return render_template("btrtp_reports.html",
+                           batcher_rows=batcher_rows, total_rows=len(all_rows),
+                           from_date=str(fd), to_date=str(td),
+                           unique_excos=unique_excos, unique_bheads=unique_bheads,
+                           unique_plants=unique_plants, unique_batchers=unique_batchers,
+                           excos=excos, bheads=bheads, plants=plants, batchers=batchers,
+                           band=band, search=search,
+                           month_label=month_label, email_cfg=smtp,
+                           email_ready=email_ready,
+                           default_to=default_to, default_cc=default_cc,
+                           default_subject=default_subject, default_body=default_body,
+                           btrtp_email_log=btrtp_email_log, **ctx)
+
+
+def _btrtp_mon_tag(month, year):
+    import calendar as _cal
+    return f"{_cal.month_abbr[month]}'{str(year)[2:]}"
+
+
+def _btrtp_build_excel(batcher_rows, month, year):
+    """Build colour-coded Excel bytes for BTRTP batcher results."""
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    mon_tag = _btrtp_mon_tag(month, year)
+
+    RED_FILL   = PatternFill("solid", fgColor="FFB3B3")
+    YEL_FILL   = PatternFill("solid", fgColor="FFE066")
+    GRN_FILL   = PatternFill("solid", fgColor="92D492")
+    HDR_FILL   = PatternFill("solid", fgColor="0A2540")
+    PLAIN_FILL = PatternFill("solid", fgColor="FFFFFF")
+
+    RED_FONT   = Font(color="7B1F1F", size=10)
+    YEL_FONT   = Font(color="5C4200", size=10)
+    GRN_FONT   = Font(color="1A5C1A", size=10)
+    HDR_FONT   = Font(bold=True, color="FFFFFF", size=10)
+    TITLE_FONT = Font(bold=True, color="FFFFFF", size=11)
+    PLAIN_FONT = Font(color="19263A", size=10)
+
+    CTR  = Alignment(vertical="center", horizontal="center")
+    LEFT = Alignment(vertical="center", horizontal="left")
+    WRAP = Alignment(wrap_text=True, vertical="center", horizontal="center")
+    thin = Side(style="thin", color="9A9A9A")
+    BDR  = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def _fill_font(pct):
+        if pct < 60:  return RED_FILL, RED_FONT
+        if pct < 75:  return YEL_FILL, YEL_FONT
+        return GRN_FILL, GRN_FONT
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Batcher Throughput"
+
+    HEADS = ["Sr. no.", "Batcher ID", "Batcher Name", "Plant", "Business Head",
+             "Plant Manager", "Mixer Cap", "Total Qty", "Time (hr)", "TP %", "Batches"]
+
+    ws.merge_cells(f"A1:{get_column_letter(len(HEADS))}1")
+    t = ws.cell(1, 1, f"Batcher wise Throughput - {mon_tag}")
+    t.fill = HDR_FILL; t.font = TITLE_FONT; t.alignment = CTR
+    ws.row_dimensions[1].height = 22
+
+    for ci, h in enumerate(HEADS, 1):
+        c = ws.cell(2, ci, h)
+        c.fill = HDR_FILL; c.font = HDR_FONT; c.alignment = WRAP; c.border = BDR
+    ws.row_dimensions[2].height = 28
+
+    srno = 1
+    for ri, row in enumerate(batcher_rows, 3):
+        pct        = float(row.get("throughput_pct", 0))
+        row_fill, row_font = _fill_font(pct)
+        vals = [
+            srno,
+            row.get("batcher_id", ""),
+            row.get("batcher_name", ""),
+            row.get("plant_name", ""),
+            row.get("business_head", ""),
+            row.get("plant_manager", ""),
+            round(float(row.get("mixer_theo_cap", 0)), 1),
+            round(float(row.get("total_quantity", 0)), 1),
+            round(float(row.get("total_time_hrs", 0)), 2),
+            f"{round(pct)}%",
+            int(row.get("batch_count", 0)),
+        ]
+        for ci, v in enumerate(vals, 1):
+            c = ws.cell(ri, ci, v)
+            c.border = BDR
+            c.fill   = row_fill
+            c.font   = row_font
+            c.alignment = LEFT if ci in (2, 3, 4, 5, 6) else CTR
+        srno += 1
+
+    for ci, w in enumerate([8, 14, 20, 22, 18, 18, 10, 10, 10, 8, 8], 1):
+        ws.column_dimensions[get_column_letter(ci)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.read()
+
+
+@app.route("/btrtp/download-excel")
+def btrtp_download_excel():
+    rows  = _ms("btrtp", "report_rows", _ms("btrtp", "batcher_rows", []))
+    month = _ms("btrtp", "calc_month", _date.today().month)
+    year  = _ms("btrtp", "calc_year",  _date.today().year)
+    if not rows:
+        flash("No data to download — run Calculate first.", "warning")
+        return redirect(url_for("btrtp_reports"))
+    excel_bytes = _btrtp_build_excel(rows, month, year)
+    fname = f"RDC_BTRTP_{year}_{month:02d}.xlsx"
+    return send_file(io.BytesIO(excel_bytes), as_attachment=True, download_name=fname,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.route("/btrtp/download-csv")
+def btrtp_download_csv():
+    rows  = _ms("btrtp", "report_rows", _ms("btrtp", "batcher_rows", []))
+    month = _ms("btrtp", "calc_month", _date.today().month)
+    year  = _ms("btrtp", "calc_year",  _date.today().year)
+    if not rows:
+        flash("No data to download — run Calculate first.", "warning")
+        return redirect(url_for("btrtp_reports"))
+    df = pd.DataFrame(rows)
+    buf = io.BytesIO(df.to_csv(index=False).encode("utf-8"))
+    return send_file(buf, as_attachment=True,
+                     download_name=f"RDC_BTRTP_{year}_{month:02d}.csv",
+                     mimetype="text/csv")
+
+
+@app.route("/btrtp/action/send-email", methods=["POST"])
+def btrtp_send_email():
+    rows  = _ms("btrtp", "report_rows", _ms("btrtp", "batcher_rows", []))
+    month = _ms("btrtp", "calc_month", _date.today().month)
+    year  = _ms("btrtp", "calc_year",  _date.today().year)
+    to_addr = request.form.get("to", "").strip()
+    cc_addr = request.form.get("cc", "").strip()
+    subject = request.form.get("subject", "").strip()
+    body    = request.form.get("body", "").strip()
+
+    if not rows:
+        flash("No results to email — run Calculate first.", "warning")
+        return redirect(url_for("btrtp_reports"))
+    if not to_addr:
+        flash("Please enter at least one To email address.", "error")
+        return redirect(url_for("btrtp_reports"))
+
+    import calendar as _cal
+    month_name = _cal.month_name[month]
+    mon_tag = _btrtp_mon_tag(month, year)
+    if not subject:
+        subject = f"RDC-BTRTP Batcher Throughput Report — {month_name} {year}"
+    if not body:
+        body = f"Dear Team,\n\nPlease find the Batcher Throughput Report for {month_name} {year} below."
+
+    excel_bytes = _btrtp_build_excel(rows, month, year)
+    fname = f"RDC_BTRTP_{year}_{month:02d}.xlsx"
+
+    # Simple HTML table in email body
+    TBL = ("border-collapse:collapse;width:100%;font-family:Arial,sans-serif;"
+           "font-size:11px;border:1px solid #ccc")
+    TH  = 'style="background:#0A2540;color:#fff;padding:5px 8px;border:1px solid #9A9A9A;text-align:center"'
+    def _td_b(bg, fg, align="center"):
+        return (f'style="background:{bg};color:{fg};padding:4px 7px;'
+                f'border:1px solid #9A9A9A;text-align:{align}"')
+    def _row_color(pct):
+        if pct < 60: return "#FFB3B3", "#7B1F1F"
+        if pct < 75: return "#FFE066", "#5C4200"
+        return "#92D492", "#1A5C1A"
+
+    head_row = (f'<tr><th {TH}>Sr.</th><th {TH}>Batcher ID</th>'
+                f'<th {TH}>Batcher Name</th><th {TH}>Plant</th>'
+                f'<th {TH}>Mixer Cap</th><th {TH}>Total Qty</th>'
+                f'<th {TH}>Time (hr)</th><th {TH}>TP %</th><th {TH}>Batches</th></tr>')
+    body_rows = ""
+    for i, r in enumerate(rows, 1):
+        pct = float(r.get("throughput_pct", 0))
+        bg, fg = _row_color(pct)
+        body_rows += (
+            f'<tr>'
+            f'<td {_td_b(bg,fg)}>{i}</td>'
+            f'<td {_td_b(bg,fg,"left")}>{r.get("batcher_id","")}</td>'
+            f'<td {_td_b(bg,fg,"left")}>{r.get("batcher_name","")}</td>'
+            f'<td {_td_b(bg,fg,"left")}>{r.get("plant_name","")}</td>'
+            f'<td {_td_b(bg,fg,"center")}>{round(float(r.get("mixer_theo_cap",0)),1)}</td>'
+            f'<td {_td_b(bg,fg,"center")}>{round(float(r.get("total_quantity",0)),1)}</td>'
+            f'<td {_td_b(bg,fg,"center")}>{round(float(r.get("total_time_hrs",0)),2)}</td>'
+            f'<td {_td_b(bg,fg,"center")}><b>{round(pct)}%</b></td>'
+            f'<td {_td_b(bg,fg,"center")}>{int(r.get("batch_count",0))}</td>'
+            f'</tr>'
+        )
+    tables_html = (f'<h3 style="font-family:Arial;color:#0A2540">'
+                   f'Batcher Throughput Report - {mon_tag}</h3>'
+                   f'<table style="{TBL}">{head_row}{body_rows}</table>')
+    html_body = email_helper.wrap_html_body(body, tables_html)
+
+    result = email_helper.send_report_email(
+        to_emails=to_addr, cc_emails=cc_addr,
+        subject=subject, body=body,
+        attachment_bytes=excel_bytes, attachment_name=fname,
+        html_body=html_body,
+    )
+    if result.get("success"):
+        flash(f"✅ Report emailed to {to_addr}.", "success")
+    else:
+        flash(f"Email failed: {result.get('error')}", "error")
+    return redirect(url_for("btrtp_reports"))
+
+
+# ── Settings ──────────────────────────────────────────────────────────────────
+@app.route("/btrtp/settings", methods=["GET"])
+def btrtp_settings():
+    sheet_id    = database.get_module_setting("btrtp", "gsheet_id",
+                                              database.get_setting("gsheet_id", ""))
+    worksheet   = database.get_module_setting("btrtp", "gsheet_worksheet", "BT Master")
+    batcher_col = database.get_module_setting("btrtp", "oracle_batcher_col", "CREATED_BY")
+    smtp        = email_helper.get_smtp_config()
+    email_configured = bool(smtp.get("host") and smtp.get("sender"))
+    ora_configured   = oracle_connector.is_configured()
+    last_sync        = google_sheets.get_btrtp_last_sync_info()
+    btrtp_email_to      = database.get_module_setting("btrtp", "email_default_to", "")
+    btrtp_email_cc      = database.get_module_setting("btrtp", "email_default_cc", "")
+    btrtp_email_subject = database.get_module_setting("btrtp", "email_default_subject", "")
+    btrtp_email_body    = database.get_module_setting("btrtp", "email_default_body", "")
+    ctx = _btrtp_ctx()
+    ctx["active_page"] = "settings"
+    return render_template("btrtp_settings.html",
+                           sheet_id=sheet_id, worksheet=worksheet,
+                           batcher_col=batcher_col,
+                           smtp=smtp, email_configured=email_configured,
+                           ora_configured=ora_configured, last_sync=last_sync,
+                           btrtp_email_to=btrtp_email_to, btrtp_email_cc=btrtp_email_cc,
+                           btrtp_email_subject=btrtp_email_subject,
+                           btrtp_email_body=btrtp_email_body, **ctx)
+
+
+@app.route("/btrtp/settings/save-oracle-cols", methods=["POST"])
+def btrtp_save_oracle_cols():
+    database.set_module_setting("btrtp", "oracle_batcher_col",
+                                request.form.get("batcher_col", "CREATED_BY").strip())
+    flash("Oracle column settings saved.", "success")
+    return redirect(url_for("btrtp_settings", m="oracle-cols"))
+
+
+@app.route("/btrtp/settings/save-sheet", methods=["POST"])
+def btrtp_save_sheet():
+    worksheet = request.form.get("worksheet", "BT Master").strip()
+    sheet_id  = request.form.get("sheet_id", "").strip()
+    database.set_module_setting("btrtp", "gsheet_worksheet", worksheet)
+    if sheet_id:
+        database.set_module_setting("btrtp", "gsheet_id",
+                                    google_sheets.extract_sheet_id(sheet_id))
+    flash("Sheet settings saved.", "success")
+    return redirect(url_for("btrtp_settings", m="sheet"))
+
+
+@app.route("/btrtp/settings/save-email-defaults", methods=["POST"])
+def btrtp_save_email_defaults():
+    database.set_module_settings_bulk("btrtp", {
+        "email_default_to":      request.form.get("default_to", "").strip(),
+        "email_default_cc":      request.form.get("default_cc", "").strip(),
+        "email_default_subject": request.form.get("default_subject", "").strip(),
+        "email_default_body":    request.form.get("default_body", "").strip(),
+    })
+    flash("BTRTP email defaults saved.", "success")
+    return redirect(url_for("btrtp_settings", m="email"))
+
 
 @app.route("/jldc")
 def page_jldc():

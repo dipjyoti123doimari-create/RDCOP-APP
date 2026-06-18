@@ -1,0 +1,82 @@
+{% extends "btrtp_base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>RDC-BTRTP — Batcher Throughput</h1>
+  <p>Oracle live data · individual batcher throughput tracking across all plants</p>
+</div>
+
+<!-- KPI cards -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">BT Master Rows</div>
+    <div class="kpi-value">{{ counts.btrtp_master_data | format_int }}</div>
+    <div class="kpi-sub">Batcher names synced from Sheets</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Oracle Rows Fetched</div>
+    <div class="kpi-value">{{ counts.btrtp_oracle_data | format_int }}</div>
+    <div class="kpi-sub">Production batches with batcher ID</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Saved Results</div>
+    <div class="kpi-value">{{ counts.btrtp_results | format_int }}</div>
+    <div class="kpi-sub">Batcher-plant rows calculated</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Oracle</div>
+    <div class="kpi-value" style="font-size:22px">{% if ora_ready %}⚙️{% else %}❌{% endif %}</div>
+    <div class="kpi-sub">{% if ora_ready %}Configured · live status top-right{% else %}Not configured{% endif %}</div>
+  </div>
+</div>
+
+<!-- Data status -->
+<div class="card">
+  <div class="section-title">📋 Data Status</div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Source</th><th>Details</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>BT Master (Google Sheets)</td>
+          <td>
+            {% if last_sync.last_sync %}
+              Last synced: <strong>{{ last_sync.last_sync }}</strong> · <strong>{{ last_sync.last_count }}</strong> batcher rows
+            {% else %}
+              <span style="color:var(--text-faint)">Not synced yet</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td>Plant Reference Data</td>
+          <td>{{ counts.tp_plant_data | format_int }} rows (shared with RDC-TP)</td>
+        </tr>
+        <tr>
+          <td>Oracle Production Data</td>
+          <td>{{ counts.btrtp_oracle_data | format_int }} rows in local store</td>
+        </tr>
+        <tr>
+          <td>Calculated Results</td>
+          <td>{{ counts.btrtp_results | format_int }} batcher-plant rows saved</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Quick start -->
+<div class="card">
+  <div class="section-title">🚀 Quick Start</div>
+  <ol style="color:var(--text-muted);line-height:2;margin:0;padding-left:20px">
+    <li>Go to <a href="{{ url_for('btrtp_data_uploader') }}">Data Uploader</a> → sync BT Master from Google Sheets &amp; fetch Oracle data for the period.</li>
+    <li>Go to <a href="{{ url_for('btrtp_calculate') }}">Calculate Throughput</a> → select date range and run.</li>
+    <li>Go to <a href="{{ url_for('btrtp_reports') }}">View Reports</a> → filter by plant / batcher, download or email.</li>
+  </ol>
+  <div class="alert alert-info" style="margin-top:14px">
+    💡 <strong>Plant reference data</strong> (mixer capacity) is shared from RDC-TP.
+    If you haven't synced it yet, go to <a href="{{ url_for('tp_data_uploader') }}">RDC-TP → Data Uploader</a> first.
+  </div>
+</div>
+
+{% endblock %}
