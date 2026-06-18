@@ -946,114 +946,141 @@ def _tp_build_excel(plant_rows, location_rows, month, year):
 
 
 def _tp_build_html_tables(plant_rows, location_rows, month, year):
-    """Return HTML string with two color-coded tables for TP report email."""
+    """Return compact HTML tables for TP report email body.
+    Fixed px column widths, nowrap, compact padding, inline CSS for Gmail/Outlook.
+    """
     mon_tag = _tp_mon_tag(month, year)
 
     def _bg(pct):
-        if pct < 60:   return "#FFB3B3"
-        if pct < 75:   return "#FFE066"
+        if pct < 60:  return "#FFB3B3"
+        if pct < 75:  return "#FFE066"
         return "#92D492"
 
     def _fg(bg):
-        """Dark complementary text color for each background."""
         return {"#FFB3B3": "#7B1F1F", "#FFE066": "#5C4200",
                 "#92D492": "#1A5C1A", "#D9D9D9": "#222222"}.get(bg, "#19263A")
 
-    BORDER = "2px solid #9A9A9A"
-    HDR_BG = "#D9D9D9"
-    FONT   = "font-family:Arial,sans-serif;font-size:10px;"
-
-    TTL = (f'style="{FONT}background:#0A2540;color:#fff;font-weight:bold;'
-           f'padding:6px 8px;font-size:11px;border:{BORDER};text-align:left"')
+    F   = "font-family:Arial,sans-serif;font-size:11px;"
+    TBL = "border-collapse:collapse;width:auto;max-width:100%;table-layout:fixed;margin:10px 0 18px"
+    TTL = (f'style="{F}font-size:12px;font-weight:bold;background:#082B49;color:#fff;'
+           f'padding:6px 8px;border:1px solid #7A7A7A;text-align:left"')
 
     def _th(w):
-        return (f'width="{w}" style="{FONT}background:#0A2540;color:#fff;font-weight:bold;'
-                f'padding:3px 5px;border:{BORDER};text-align:center;'
-                f'white-space:normal;word-break:break-word;line-height:1.2;width:{w}"')
+        return (f'width="{w}" style="{F}background:#082B49;color:#fff;font-weight:bold;'
+                f'padding:6px 6px;border:1px solid #7A7A7A;text-align:center;'
+                f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
+                f'line-height:1.2;vertical-align:middle;width:{w}px"')
 
-    # ── Location table — plain rows, PAN India row colored ───────────────────
-    L_COLS = [("Sr. no.","30"),("Exco Location","27%"),("Plants","8%"),
-              ("Total Qty","16%"),("Time (min)","16%"),("Avg TP %","10%")]
-    ths = "".join(f'<th {_th(w)}>{h}</th>' for h, w in L_COLS)
+    def _td(bg, fg, align, bold=False, top_bdr=""):
+        fw  = "font-weight:bold;" if bold else ""
+        top = f"border-top:{top_bdr};" if top_bdr else ""
+        return (f'style="{F}padding:4px 6px;border:1px solid #9E9E9E;{top}'
+                f'background:{bg};color:{fg};text-align:{align};'
+                f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
+                f'line-height:1.2;vertical-align:middle;{fw}"')
+
+    # ── Location table — (Sr. no. | Exco Location | Plants | Total Qty | Time | Avg TP %)
+    # Column: (header, px_width, align)
+    L_COLS = [
+        ("Sr. no.",      50,  "center"),
+        ("Exco Location",130, "left"),
+        ("Plants",       70,  "center"),
+        ("Total Qty",    110, "right"),
+        ("Time (min)",   110, "right"),
+        ("Avg TP %",     85,  "center"),
+    ]
+    ths_l = "".join(f'<th {_th(w)}>{h}</th>' for h, w, _ in L_COLS)
 
     loc_body = ""
-    for i, r in enumerate(location_rows, 1):
-        pct = float(r.get("avg_throughput_pct", 0))
-        pan = bool(r.get("is_pan_india"))
+    srno = 1
+    for r in location_rows:
+        pct    = float(r.get("avg_throughput_pct", 0))
+        pan    = bool(r.get("is_pan_india"))
+        pct_bg = _bg(pct); pct_fg = _fg(pct_bg)
+        qty    = round(float(r.get("total_quantity", 0)), 1)
+        mins   = round(float(r.get("total_time_min", 0)), 1)
+        plants = r.get("plant_count", 0)
+        loc    = r.get("exco_location", "")
         if pan:
-            pct_bg  = _bg(pct)
-            PAN_BASE = (f'{FONT}background:{HDR_BG};color:{_fg(HDR_BG)};font-weight:bold;'
-                        f'padding:4px 5px;border:{BORDER};border-top:2px solid #555;'
-                        f'vertical-align:middle')
+            bg = "#D9D9D9"; fg = "#222222"
             loc_body += (
                 f'<tr>'
-                f'<td style="{PAN_BASE};text-align:center">—</td>'
-                f'<td style="{PAN_BASE};text-align:left">&#127988; PAN India</td>'
-                f'<td style="{PAN_BASE};text-align:center">{r.get("plant_count",0)}</td>'
-                f'<td style="{PAN_BASE};text-align:center">{round(float(r.get("total_quantity",0)),1)}</td>'
-                f'<td style="{PAN_BASE};text-align:center">{round(float(r.get("total_time_min",0)),1)}</td>'
-                f'<td style="{FONT}background:{pct_bg};color:{_fg(pct_bg)};font-weight:bold;'
-                f'padding:4px 5px;border:{BORDER};border-top:2px solid #555;'
-                f'text-align:center;vertical-align:middle">{round(pct)}%</td>'
+                f'<td {_td(bg, fg, "center", bold=True, top_bdr="2px solid #555")}>—</td>'
+                f'<td {_td(bg, fg, "left",   bold=True, top_bdr="2px solid #555")} title="PAN India">&#127988; PAN India</td>'
+                f'<td {_td(bg, fg, "center", bold=True, top_bdr="2px solid #555")}>{plants}</td>'
+                f'<td {_td(bg, fg, "right",  bold=True, top_bdr="2px solid #555")}>{qty}</td>'
+                f'<td {_td(bg, fg, "right",  bold=True, top_bdr="2px solid #555")}>{mins}</td>'
+                f'<td {_td(pct_bg, pct_fg, "center", bold=True, top_bdr="2px solid #555")}>{round(pct)}%</td>'
                 f'</tr>'
             )
         else:
-            PLAIN = (f'{FONT}background:#ffffff;color:#19263A;'
-                     f'padding:3px 5px;border:{BORDER};vertical-align:middle')
+            bg = "#ffffff"; fg = "#19263A"
             loc_body += (
                 f'<tr>'
-                f'<td style="{PLAIN};text-align:center">{i}</td>'
-                f'<td style="{PLAIN};text-align:left">{r.get("exco_location","")}</td>'
-                f'<td style="{PLAIN};text-align:center">{r.get("plant_count",0)}</td>'
-                f'<td style="{PLAIN};text-align:center">{round(float(r.get("total_quantity",0)),1)}</td>'
-                f'<td style="{PLAIN};text-align:center">{round(float(r.get("total_time_min",0)),1)}</td>'
-                f'<td style="{PLAIN};text-align:center;font-weight:bold">{round(pct)}%</td>'
+                f'<td {_td(bg, fg, "center")}>{srno}</td>'
+                f'<td {_td(bg, fg, "left")} title="{loc}">{loc}</td>'
+                f'<td {_td(bg, fg, "center")}>{plants}</td>'
+                f'<td {_td(bg, fg, "right")}>{qty}</td>'
+                f'<td {_td(bg, fg, "right")}>{mins}</td>'
+                f'<td {_td(bg, fg, "center", bold=True)}>{round(pct)}%</td>'
                 f'</tr>'
             )
+            srno += 1
 
     colspan_l = len(L_COLS)
     loc_html = (
-        f'<table cellpadding="0" cellspacing="0" '
-        f'style="border-collapse:collapse;width:100%;max-width:560px;'
-        f'margin:14px 0 10px;table-layout:fixed">'
+        f'<table cellpadding="0" cellspacing="0" style="{TBL}">'
         f'<tr><td colspan="{colspan_l}" {TTL}>Location wise Throughput - {mon_tag}</td></tr>'
-        f'<tr>{ths}</tr>{loc_body}</table>'
+        f'<tr>{ths_l}</tr>{loc_body}</table>'
     )
 
-    # ── Plant table — full list, color-coded by TP % ─────────────────────────
-    P_COLS = [("Sr. no.","30"),("Plant","23%"),("Exco Location","11%"),
-              ("Business Head","11%"),("Plant Manager","11%"),
-              ("Mixer Cap","7%"),("Total Qty","10%"),("Time (min)","10%"),("TP %","8%")]
-    ths2 = "".join(f'<th {_th(w)}>{h}</th>' for h, w in P_COLS)
+    # ── Plant table — (# | Plant Code | Plant | Exco Location | BH | PM | Mixer | Qty | Time | TP%)
+    P_COLS = [
+        ("Sr. no.",       45,  "center"),
+        ("Plant Code",    95,  "center"),
+        ("Plant",        190,  "left"),
+        ("Exco Location",120,  "left"),
+        ("Business Head",130,  "left"),
+        ("Plant Manager",130,  "left"),
+        ("Mixer Cap",     85,  "right"),
+        ("Total Qty",    105,  "right"),
+        ("Time (min)",   105,  "right"),
+        ("TP %",          80,  "center"),
+    ]
+    ths_p = "".join(f'<th {_th(w)}>{h}</th>' for h, w, _ in P_COLS)
 
     plant_body = ""
     for i, r in enumerate(plant_rows, 1):
-        pct = float(r.get("throughput_pct", 0))
-        bg  = _bg(pct)
-        fg  = _fg(bg)
-        TD  = (f'{FONT}background:{bg};color:{fg};'
-               f'padding:3px 5px;border:{BORDER};vertical-align:middle')
+        pct  = float(r.get("throughput_pct", 0))
+        bg   = _bg(pct); fg = _fg(bg)
+        name = str(r.get("plant_name", ""))
+        code = str(r.get("lookup_code", ""))
+        loc  = str(r.get("exco_location", ""))
+        bh   = str(r.get("business_head", ""))
+        pm   = str(r.get("plant_manager", ""))
+        cap  = str(r.get("mixer_theo_cap", ""))
+        qty  = round(float(r.get("total_quantity", 0)), 1)
+        mins = round(float(r.get("total_time_min", 0)), 1)
         plant_body += (
             f'<tr>'
-            f'<td style="{TD};text-align:center">{i}</td>'
-            f'<td style="{TD};text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{r.get("plant_name","")}</td>'
-            f'<td style="{TD};text-align:left">{r.get("exco_location","")}</td>'
-            f'<td style="{TD};text-align:left">{r.get("business_head","")}</td>'
-            f'<td style="{TD};text-align:left">{r.get("plant_manager","")}</td>'
-            f'<td style="{TD};text-align:center">{r.get("mixer_theo_cap","")}</td>'
-            f'<td style="{TD};text-align:center">{round(float(r.get("total_quantity",0)),1)}</td>'
-            f'<td style="{TD};text-align:center">{round(float(r.get("total_time_min",0)),1)}</td>'
-            f'<td style="{TD};text-align:center;font-weight:bold">{round(pct)}%</td>'
+            f'<td {_td(bg, fg, "center")}>{i}</td>'
+            f'<td {_td(bg, fg, "center")} title="{code}">{code}</td>'
+            f'<td {_td(bg, fg, "left")} title="{name}">{name}</td>'
+            f'<td {_td(bg, fg, "left")} title="{loc}">{loc}</td>'
+            f'<td {_td(bg, fg, "left")} title="{bh}">{bh}</td>'
+            f'<td {_td(bg, fg, "left")} title="{pm}">{pm}</td>'
+            f'<td {_td(bg, fg, "right")}>{cap}</td>'
+            f'<td {_td(bg, fg, "right")}>{qty}</td>'
+            f'<td {_td(bg, fg, "right")}>{mins}</td>'
+            f'<td {_td(bg, fg, "center", bold=True)}>{round(pct)}%</td>'
             f'</tr>'
         )
 
     colspan_p = len(P_COLS)
     plant_html = (
-        f'<table cellpadding="0" cellspacing="0" '
-        f'style="border-collapse:collapse;width:100%;max-width:860px;'
-        f'margin:10px 0 20px;table-layout:fixed">'
-        f'<tr><td colspan="{colspan_p}" {TTL}>Plant Throughput report - {mon_tag}</td></tr>'
-        f'<tr>{ths2}</tr>{plant_body}</table>'
+        f'<table cellpadding="0" cellspacing="0" style="{TBL}">'
+        f'<tr><td colspan="{colspan_p}" {TTL}>Plant Throughput Report - {mon_tag}</td></tr>'
+        f'<tr>{ths_p}</tr>{plant_body}</table>'
     )
 
     return loc_html + plant_html
