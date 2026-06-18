@@ -1332,21 +1332,34 @@ def btrtp_dashboard():
 # ── Data Uploader ─────────────────────────────────────────────────────────────
 @app.route("/btrtp/data-uploader")
 def btrtp_data_uploader():
-    ora_ready   = oracle_connector.is_configured()
-    last_sync   = google_sheets.get_btrtp_last_sync_info()
-    sheet_id    = database.get_module_setting("btrtp", "gsheet_id",
-                                              database.get_setting("gsheet_id", ""))
-    worksheet   = database.get_module_setting("btrtp", "gsheet_worksheet", "BT Master")
-    ora_counts  = database.get_table_counts().get("btrtp_oracle_data", 0)
-    master_rows = database.read_table("btrtp_master_data")
-    master_count = len(master_rows) if not master_rows.empty else 0
+    ora_ready    = oracle_connector.is_configured()
+    last_master  = google_sheets.get_btrtp_last_sync_info()
+    last_plant   = google_sheets.get_tp_last_sync_info()
+
+    # BT Master sheet settings
+    master_sheet_id  = database.get_module_setting("btrtp", "gsheet_id",
+                                                    database.get_setting("gsheet_id", ""))
+    master_worksheet = database.get_module_setting("btrtp", "gsheet_worksheet", "BT Master Data")
+
+    # Plant Data sheet settings (shared reference with TP)
+    plant_sheet_id   = database.get_module_setting("tp", "gsheet_id",
+                                                    database.get_setting("gsheet_id", ""))
+    plant_worksheet  = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
+
+    all_counts   = database.get_table_counts()
+    ora_counts   = all_counts.get("btrtp_oracle_data", 0)
+    master_count = all_counts.get("btrtp_master_data", 0)
+    plant_count  = all_counts.get("tp_plant_data", 0)
+
     ctx = _btrtp_ctx()
     ctx["active_page"] = "data_uploader"
     return render_template("btrtp_data_uploader.html",
-                           ora_ready=ora_ready, last_sync=last_sync,
-                           sheet_id=sheet_id, worksheet=worksheet,
+                           ora_ready=ora_ready,
+                           last_master=last_master, last_plant=last_plant,
+                           master_sheet_id=master_sheet_id, master_worksheet=master_worksheet,
+                           plant_sheet_id=plant_sheet_id, plant_worksheet=plant_worksheet,
                            ora_counts=ora_counts, master_count=master_count,
-                           **ctx)
+                           plant_count=plant_count, **ctx)
 
 
 @app.route("/btrtp/action/fetch-oracle", methods=["POST"])
@@ -1382,8 +1395,8 @@ def btrtp_sync_master():
     sheet_id  = (request.form.get("sheet_id", "").strip()
                  or database.get_module_setting("btrtp", "gsheet_id",
                                                 database.get_setting("gsheet_id", "")))
-    worksheet = request.form.get("worksheet", "BT Master").strip()
-    _set_progress(20, "Syncing BT Master from Google Sheets…")
+    worksheet = request.form.get("worksheet", "BT Master Data").strip()
+    _set_progress(20, "Syncing BT Master Data from Google Sheets…")
     result = google_sheets.sync_btrtp_master_data(sheet_id, worksheet)
     _set_progress(85, "Saving settings…")
     if result["error"]:
@@ -1393,6 +1406,26 @@ def btrtp_sync_master():
                                     google_sheets.extract_sheet_id(sheet_id))
         database.set_module_setting("btrtp", "gsheet_worksheet", worksheet)
         flash(f"✅ {result['rows_synced']} batcher rows synced from Google Sheets ({result['mode']} mode).",
+              "success")
+    _set_progress(100, "Complete")
+    return jsonify({"ok": True, "redirect": url_for("btrtp_data_uploader")})
+
+
+@app.route("/btrtp/action/sync-plant", methods=["POST"])
+def btrtp_sync_plant():
+    sheet_id  = (request.form.get("sheet_id", "").strip()
+                 or database.get_module_setting("tp", "gsheet_id",
+                                                database.get_setting("gsheet_id", "")))
+    worksheet = request.form.get("worksheet", "Plant Data for TP").strip()
+    _set_progress(20, "Syncing Plant Data from Google Sheets…")
+    result = google_sheets.sync_tp_plant_data(sheet_id, worksheet)
+    _set_progress(85, "Saving settings…")
+    if result["error"]:
+        flash(f"Sync failed: {result['error']}", "error")
+    else:
+        database.set_module_setting("tp", "gsheet_id", google_sheets.extract_sheet_id(sheet_id))
+        database.set_module_setting("tp", "gsheet_worksheet", worksheet)
+        flash(f"✅ {result['rows_synced']} plant rows synced from Google Sheets ({result['mode']} mode).",
               "success")
     _set_progress(100, "Complete")
     return jsonify({"ok": True, "redirect": url_for("btrtp_data_uploader")})
@@ -1757,14 +1790,21 @@ def btrtp_send_email():
 # ── Settings ──────────────────────────────────────────────────────────────────
 @app.route("/btrtp/settings", methods=["GET"])
 def btrtp_settings():
-    sheet_id    = database.get_module_setting("btrtp", "gsheet_id",
-                                              database.get_setting("gsheet_id", ""))
-    worksheet   = database.get_module_setting("btrtp", "gsheet_worksheet", "BT Master")
+    # BT Master sheet
+    master_sheet_id  = database.get_module_setting("btrtp", "gsheet_id",
+                                                    database.get_setting("gsheet_id", ""))
+    master_worksheet = database.get_module_setting("btrtp", "gsheet_worksheet", "BT Master Data")
+    # Plant Data sheet (shared with TP)
+    plant_sheet_id   = database.get_module_setting("tp", "gsheet_id",
+                                                    database.get_setting("gsheet_id", ""))
+    plant_worksheet  = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
+
     batcher_col = database.get_module_setting("btrtp", "oracle_batcher_col", "CREATED_BY")
     smtp        = email_helper.get_smtp_config()
     email_configured = bool(smtp.get("host") and smtp.get("sender"))
     ora_configured   = oracle_connector.is_configured()
-    last_sync        = google_sheets.get_btrtp_last_sync_info()
+    last_master = google_sheets.get_btrtp_last_sync_info()
+    last_plant  = google_sheets.get_tp_last_sync_info()
     btrtp_email_to      = database.get_module_setting("btrtp", "email_default_to", "")
     btrtp_email_cc      = database.get_module_setting("btrtp", "email_default_cc", "")
     btrtp_email_subject = database.get_module_setting("btrtp", "email_default_subject", "")
@@ -1772,10 +1812,12 @@ def btrtp_settings():
     ctx = _btrtp_ctx()
     ctx["active_page"] = "settings"
     return render_template("btrtp_settings.html",
-                           sheet_id=sheet_id, worksheet=worksheet,
+                           master_sheet_id=master_sheet_id, master_worksheet=master_worksheet,
+                           plant_sheet_id=plant_sheet_id, plant_worksheet=plant_worksheet,
                            batcher_col=batcher_col,
                            smtp=smtp, email_configured=email_configured,
-                           ora_configured=ora_configured, last_sync=last_sync,
+                           ora_configured=ora_configured,
+                           last_master=last_master, last_plant=last_plant,
                            btrtp_email_to=btrtp_email_to, btrtp_email_cc=btrtp_email_cc,
                            btrtp_email_subject=btrtp_email_subject,
                            btrtp_email_body=btrtp_email_body, **ctx)
@@ -1789,16 +1831,28 @@ def btrtp_save_oracle_cols():
     return redirect(url_for("btrtp_settings", m="oracle-cols"))
 
 
-@app.route("/btrtp/settings/save-sheet", methods=["POST"])
-def btrtp_save_sheet():
-    worksheet = request.form.get("worksheet", "BT Master").strip()
+@app.route("/btrtp/settings/save-master-sheet", methods=["POST"])
+def btrtp_save_master_sheet():
+    worksheet = request.form.get("worksheet", "BT Master Data").strip()
     sheet_id  = request.form.get("sheet_id", "").strip()
     database.set_module_setting("btrtp", "gsheet_worksheet", worksheet)
     if sheet_id:
         database.set_module_setting("btrtp", "gsheet_id",
                                     google_sheets.extract_sheet_id(sheet_id))
-    flash("Sheet settings saved.", "success")
-    return redirect(url_for("btrtp_settings", m="sheet"))
+    flash("BT Master Data sheet settings saved.", "success")
+    return redirect(url_for("btrtp_settings", m="master-sheet"))
+
+
+@app.route("/btrtp/settings/save-plant-sheet", methods=["POST"])
+def btrtp_save_plant_sheet():
+    worksheet = request.form.get("worksheet", "Plant Data for TP").strip()
+    sheet_id  = request.form.get("sheet_id", "").strip()
+    database.set_module_setting("tp", "gsheet_worksheet", worksheet)
+    if sheet_id:
+        database.set_module_setting("tp", "gsheet_id",
+                                    google_sheets.extract_sheet_id(sheet_id))
+    flash("Plant Data sheet settings saved.", "success")
+    return redirect(url_for("btrtp_settings", m="plant-sheet"))
 
 
 @app.route("/btrtp/settings/save-email-defaults", methods=["POST"])
