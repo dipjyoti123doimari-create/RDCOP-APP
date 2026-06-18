@@ -442,21 +442,19 @@ tbody tr.row-yellow  td { background: rgba(251,191,36,0.10) !important; }
   animation: spin 0.7s linear infinite; flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.loading { display: none; flex-wrap: wrap; align-items: center; gap: 9px; color: var(--text-muted); font-size: 14px; padding: 10px 0; }
+
+/* .loading is a column: [spinner row] then [progress bar] */
+.loading { display: none; flex-direction: column; gap: 5px; padding: 10px 0; }
 .loading.active { display: flex; }
 
-/* Progress bar — injected by JS into every .loading div */
-.loading-bar { flex: 0 0 100%; height: 3px; background: rgba(255,255,255,0.07); border-radius: 2px; overflow: hidden; margin-top: 2px; }
-.loading-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--purple), var(--cyan)); border-radius: 2px; }
-.loading.active .loading-bar-fill { animation: loading-progress 6s ease-out forwards; }
-@keyframes loading-progress {
-  0%   { width: 0%; }
-  15%  { width: 30%; }
-  35%  { width: 52%; }
-  60%  { width: 68%; }
-  80%  { width: 79%; }
-  100% { width: 87%; }
-}
+/* Top row: spinner + label + percentage */
+.loading-row { display: flex; align-items: center; gap: 9px; color: var(--text-muted); font-size: 14px; }
+.loading-pct  { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--purple-light); min-width: 36px; text-align: right; letter-spacing: 0.02em; }
+
+/* Progress bar */
+.loading-bar      { height: 5px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; }
+.loading-bar-fill { height: 100%; width: 0%; border-radius: 3px; transition: width 0.12s ease;
+                    background: linear-gradient(90deg, var(--purple), var(--cyan)); }
 
 /* ---- Badge ---- */
 .badge {

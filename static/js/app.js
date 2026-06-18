@@ -32,12 +32,40 @@ document.addEventListener('DOMContentLoaded', function () {
     document.body.appendChild(m);
   });
 
-  /* Inject animated progress bar into every .loading indicator */
+  /* Inject [spinner+text row | % counter] + progress bar into every .loading */
   document.querySelectorAll('.loading').forEach(function (el) {
+    /* wrap existing spinner + text in a row div */
+    var row = document.createElement('div');
+    row.className = 'loading-row';
+    while (el.firstChild) row.appendChild(el.firstChild);
+    var pct = document.createElement('span');
+    pct.className = 'loading-pct';
+    row.appendChild(pct);
+    el.appendChild(row);
+
+    /* bar below the row */
     var bar  = document.createElement('div');  bar.className  = 'loading-bar';
     var fill = document.createElement('div');  fill.className = 'loading-bar-fill';
     bar.appendChild(fill);
     el.appendChild(bar);
+
+    /* drive width + percentage via setInterval when .active is toggled */
+    var timer = null; var p = 0;
+    new MutationObserver(function () {
+      if (el.classList.contains('active')) {
+        p = 0; fill.style.width = '0%'; pct.textContent = '0%';
+        clearInterval(timer);
+        timer = setInterval(function () {
+          p = Math.min(87, p + Math.max(0.3, (87 - p) * 0.05));
+          fill.style.width = p.toFixed(1) + '%';
+          pct.textContent  = Math.floor(p) + '%';
+        }, 100);
+      } else {
+        clearInterval(timer);
+        fill.style.width = '0%';
+        pct.textContent  = '';
+      }
+    }).observe(el, { attributes: true, attributeFilter: ['class'] });
   });
 });
 
