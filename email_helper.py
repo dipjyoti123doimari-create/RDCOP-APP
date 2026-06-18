@@ -273,8 +273,7 @@ def _fill_gradient(img, c_top, c_bot):
 
 
 def _draw_premium_table(draw, sec_title, col_defs, data_rows, row_color_fn,
-                        x, y, f_sec, f_hdr, f_data, f_bold=None,
-                        lh_px=None, drow_px=None, sh_px=None, hh_b_px=None):
+                        x, y, f_sec, f_hdr, f_data, f_bold=None):
     """
     Draw one frosted-glass table section on white background.
 
@@ -282,16 +281,15 @@ def _draw_premium_table(draw, sec_title, col_defs, data_rows, row_color_fn,
     data_rows    = [[str, ...], ...]
     row_color_fn(ri, row) -> RGB tuple OR (RGB, is_bold bool)
     f_bold       = bold font for special rows (PAN India etc.); falls back to f_data
-    lh_px/drow_px/sh_px/hh_b_px — override module defaults for larger fonts
 
     Returns new y position after drawing.
     """
     S    = _S
-    cp   = _CP * S
-    sh   = sh_px   if sh_px   is not None else _SH   * S
-    lh   = lh_px   if lh_px   is not None else _LH   * S
-    drow = drow_px if drow_px is not None else _DROW * S
-    hh_b = hh_b_px if hh_b_px is not None else _HH   * S
+    cp   = _CP   * S
+    sh   = _SH   * S
+    lh   = _LH   * S
+    drow = _DROW * S
+    hh_b = _HH   * S
     total_w = sum(d[1] for d in col_defs)
     x1 = x + total_w
 
@@ -383,12 +381,10 @@ def _tp_row_color(pct_str, name):
 
 
 def _tp_build_image(col_defs_raw, data_rows_out, row_color_fn,
-                    sec_title, output_path, footnote=None,
-                    pt_sec=9, pt_hdr=7, pt_data=7, pt_foot=6):
+                    sec_title, output_path, footnote=None):
     """
     Internal helper: render a single TP table (no banner) into output_path.
     col_defs_raw = [(label, base_width_px, align, wrap_data), ...]
-    pt_* params let callers request larger fonts for the plant table.
     Returns output_path on success, None on failure.
     """
     try:
@@ -397,18 +393,16 @@ def _tp_build_image(col_defs_raw, data_rows_out, row_color_fn,
         op = _OP * S
         gh = _GAP * S
         cp = _CP  * S
-        # Derive line-height and row-height from the data font size so
-        # wrapped text rows never overlap when using larger fonts.
-        lh   = max(_LH,   pt_data + 5) * S
-        drow = max(_DROW, pt_data + 7) * S
-        hh_b = max(_HH,   pt_hdr  + 8) * S
-        sh   = max(_SH,   pt_sec  + 4) * S
+        lh = _LH  * S
+        drow = _DROW * S
+        hh_b = _HH   * S
+        sh   = _SH   * S
 
-        f_sec  = _pil_font(pt_sec,  bold=True)
-        f_hdr  = _pil_font(pt_hdr,  bold=True)
-        f_data = _pil_font(pt_data, bold=False)
-        f_bold = _pil_font(pt_data, bold=True)
-        f_foot = _pil_font(pt_foot, bold=False)
+        f_sec  = _pil_font(9,  bold=True)
+        f_hdr  = _pil_font(7,  bold=True)
+        f_data = _pil_font(7,  bold=False)
+        f_bold = _pil_font(7,  bold=True)
+        f_foot = _pil_font(6,  bold=False)
 
         col_defs = [(h, w * S, a, wp) for h, w, a, wp in col_defs_raw]
         tbl_w    = sum(d[1] for d in col_defs)
@@ -425,7 +419,7 @@ def _tp_build_image(col_defs_raw, data_rows_out, row_color_fn,
                 for ci, d in enumerate(col_defs) if ci < len(row)
             )
             row_hs.append(max(drow, max_l * lh + cp * 2))
-        foot_h = (lh + 4 * S if footnote else 0)
+        foot_h = (18 * S if footnote else 0)
         total_h = op + sh + hh + sum(row_hs) + S * 2 + gh + foot_h + op
 
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
@@ -434,8 +428,7 @@ def _tp_build_image(col_defs_raw, data_rows_out, row_color_fn,
 
         y = op
         y = _draw_premium_table(draw, sec_title, col_defs, data_rows_out,
-                                row_color_fn, op, y, f_sec, f_hdr, f_data, f_bold,
-                                lh_px=lh, drow_px=drow, sh_px=sh, hh_b_px=hh_b)
+                                row_color_fn, op, y, f_sec, f_hdr, f_data, f_bold)
         if footnote:
             y += 4 * S
             draw.text((op, y), footnote, fill=_D["txt_mut"], font=f_foot)
@@ -482,58 +475,36 @@ def create_tp_location_image(location_rows, month, year, output_path):
                            output_path)
 
 
-def create_tp_plant_image(plant_rows, month, year, output_path, max_rows=30):
-    """
-    Generate Plant Throughput table PNG.
-    All 10 columns, 11pt readable fonts, wraps Plant name, capped at max_rows.
-    Image is ~1300px wide (2× retina) — email clients scale it to fit.
-    """
+def create_tp_plant_image(plant_rows, month, year, output_path):
+    """Generate Plant Throughput table PNG — full list, no row limit."""
     import calendar
     mon_tag = f"{calendar.month_abbr[month]}'{str(year)[-2:]}"
-
-    # Column: (label, base_px, align, wrap_text)
-    # base_px × _S(2) = actual pixel width in PNG
-    # Total base: 28+55+134+65+75+75+45+55+55+43 = 630 → 1260px + 2×(10×2)=40 → 1300px
     PLT_COLS = [
-        ("#",               28, 'c', False),   # Sr. no.   ~56px
-        ("Plant Code",      55, 'c', False),   # code      ~110px
-        ("Plant",          134, 'l', True),    # name      ~268px  WRAPS
-        ("Exco Location",   65, 'l', False),   # location  ~130px
-        ("Business Head",   75, 'l', False),   # BH        ~150px
-        ("Plant Manager",   75, 'l', False),   # PM        ~150px
-        ("Mixer Cap",       45, 'r', False),   # capacity  ~90px
-        ("Total Qty",       55, 'r', False),   # qty       ~110px
-        ("Time (min)",      55, 'r', False),   # time      ~110px
-        ("TP %",            43, 'c', False),   # pct       ~86px
+        ("#",               22, 'c', False),
+        ("Plant",          160, 'l', True),
+        ("Exco Location",   76, 'l', False),
+        ("Business Head",   90, 'l', False),
+        ("Total Qty",       68, 'r', False),
+        ("Time (min)",      64, 'r', False),
+        ("TP %",            46, 'c', False),
     ]
-
-    shown = plant_rows[:max_rows]
-    footnote = (f"Showing first {max_rows} of {len(plant_rows)} plants. "
-                f"Full detail in attached Excel.")  if len(plant_rows) > max_rows else None
-
     rows_out = []
-    for i, r in enumerate(shown, 1):
+    for i, r in enumerate(plant_rows, 1):
         pct = round(float(r.get("throughput_pct", 0) or 0))
         rows_out.append([
             str(i),
-            str(r.get("lookup_code", "")),
             str(r.get("plant_name", "")),
             str(r.get("exco_location", "")),
             str(r.get("business_head", "")),
-            str(r.get("plant_manager", "")),
-            str(r.get("mixer_theo_cap", "")),
             _img_fmt(r.get("total_quantity", 0)),
             _img_fmt(r.get("total_time_min", 0)),
             f"{pct}%",
         ])
-
     def _plt_color(ri, row):
-        return _tp_row_color(row[-1], "")  # TP% is last column
-
+        return _tp_row_color(row[-1], "")
     return _tp_build_image(PLT_COLS, rows_out, _plt_color,
                            f"Plant Throughput — {mon_tag}",
-                           output_path, footnote=footnote,
-                           pt_sec=13, pt_hdr=11, pt_data=11, pt_foot=9)
+                           output_path)
 
 
 def create_tp_preview_image(plant_rows, location_rows, month, year,

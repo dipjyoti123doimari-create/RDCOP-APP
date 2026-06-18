@@ -1117,33 +1117,15 @@ def tp_send_email():
     excel_bytes = _tp_build_excel(plant_rows, location_rows, month, year)
     fname = f"RDC_TP_{year}_{month:02d}.xlsx"
 
-    # Generate PIL preview images (location + plant tables)
-    exports_dir = os.path.join(os.path.dirname(__file__), "exports")
-    img_paths = email_helper.create_tp_preview_image(
-        plant_rows, location_rows, month, year,
-        os.path.join(exports_dir, "tp_preview.png"),
-    )
-    if img_paths and len(img_paths) >= 2:
-        html_body  = email_helper.wrap_html_body_with_image(body, excel_attached=True, num_images=2)
-        loc_img    = img_paths[0]
-        plant_img  = img_paths[1]
-    elif img_paths and len(img_paths) == 1:
-        html_body  = email_helper.wrap_html_body_with_image(body, excel_attached=True, num_images=1)
-        loc_img    = img_paths[0]
-        plant_img  = None
-    else:
-        # Fallback to HTML tables if image generation fails
-        tables_html = _tp_build_html_tables(plant_rows, location_rows, month, year)
-        html_body   = email_helper.wrap_html_body(body, tables_html)
-        loc_img = plant_img = None
+    # HTML tables in body — no inline images
+    tables_html = _tp_build_html_tables(plant_rows, location_rows, month, year)
+    html_body   = email_helper.wrap_html_body(body, tables_html)
 
     result = email_helper.send_report_email(
         to_emails=to_addr, cc_emails=cc_addr,
         subject=subject, body=body,
         attachment_bytes=excel_bytes, attachment_name=fname,
         html_body=html_body,
-        inline_image_path=loc_img,
-        extra_inline_image_path=plant_img,
     )
     if result.get("success"):
         flash(f"✅ Report emailed to {to_addr}.", "success")
