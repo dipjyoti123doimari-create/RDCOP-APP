@@ -961,9 +961,16 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
                 "#92D492": "#1A5C1A", "#D9D9D9": "#222222"}.get(bg, "#19263A")
 
     F   = "font-family:Arial,sans-serif;font-size:11px;"
-    TBL = "border-collapse:collapse;width:auto;max-width:100%;table-layout:fixed;margin:10px 0 18px"
+    # table-layout:fixed ONLY enforces column widths when the table has an explicit px width.
+    # L_TOT = sum of Location column widths; P_TOT = sum of Plant column widths.
+    L_TOT = 555   # 50+130+70+110+110+85
+    P_TOT = 1085  # 45+95+190+120+130+130+85+105+105+80
     TTL = (f'style="{F}font-size:12px;font-weight:bold;background:#082B49;color:#fff;'
            f'padding:6px 8px;border:1px solid #7A7A7A;text-align:left"')
+
+    def _tbl_style(tot_px):
+        return (f"border-collapse:collapse;width:{tot_px}px;table-layout:fixed;"
+                f"margin:10px 0 18px")
 
     def _th(w):
         return (f'width="{w}" style="{F}background:#082B49;color:#fff;font-weight:bold;'
@@ -1029,7 +1036,7 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
 
     colspan_l = len(L_COLS)
     loc_html = (
-        f'<table cellpadding="0" cellspacing="0" style="{TBL}">'
+        f'<table cellpadding="0" cellspacing="0" style="{_tbl_style(L_TOT)}">'
         f'<tr><td colspan="{colspan_l}" {TTL}>Location wise Throughput - {mon_tag}</td></tr>'
         f'<tr>{ths_l}</tr>{loc_body}</table>'
     )
@@ -1078,7 +1085,7 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
 
     colspan_p = len(P_COLS)
     plant_html = (
-        f'<table cellpadding="0" cellspacing="0" style="{TBL}">'
+        f'<table cellpadding="0" cellspacing="0" style="{_tbl_style(P_TOT)}">'
         f'<tr><td colspan="{colspan_p}" {TTL}>Plant Throughput Report - {mon_tag}</td></tr>'
         f'<tr>{ths_p}</tr>{plant_body}</table>'
     )
