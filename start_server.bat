@@ -1,14 +1,19 @@
 @echo off
-title RDC Incentive Calculator - Auto Restart
-:restart
+title RDC Incentive Calculator - Watchdog
+
+set APP_DIR=d:\Dipjyoti Doimari\AI\Incentive_Calculator
+
 echo.
 echo ============================================================
 echo   RDC Batching Incentive Calculator
-echo   Starting server on http://localhost:2001
+echo   Starting watchdog on http://localhost:2001
+echo   Crash log: %APP_DIR%\server_crash.log
+echo   App log:   %APP_DIR%\server.log
 echo ============================================================
-cd /d "d:\Dipjyoti Doimari\AI\Incentive_Calculator"
-python app.py
+
+cd /d "%APP_DIR%"
+python watchdog.py
+
 echo.
-echo Server stopped. Restarting in 5 seconds... (Press Ctrl+C to quit)
-timeout /t 5 /nobreak
-goto restart
+echo Watchdog exited. Press any key to close.
+pause

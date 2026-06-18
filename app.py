@@ -14,10 +14,12 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import os
 import subprocess
 import sys
 import threading
+import traceback
 from datetime import date as _date, datetime as _dt, timedelta
 
 import pandas as pd
@@ -37,6 +39,27 @@ import oracle_connector
 import report_generator
 import tp_calculator
 import validations
+
+# ── File logging (survives minimised/closed terminal windows) ────────────────
+_LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.log")
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(_LOG_FILE, encoding="utf-8"),
+        logging.StreamHandler(sys.stdout),
+    ],
+)
+_log = logging.getLogger(__name__)
+
+def _handle_unhandled_exception(exc_type, exc_value, exc_tb):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+        return
+    _log.critical("Unhandled exception — server will exit:\n%s",
+                  "".join(traceback.format_exception(exc_type, exc_value, exc_tb)))
+
+sys.excepthook = _handle_unhandled_exception
 
 # ── App setup ────────────────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -2103,4 +2126,4 @@ if __name__ == "__main__":
     print("  RDC Batching Incentive Calculator")
     print("  Flask server starting on http://localhost:2001")
     print("=" * 60)
-    app.run(host="0.0.0.0", port=2001, debug=True, use_reloader=False)
+    app.run(host="0.0.0.0", port=2001, debug=False, use_reloader=False)
