@@ -907,7 +907,7 @@ def _tp_build_excel(plant_rows, location_rows, month, year):
                 c.fill = pct_fill; c.font = Font(bold=pan, color=pct_font.color, size=10)
             else:
                 c.fill = row_fill; c.font = row_font
-    for ci, w in enumerate([4, 22, 8, 12, 12, 10], 1):
+    for ci, w in enumerate([30, 22, 8, 12, 12, 10], 1):
         ws_l.column_dimensions[get_column_letter(ci)].width = w
 
     # ── Plant sheet — Sr. no., Plant, Exco Location, Business Head, Plant Manager,
@@ -936,7 +936,7 @@ def _tp_build_excel(plant_rows, location_rows, month, year):
             c = ws_p.cell(ri, ci, v)
             c.fill = fill; c.font = fnt; c.border = BDR
             c.alignment = LEFT if ci == 2 else CTR
-    for ci, w in enumerate([4, 40, 16, 18, 18, 10, 11, 11, 8], 1):
+    for ci, w in enumerate([30, 40, 16, 18, 18, 10, 11, 11, 8], 1):
         ws_p.column_dimensions[get_column_letter(ci)].width = w
 
     buf = io.BytesIO()
