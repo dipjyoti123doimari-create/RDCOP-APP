@@ -961,10 +961,11 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
         return {"#FFB3B3": "#7B1F1F", "#FFE066": "#5C4200",
                 "#92D492": "#1A5C1A", "#D9D9D9": "#222222"}.get(bg, "#19263A")
 
-    F   = "font-family:Arial,sans-serif;font-size:11px;"
-    TBL = "border-collapse:collapse;width:100%;margin:10px 0 18px"
-    TTL = (f'style="{F}font-size:12px;font-weight:bold;background:#082B49;color:#fff;'
-           f'padding:6px 8px;border:1px solid #7A7A7A;text-align:left"')
+    F       = "font-family:Arial,sans-serif;font-size:11px;"
+    TBL_LOC = "border-collapse:collapse;width:auto;margin:10px 0 18px"
+    TBL_PLT = "border-collapse:collapse;width:100%;margin:10px 0 18px"
+    TTL     = (f'style="{F}font-size:12px;font-weight:bold;background:#082B49;color:#fff;'
+               f'padding:6px 8px;border:1px solid #7A7A7A;text-align:left"')
 
     def _th(align="center", wrap=False):
         ws = "" if wrap else "white-space:nowrap;"
@@ -1018,10 +1019,10 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
             srno += 1
 
     loc_html = (
-        f'<table cellpadding="0" cellspacing="0" style="{TBL}">'
+        f'<table cellpadding="0" cellspacing="0" style="{TBL_LOC}">'
         f'<tr><td colspan="6" {TTL}>Location wise Throughput - {mon_tag}</td></tr>'
         f'<tr>'
-        f'<th {_th("center")}>#</th>'
+        f'<th {_th("center")}>Sr. no.</th>'
         f'<th {_th("left")}>Exco Location</th>'
         f'<th {_th("center")}>Plants</th>'
         f'<th {_th("right")}>Total Qty</th>'
@@ -1036,8 +1037,6 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
         pct  = float(r.get("throughput_pct", 0))
         bg   = _bg(pct); fg = _fg(bg)
         name = str(r.get("plant_name", ""))
-        code = str(r.get("lookup_code", ""))
-        loc  = str(r.get("exco_location", ""))
         bh   = str(r.get("business_head", ""))
         pm   = str(r.get("plant_manager", ""))
         cap  = str(r.get("mixer_theo_cap", ""))
@@ -1046,9 +1045,7 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
         plant_body += (
             f'<tr>'
             f'<td {_td(bg, fg, "center")}>{i}</td>'
-            f'<td {_td(bg, fg, "center")}>{code}</td>'
             f'<td {_td(bg, fg, "left", wrap=True)}>{name}</td>'
-            f'<td {_td(bg, fg, "left")}>{loc}</td>'
             f'<td {_td(bg, fg, "left")}>{bh}</td>'
             f'<td {_td(bg, fg, "left")}>{pm}</td>'
             f'<td {_td(bg, fg, "right")}>{cap}</td>'
@@ -1059,18 +1056,16 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
         )
 
     plant_html = (
-        f'<table cellpadding="0" cellspacing="0" style="{TBL}">'
-        f'<tr><td colspan="10" {TTL}>Plant Throughput Report - {mon_tag}</td></tr>'
+        f'<table cellpadding="0" cellspacing="0" style="{TBL_PLT}">'
+        f'<tr><td colspan="8" {TTL}>Plant Throughput Report - {mon_tag}</td></tr>'
         f'<tr>'
-        f'<th {_th("center")}>#</th>'
-        f'<th {_th("center")}>Plant Code</th>'
-        f'<th {_th("left", wrap=True)}>Plant</th>'
-        f'<th {_th("left")}>Exco Location</th>'
-        f'<th {_th("left")}>Business Head</th>'
-        f'<th {_th("left")}>Plant Manager</th>'
-        f'<th {_th("right")}>Mixer Cap</th>'
-        f'<th {_th("right")}>Total Qty</th>'
-        f'<th {_th("right")}>Time (min)</th>'
+        f'<th {_th("center")}>Sr. no.</th>'
+        f'<th {_th("center", wrap=True)}>Plant</th>'
+        f'<th {_th("center")}>Business Head</th>'
+        f'<th {_th("center")}>Plant Manager</th>'
+        f'<th {_th("center")}>Mixer Cap</th>'
+        f'<th {_th("center")}>Total Qty</th>'
+        f'<th {_th("center")}>Time (min)</th>'
         f'<th {_th("center")}>TP %</th>'
         f'</tr>{plant_body}</table>'
     )
