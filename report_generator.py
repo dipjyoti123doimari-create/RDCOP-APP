@@ -167,7 +167,7 @@ def _write_table(ws, fmts, out_df, header_overrides=None, add_srno=True):
     # Auto column widths (header length vs longest value) — capped tighter
     for c, h in enumerate(headers):
         if add_srno and c == 0:
-            ws.set_column(0, 0, 7)
+            ws.set_column(0, 0, 4)
             continue
         data_col = h
         if data_col in out_df.columns:
