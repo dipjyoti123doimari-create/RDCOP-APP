@@ -140,6 +140,7 @@
   box-shadow: 0 8px 36px rgba(99,91,255,0.22);
   transform: translateY(-4px);
 }
+.module-card[data-href] { cursor: pointer; }
 .module-card.soon { cursor: default; opacity: 0.65; }
 .module-card.soon:hover { border-color: var(--border); box-shadow: none; transform: none; }
 .module-card::before {
@@ -300,12 +301,10 @@
 
   window.addEventListener('scroll', updateCardBlur, { passive: true });
 
-  /* Module launch zoom-exit transition */
-  document.querySelectorAll('.module-launch.active').forEach(function(btn) {
-    btn.addEventListener('click', function(e) {
-      e.preventDefault();
-      var url = btn.href;
-      var card = btn.closest('.module-card');
+  /* Module launch zoom-exit transition — whole card is now the click target */
+  document.querySelectorAll('.module-card[data-href]').forEach(function(card) {
+    card.addEventListener('click', function() {
+      var url = card.dataset.href;
 
       /* Fade out header + topbar + sibling cards */
       var topbar = document.querySelector('.launcher-topbar');
@@ -317,13 +316,11 @@
       });
 
       /* Zoom the clicked card */
-      if (card) {
-        card.style.animation = 'none';
-        card.offsetHeight;
-        card.style.zIndex = '50';
-        card.style.position = 'relative';
-        card.style.animation = 'cardZoomExit 0.58s cubic-bezier(0.4,0,0.8,1) forwards';
-      }
+      card.style.animation = 'none';
+      card.offsetHeight;
+      card.style.zIndex = '50';
+      card.style.position = 'relative';
+      card.style.animation = 'cardZoomExit 0.58s cubic-bezier(0.4,0,0.8,1) forwards';
 
       setTimeout(function() { window.location.href = url; }, 560);
     });

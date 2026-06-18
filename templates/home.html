@@ -5,14 +5,14 @@
 <div class="module-grid">
 
   <!-- RDC-I&D -->
-  <div class="module-card" onclick="location.href='{{ url_for('page_id_dashboard') }}'" style="cursor:pointer">
+  <div class="module-card" data-href="{{ url_for('page_id_dashboard') }}">
     <div class="module-badge active">✅ Active</div>
     <div class="module-name">RDC-I&amp;D</div>
     <div class="module-desc">Calculates Batching Incentive &amp; Deduction</div>
   </div>
 
   <!-- RDC-TP -->
-  <div class="module-card" onclick="location.href='{{ url_for('tp_dashboard') }}'" style="cursor:pointer">
+  <div class="module-card" data-href="{{ url_for('tp_dashboard') }}">
     <div class="module-badge active">✅ Active</div>
     <div class="module-name">RDC-TP</div>
     <div class="module-desc">Calculates Plant wise Throughput</div>
