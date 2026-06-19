@@ -192,28 +192,10 @@
           <label>Employee <span style="color:#8ea0b4;font-size:11px">(search by code or name)</span></label>
           <input type="text" id="waiver-emp-search" autocomplete="off"
                  placeholder="Type to search…" style="width:100%"
-                 oninput="waiverEmpFilter(this)" onfocus="waiverEmpFilter(this)"
-                 onblur="setTimeout(function(){document.getElementById('waiver-emp-dd').style.display='none'},180)">
+                 oninput="waiverEmpFilter(this)"
+                 onfocus="waiverEmpOpen(this)"
+                 onblur="setTimeout(function(){document.getElementById('waiver-emp-dd').style.display='none'},200)">
           <input type="hidden" name="waiver_emp_code" id="waiver-emp-code" required>
-          <div id="waiver-emp-dd"
-               style="display:none;position:absolute;top:100%;left:0;right:0;z-index:9999;
-                      background:#0d2d4a;border:1px solid rgba(255,255,255,0.2);
-                      border-radius:6px;max-height:200px;overflow-y:auto;
-                      box-shadow:0 8px 28px rgba(0,0,0,0.5)">
-            {% for e in waiver_employees %}
-            <div class="waiver-emp-opt"
-                 data-code="{{ e.code }}"
-                 data-label="{{ e.code }} — {{ e.name }}"
-                 onmousedown="waiverEmpSelect(this)"
-                 style="padding:8px 12px;cursor:pointer;font-size:13px;
-                        border-bottom:1px solid rgba(255,255,255,0.05)">
-              <strong>{{ e.code }}</strong>&nbsp;&nbsp;{{ e.name }}
-            </div>
-            {% endfor %}
-            {% if not waiver_employees %}
-            <div style="padding:10px 12px;font-size:13px;color:#8ea0b4">No master data — upload first.</div>
-            {% endif %}
-          </div>
         </div>
 
         <div class="form-group" style="margin:0;flex:0 0 130px">
@@ -290,6 +272,27 @@
   </div>
 </div>
 
+<!-- Employee LOV dropdown — outside modal so overflow:auto doesn't clip it -->
+<div id="waiver-emp-dd"
+     style="display:none;position:fixed;z-index:99999;
+            background:#0d2d4a;border:1px solid rgba(255,255,255,0.2);
+            border-radius:6px;max-height:220px;overflow-y:auto;
+            box-shadow:0 8px 28px rgba(0,0,0,0.6);min-width:240px">
+  {% for e in waiver_employees %}
+  <div class="waiver-emp-opt"
+       data-code="{{ e.code }}"
+       data-label="{{ e.code }} — {{ e.name }}"
+       onmousedown="waiverEmpSelect(this)"
+       style="padding:8px 12px;cursor:pointer;font-size:13px;
+              border-bottom:1px solid rgba(255,255,255,0.05)">
+    <strong>{{ e.code }}</strong>&nbsp;&nbsp;{{ e.name }}
+  </div>
+  {% endfor %}
+  {% if not waiver_employees %}
+  <div style="padding:10px 12px;font-size:13px;color:#8ea0b4">No master data — upload first.</div>
+  {% endif %}
+</div>
+
 {% endblock %}
 {% block scripts %}
 <script>
@@ -325,19 +328,34 @@ function toggleCustomReason(sel) {
 }
 
 /* ── Employee search LOV ── */
+/* Position the fixed dropdown under the input element */
+function _waiverDdPosition() {
+  var inp = document.getElementById('waiver-emp-search');
+  var dd  = document.getElementById('waiver-emp-dd');
+  var r   = inp.getBoundingClientRect();
+  dd.style.top   = (r.bottom + 4) + 'px';
+  dd.style.left  = r.left + 'px';
+  dd.style.width = r.width + 'px';
+}
+
+function waiverEmpOpen(input) {
+  _waiverDdPosition();
+  waiverEmpFilter(input);
+}
+
 function waiverEmpFilter(input) {
-  var dd = document.getElementById('waiver-emp-dd');
-  var q  = input.value.trim().toLowerCase();
+  var dd   = document.getElementById('waiver-emp-dd');
+  var q    = input.value.trim().toLowerCase();
   var opts = dd.querySelectorAll('.waiver-emp-opt');
-  var any = false;
+  var any  = false;
   opts.forEach(function(opt) {
     var match = opt.dataset.label.toLowerCase().indexOf(q) >= 0;
     opt.style.display = match ? '' : 'none';
     if (match) any = true;
   });
-  dd.style.display = (opts.length && (q.length >= 0)) ? 'block' : 'none';
-  /* clear hidden value when user retypes */
+  /* clear hidden code whenever user retypes */
   document.getElementById('waiver-emp-code').value = '';
+  dd.style.display = opts.length ? 'block' : 'none';
 }
 
 function waiverEmpSelect(opt) {
@@ -346,12 +364,16 @@ function waiverEmpSelect(opt) {
   document.getElementById('waiver-emp-dd').style.display = 'none';
 }
 
-/* Hover highlight */
+/* Hover highlight + reposition on scroll/resize */
 document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('.waiver-emp-opt').forEach(function(opt) {
     opt.addEventListener('mouseenter', function() { this.style.background = 'rgba(255,255,255,0.08)'; });
     opt.addEventListener('mouseleave', function() { this.style.background = ''; });
   });
+  /* keep dropdown aligned if modal scrolls */
+  document.getElementById('waiver-modal').addEventListener('scroll', function() {
+    if (document.getElementById('waiver-emp-dd').style.display !== 'none') _waiverDdPosition();
+  }, true);
   {% if request.args.get('anchor') == 'waivers' %}
   openWaiverModal();
   {% endif %}
