@@ -1781,29 +1781,30 @@ def btrtp_send_email():
     excel_bytes = _btrtp_build_excel(rows, month, year)
     fname = f"RDC_BTRTP_{year}_{month:02d}.xlsx"
 
-    # Simple HTML table in email body
-    TBL = ("border-collapse:collapse;width:100%;font-family:Arial,sans-serif;"
-           "font-size:11px;border:1px solid #ccc")
-    TH  = 'style="background:#0A2540;color:#fff;padding:5px 8px;border:1px solid #9A9A9A;text-align:center"'
+    # Compact HTML email body with inline CSS (Gmail / Outlook safe)
+    _TH = ('style="background-color:#082B49;color:#ffffff;font-weight:bold;'
+           'text-align:center;padding:4px 5px;border:1px solid #808080;'
+           'line-height:1.15;white-space:nowrap;"')
     def _td_b(bg, fg, align="center"):
-        return (f'style="background:{bg};color:{fg};padding:4px 7px;'
-                f'border:1px solid #9A9A9A;text-align:{align}"')
+        return (f'style="background-color:{bg};color:{fg};padding:3px 5px;'
+                f'border:1px solid #999999;text-align:{align};'
+                f'line-height:1.15;white-space:nowrap;"')
     def _row_color(pct):
         if pct < 60: return "#FFB3B3", "#7B1F1F"
         if pct < 75: return "#FFE066", "#5C4200"
         return "#92D492", "#1A5C1A"
 
-    head_row = (f'<tr><th {TH}>Sr.</th><th {TH}>Batcher ID</th>'
-                f'<th {TH}>Batcher Name</th><th {TH}>Plant</th>'
-                f'<th {TH}>Mixer Cap</th><th {TH}>Total Qty</th>'
-                f'<th {TH}>Time (hr)</th><th {TH}>TP %</th><th {TH}>Batches</th></tr>')
+    head_row = (f'<tr><th {_TH}>Sr.</th><th {_TH}>Batcher ID</th>'
+                f'<th {_TH}>Batcher Name</th><th {_TH}>Plant</th>'
+                f'<th {_TH}>Mixer Cap</th><th {_TH}>Total Qty</th>'
+                f'<th {_TH}>Time (hr)</th><th {_TH}>TP %</th><th {_TH}>Batches</th></tr>')
     body_rows = ""
     for i, r in enumerate(rows, 1):
         pct = float(r.get("throughput_pct", 0))
         bg, fg = _row_color(pct)
         body_rows += (
             f'<tr>'
-            f'<td {_td_b(bg,fg)}>{i}</td>'
+            f'<td {_td_b(bg,fg,"center")}>{i}</td>'
             f'<td {_td_b(bg,fg,"left")}>{r.get("batcher_id","")}</td>'
             f'<td {_td_b(bg,fg,"left")}>{r.get("batcher_name","")}</td>'
             f'<td {_td_b(bg,fg,"left")}>{r.get("plant_name","")}</td>'
@@ -1814,10 +1815,19 @@ def btrtp_send_email():
             f'<td {_td_b(bg,fg,"center")}>{int(r.get("batch_count",0))}</td>'
             f'</tr>'
         )
-    tables_html = (f'<h3 style="font-family:Arial;color:#0A2540">'
-                   f'Batcher Throughput Report - {mon_tag}</h3>'
-                   f'<table style="{TBL}">{head_row}{body_rows}</table>')
-    html_body = email_helper.wrap_html_body(body, tables_html)
+    _tbl_css = ('border-collapse:collapse;width:100%;font-family:Arial,Calibri,sans-serif;'
+                'font-size:11px;margin:0;padding:0;')
+    html_body = (
+        '<html><body style="margin:0;padding:12px;font-family:Arial,Calibri,sans-serif;'
+        'font-size:12px;color:#000;">'
+        '<p style="margin:0 0 6px 0;">Dear Team,</p>'
+        f'<p style="margin:0 0 8px 0;">Please find attached the Batcher Throughput Report for {month_name} {year}.</p>'
+        '<p style="margin:0 0 10px 0;">Regards,<br>RDC Operations</p>'
+        f'<h3 style="margin:6px 0 6px 0;font-size:14px;font-family:Arial,Calibri,sans-serif;color:#082B49;">'
+        f'Batcher Throughput Report - {mon_tag}</h3>'
+        f'<table style="{_tbl_css}">{head_row}{body_rows}</table>'
+        '</body></html>'
+    )
 
     result = email_helper.send_report_email(
         to_emails=to_addr, cc_emails=cc_addr,
