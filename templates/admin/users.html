@@ -1,0 +1,95 @@
+{% extends "admin/base.html" %}
+{% block title %}Users{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>User Management</h1>
+  <p>Manage access to RDC-OP across all modules and plants</p>
+</div>
+
+<div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+  <a href="{{ url_for('admin_create_user') }}" class="btn btn-primary">➕ Create User</a>
+</div>
+
+<div class="card">
+  <div class="section-title">👥 All Users ({{ users | length }})</div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Username</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Assigned Plants</th>
+          <th>Status</th>
+          <th>Last Login</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>{{ u.full_name }}</td>
+          <td><code>{{ u.username }}</code></td>
+          <td>{{ u.email }}</td>
+          <td>
+            <span class="sidebar-module-badge"
+              style="
+                {% if u.role == 'SUPER_ADMIN' %}background:rgba(255,80,80,.15);color:#FF5050;border-color:rgba(255,80,80,.3)
+                {% elif u.role in ['HO_VIEWER','FINANCE_VIEWER'] %}background:rgba(0,180,255,.12);color:#00B4FF;border-color:rgba(0,180,255,.25)
+                {% elif u.role == 'REGIONAL_USER' %}background:rgba(255,200,0,.12);color:#FFB400;border-color:rgba(255,200,0,.25)
+                {% else %}background:rgba(0,200,100,.12);color:#00C864;border-color:rgba(0,200,100,.25)
+                {% endif %}
+                font-size:11px;padding:1px 7px">
+              {{ u.role }}
+            </span>
+          </td>
+          <td>
+            {% set plants = plant_map.get(u.id, []) %}
+            {% if plants %}
+              {% for p in plants %}
+              <span style="display:inline-block;background:var(--glass-bg);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:11px;margin:1px">
+                {{ p.plant_name }}
+              </span>
+              {% endfor %}
+            {% elif u.role in ['PLANT_USER','REGIONAL_USER'] %}
+              <span style="color:#FF8C00;font-size:12px">⚠ No plant assigned</span>
+            {% else %}
+              <span style="color:var(--text-faint);font-size:12px">All plants</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if u.is_active %}
+            <span style="color:var(--color-green);font-size:13px">● Active</span>
+            {% else %}
+            <span style="color:var(--color-red);font-size:13px">● Inactive</span>
+            {% endif %}
+          </td>
+          <td style="font-size:12px;color:var(--text-muted)">
+            {{ u.last_login_at[:16] if u.last_login_at else '—' }}
+          </td>
+          <td>
+            <div class="btn-group">
+              <a href="{{ url_for('admin_edit_user', user_id=u.id) }}"
+                 class="btn btn-secondary btn-sm">✏ Edit</a>
+              {% if u.id != current_user.id %}
+              <form method="POST" action="{{ url_for('admin_toggle_user', user_id=u.id) }}"
+                    style="display:inline"
+                    onsubmit="return confirm('{{ 'Deactivate' if u.is_active else 'Activate' }} {{ u.username }}?')">
+                <button type="submit" class="btn btn-sm
+                  {% if u.is_active %}btn-danger{% else %}btn-secondary{% endif %}">
+                  {% if u.is_active %}🔴 Deactivate{% else %}🟢 Activate{% endif %}
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

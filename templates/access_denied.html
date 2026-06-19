@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Access Denied — RDC-OP</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+<style>
+  body { display:flex; align-items:center; justify-content:center; min-height:100vh; }
+  .denied-wrap {
+    max-width:480px; padding:40px 32px; text-align:center;
+    background:var(--card-bg); border:1px solid var(--border);
+    border-radius:16px; box-shadow:0 8px 32px rgba(0,0,0,.18);
+  }
+  .denied-icon { font-size:52px; margin-bottom:16px; }
+  .denied-title { font-size:22px; font-weight:800; color:var(--text-primary); margin-bottom:8px; }
+  .denied-sub   { font-size:14px; color:var(--text-muted); margin-bottom:24px; line-height:1.6; }
+  .denied-meta  { font-size:12px; color:var(--text-faint); margin-top:20px; }
+</style>
+</head>
+<body>
+<canvas id="bg-canvas"></canvas>
+<div class="denied-wrap">
+  <div class="denied-icon">🚫</div>
+  <div class="denied-title">Access Denied</div>
+  <div class="denied-sub">
+    You do not have permission to access this page.
+    {% if required_roles %}
+    <br>Required role:
+    <strong>{{ required_roles | join(' or ') }}</strong>
+    {% endif %}
+    <br>Your role: <strong>{{ current_user.role if current_user else 'Not logged in' }}</strong>
+  </div>
+  <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+    <a href="{{ url_for('page_home') }}" class="btn btn-primary">Go to Home</a>
+    <a href="javascript:history.back()" class="btn btn-secondary">Go Back</a>
+  </div>
+  <div class="denied-meta">
+    This access attempt has been logged.
+    Contact your administrator if you believe this is an error.
+  </div>
+</div>
+<script src="{{ url_for('static', filename='js/background.js') }}"></script>
+<script>initBackground({ animate: true, autoTheme: true, theme: 'Daytime' });</script>
+</body>
+</html>

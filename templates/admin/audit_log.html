@@ -1,0 +1,47 @@
+{% extends "admin/base.html" %}
+{% block title %}Login Audit Log{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Login Audit Log</h1>
+  <p>All login attempts — successful and failed</p>
+</div>
+
+<div class="card">
+  <div class="section-title">📜 Recent Login Attempts (last {{ rows | length }})</div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Username</th>
+          <th>Full Name</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>IP Address</th>
+          <th>Failure Reason</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr class="{{ 'row-red' if r.status == 'FAILED' else ('row-green' if r.status == 'SUCCESS' else '') }}">
+          <td style="font-size:12px;white-space:nowrap">{{ r.login_time[:19] if r.login_time else '—' }}</td>
+          <td><code>{{ r.username or '(unknown)' }}</code></td>
+          <td>{{ r.full_name or '—' }}</td>
+          <td>{{ r.role or '—' }}</td>
+          <td>
+            <span style="font-weight:600">{{ r.status }}</span>
+          </td>
+          <td style="font-size:12px">{{ r.ip_address or '—' }}</td>
+          <td style="font-size:12px;color:var(--text-muted)">{{ r.failure_reason or '—' }}</td>
+        </tr>
+        {% endfor %}
+        {% if not rows %}
+        <tr><td colspan="7" style="text-align:center;color:var(--text-faint)">No login records yet</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

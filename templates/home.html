@@ -2,42 +2,61 @@
 {% block title %}RDC-OP — Module Launcher{% endblock %}
 {% block content %}
 
+{% if current_user %}
+<div style="text-align:center;margin-top:4px;font-size:13px;color:var(--text-muted)">
+  Welcome, <strong>{{ current_user.full_name }}</strong>
+  {% if current_user.role in RESTRICTED_ROLES and allowed_plants %}
+  &nbsp;·&nbsp; 🏭
+  {% for p in allowed_plants %}<span style="background:var(--glass-bg);border:1px solid var(--border);border-radius:4px;padding:1px 7px;font-size:11px;margin:0 2px">{{ p }}</span>{% endfor %}
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="module-grid">
 
-  <!-- RDC-I&D -->
+  <!-- RDC-I&D — all roles can view -->
   <div class="module-card" data-href="{{ url_for('page_id_dashboard') }}">
     <div class="module-badge active">✅ Active</div>
     <div class="module-name">RDC-I&amp;D</div>
     <div class="module-desc">Calculates Batching Incentive &amp; Deduction</div>
   </div>
 
-  <!-- RDC-TP -->
+  <!-- RDC-TP — all roles can view -->
   <div class="module-card" data-href="{{ url_for('tp_dashboard') }}">
     <div class="module-badge active">✅ Active</div>
     <div class="module-name">RDC-TP</div>
     <div class="module-desc">Calculates Plant wise Throughput</div>
   </div>
 
-  <!-- RDC-BTRTP -->
+  <!-- RDC-BTRTP — all roles can view -->
   <div class="module-card" data-href="{{ url_for('btrtp_dashboard') }}">
     <div class="module-badge active">✅ Active</div>
     <div class="module-name">RDC-BTRTP</div>
     <div class="module-desc">Calculates batcher wise Throughput for individual efficiency tracking</div>
   </div>
 
-  <!-- RDC-ECMD -->
+  <!-- RDC-ECMD — all roles can view; PLANT_USER can enter data -->
   <div class="module-card" data-href="{{ url_for('ecmd_dashboard') }}">
     <div class="module-badge active">✅ Active</div>
     <div class="module-name">RDC-ECMD</div>
     <div class="module-desc">Plant Energy Consumption &amp; Mixer DG Ratio Report</div>
   </div>
 
-  <!-- RDC-JLDC -->
+  <!-- RDC-JLDC — coming soon -->
   <div class="module-card soon">
     <div class="module-badge soon">🚧 Coming Soon</div>
     <div class="module-name">RDC-JLDC</div>
     <div class="module-desc">Calculates LJCB &amp; Loader Diesel Consumption</div>
   </div>
+
+  <!-- User Management — SUPER_ADMIN only -->
+  {% if current_user and current_user.role == 'SUPER_ADMIN' %}
+  <div class="module-card" data-href="{{ url_for('admin_users') }}">
+    <div class="module-badge active" style="background:rgba(255,80,80,.12);color:#FF5050;border-color:rgba(255,80,80,.25)">🔐 Admin</div>
+    <div class="module-name">User Mgmt</div>
+    <div class="module-desc">Manage user accounts, roles and plant assignments across all modules</div>
+  </div>
+  {% endif %}
 
 </div>
 

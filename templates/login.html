@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign In — RDC-OP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+<style>
+  body { display:flex; align-items:center; justify-content:center; min-height:100vh; }
+  .login-wrap {
+    width:100%; max-width:400px; padding:0 16px;
+    display:flex; flex-direction:column; align-items:center; gap:24px;
+  }
+  .login-brand {
+    display:flex; flex-direction:column; align-items:center; gap:8px;
+  }
+  .login-brand img { width:56px; height:56px; border-radius:12px; }
+  .login-brand-title {
+    font-size:22px; font-weight:800; color:var(--text-primary);
+    letter-spacing:-.02em;
+  }
+  .login-brand-sub {
+    font-size:13px; color:var(--text-muted);
+  }
+  .login-card {
+    width:100%; background:var(--card-bg); border:1px solid var(--border);
+    border-radius:16px; padding:28px 28px 24px;
+    box-shadow:0 8px 32px rgba(0,0,0,.18);
+  }
+  .login-card h2 {
+    font-size:16px; font-weight:700; color:var(--text-primary);
+    margin:0 0 20px 0;
+  }
+  .login-footer {
+    font-size:12px; color:var(--text-faint); text-align:center;
+  }
+</style>
+</head>
+<body>
+<canvas id="bg-canvas"></canvas>
+<div id="cursor-glow" aria-hidden="true"></div>
+
+<div class="login-wrap">
+  <div class="login-brand">
+    <img src="{{ url_for('static', filename='img/logo.gif') }}" alt="RDC-OP">
+    <div class="login-brand-title">RDC-OP</div>
+    <div class="login-brand-sub">Operations Management Platform</div>
+  </div>
+
+  <div class="login-card">
+    <h2>Sign in to your account</h2>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}
+      <div class="alert alert-{{ 'success' if cat=='success' else ('error' if cat=='error' else ('warning' if cat=='warning' else 'info')) }}" style="margin-bottom:14px">
+        {{ msg }}
+      </div>
+      {% endfor %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('page_login') }}">
+      <input type="hidden" name="next" value="{{ next }}">
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" name="username" autocomplete="username"
+               autofocus required placeholder="Enter your username">
+      </div>
+      <div class="form-group" style="margin-top:12px">
+        <label>Password</label>
+        <input type="password" name="password" autocomplete="current-password"
+               required placeholder="Enter your password">
+      </div>
+      <button type="submit" class="btn btn-primary"
+              style="width:100%;margin-top:20px;padding:10px">
+        Sign In
+      </button>
+    </form>
+  </div>
+
+  <div class="login-footer">
+    RDC-OP &copy; {{ now.year if now else 2026 }} &nbsp;·&nbsp;
+    Contact your administrator if you need access.
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/background.js') }}"></script>
+<script>
+  initBackground({ animate: true, autoTheme: true, theme: 'Daytime' });
+</script>
+</body>
+</html>

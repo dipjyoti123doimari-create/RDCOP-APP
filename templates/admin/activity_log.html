@@ -1,0 +1,53 @@
+{% extends "admin/base.html" %}
+{% block title %}Activity Log{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>User Activity Log</h1>
+  <p>All recorded user actions across modules</p>
+</div>
+
+<div class="card">
+  <div class="section-title">🔍 Recent Activity (last {{ rows | length }})</div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>User</th>
+          <th>Action</th>
+          <th>Module</th>
+          <th>Details</th>
+          <th>IP</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr class="{{ 'row-red' if 'DENIED' in r.action or 'FAIL' in r.action else '' }}">
+          <td style="font-size:12px;white-space:nowrap">{{ r.created_at[:19] if r.created_at else '—' }}</td>
+          <td>
+            <code style="font-size:11px">{{ r.username or '—' }}</code>
+            {% if r.full_name %}<br><span style="font-size:11px;color:var(--text-faint)">{{ r.full_name }}</span>{% endif %}
+          </td>
+          <td>
+            <span style="font-size:12px;font-weight:600;
+              color:{{ 'var(--color-red)' if 'DENIED' in r.action else ('var(--color-green)' if r.action in ['LOGIN','PASSWORD_CHANGED'] else 'var(--text-primary)') }}">
+              {{ r.action }}
+            </span>
+          </td>
+          <td style="font-size:12px">{{ r.module_name or '—' }}</td>
+          <td style="font-size:11px;color:var(--text-muted);max-width:200px;word-break:break-all">
+            {{ r.details_json if r.details_json and r.details_json != '{}' else '—' }}
+          </td>
+          <td style="font-size:12px">{{ r.ip_address or '—' }}</td>
+        </tr>
+        {% endfor %}
+        {% if not rows %}
+        <tr><td colspan="6" style="text-align:center;color:var(--text-faint)">No activity recorded yet</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

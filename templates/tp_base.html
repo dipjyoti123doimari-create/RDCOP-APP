@@ -36,24 +36,35 @@
       <a href="{{ url_for('tp_dashboard') }}" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
         <span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span>
       </a>
+      {% if not current_user or current_user.role == 'SUPER_ADMIN' %}
       <a href="{{ url_for('tp_data_uploader') }}" class="nav-item {% if active_page == 'data_uploader' %}active{% endif %}">
         <span class="nav-icon">📤</span><span class="nav-label">Data Uploader</span>
       </a>
       <a href="{{ url_for('tp_calculate') }}" class="nav-item {% if active_page == 'calculate' %}active{% endif %}">
         <span class="nav-icon">⚡</span><span class="nav-label">Calculate Throughput</span>
       </a>
+      {% endif %}
       <a href="{{ url_for('tp_reports') }}" class="nav-item {% if active_page == 'reports' %}active{% endif %}">
         <span class="nav-icon">📋</span><span class="nav-label">View Reports</span>
       </a>
       <a href="{{ url_for('tp_validation') }}" class="nav-item {% if active_page == 'validation' %}active{% endif %}">
         <span class="nav-icon">✅</span><span class="nav-label">Validation / Skip Log</span>
       </a>
+      {% if not current_user or current_user.role == 'SUPER_ADMIN' %}
       <a href="{{ url_for('tp_settings') }}" class="nav-item {% if active_page == 'settings' %}active{% endif %}">
         <span class="nav-icon">⚙️</span><span class="nav-label">Settings</span>
       </a>
+      {% endif %}
     </div>
 
-    <div class="sidebar-footer">Throughput · Reports · Email</div>
+    <div class="sidebar-footer">
+      {% if current_user %}
+      👤 {{ current_user.full_name }}<br>
+      <span style="font-size:10px;opacity:.7">{{ current_user.role }}</span>
+      {% else %}
+      Throughput · Reports · Email
+      {% endif %}
+    </div>
   </nav>
 
   <!-- ── Main ────────────────────────────────────────── -->
@@ -90,6 +101,27 @@
         <option value="{{ t }}" {% if t == bg_theme %}selected{% endif %}>{{ t }}</option>
         {% endfor %}
       </select>
+      {% if current_user %}
+      <span class="topbar-divider"></span>
+      <span style="font-size:12px;color:var(--text-muted)">
+        👤 {{ current_user.full_name }}
+        <span class="sidebar-module-badge" style="font-size:10px;padding:0 6px;margin-left:4px;
+          {% if current_user.role == 'SUPER_ADMIN' %}background:rgba(255,80,80,.12);color:#FF5050;border-color:rgba(255,80,80,.25)
+          {% elif current_user.role in ['HO_VIEWER','FINANCE_VIEWER'] %}background:rgba(0,180,255,.1);color:#00B4FF;border-color:rgba(0,180,255,.2)
+          {% elif current_user.role == 'REGIONAL_USER' %}background:rgba(255,180,0,.1);color:#FFB400;border-color:rgba(255,180,0,.2)
+          {% else %}background:rgba(0,200,100,.1);color:#00C864;border-color:rgba(0,200,100,.2){% endif %}">
+          {{ current_user.role }}
+        </span>
+        {% if current_user.role in RESTRICTED_ROLES and allowed_plants %}
+        <span style="font-size:10px;color:var(--text-faint);margin-left:4px">
+          🏭 {{ allowed_plants | join(', ') }}
+        </span>
+        {% endif %}
+      </span>
+      <form method="POST" action="{{ url_for('page_logout') }}" style="display:inline;margin-left:8px">
+        <button type="submit" class="btn btn-secondary btn-sm">🚪 Logout</button>
+      </form>
+      {% endif %}
     </div>
 
     <div class="content">

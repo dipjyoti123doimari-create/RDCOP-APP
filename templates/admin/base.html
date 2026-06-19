@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Admin{% endblock %} — RDC-OP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+<canvas id="bg-canvas"></canvas>
+<div id="cursor-glow" aria-hidden="true"></div>
+<div id="toast-container"></div>
+
+<div class="app">
+  <nav class="sidebar">
+    <div class="sidebar-header">
+      <a href="{{ url_for('page_home') }}" class="sidebar-back-btn" title="All Modules">⬅ All Modules</a>
+      <div class="sidebar-brand">
+        <img src="{{ url_for('static', filename='img/logo.gif') }}" alt="RDC-OP" id="app-logo">
+        <div class="sidebar-name">
+          <span class="sidebar-name-main">RDC-OP</span>
+          <span class="sidebar-name-sub">by Dipjyoti</span>
+        </div>
+        <span class="sidebar-module-badge" style="background:rgba(255,80,80,.15);color:#FF5050;border-color:rgba(255,80,80,.3)">ADMIN</span>
+        <span class="sidebar-tagline">User Management</span>
+      </div>
+    </div>
+    <div class="sidebar-nav">
+      <a href="{{ url_for('admin_users') }}" class="nav-item {% if active_page=='users' %}active{% endif %}">
+        <span class="nav-icon">👥</span><span class="nav-label">All Users</span>
+      </a>
+      <a href="{{ url_for('admin_create_user') }}" class="nav-item {% if active_page=='create' %}active{% endif %}">
+        <span class="nav-icon">➕</span><span class="nav-label">Create User</span>
+      </a>
+      <a href="{{ url_for('admin_audit_log') }}" class="nav-item {% if active_page=='audit' %}active{% endif %}">
+        <span class="nav-icon">📜</span><span class="nav-label">Login Audit Log</span>
+      </a>
+      <a href="{{ url_for('admin_activity_log') }}" class="nav-item {% if active_page=='activity' %}active{% endif %}">
+        <span class="nav-icon">🔍</span><span class="nav-label">Activity Log</span>
+      </a>
+    </div>
+    <div class="sidebar-footer">
+      {% if current_user %}
+      <div style="font-size:11px;color:var(--text-faint);padding:4px 0">
+        👤 {{ current_user.full_name }}<br>
+        <span style="color:#FF5050">{{ current_user.role }}</span>
+      </div>
+      {% endif %}
+    </div>
+  </nav>
+
+  <div class="main">
+    <div class="topbar">
+      {% if current_user %}
+      <span style="font-size:13px;color:var(--text-muted)">
+        👤 {{ current_user.full_name }}
+        <span class="sidebar-module-badge" style="background:rgba(255,80,80,.1);color:#FF5050;border-color:rgba(255,80,80,.2);font-size:11px;padding:1px 7px;margin-left:6px">
+          {{ current_user.role }}
+        </span>
+      </span>
+      {% endif %}
+      <span class="topbar-divider"></span>
+      <form method="POST" action="{{ url_for('page_logout') }}" style="display:inline">
+        <button type="submit" class="btn btn-secondary btn-sm">🚪 Logout</button>
+      </form>
+    </div>
+
+    <div class="content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}
+          <div class="alert alert-{{ 'success' if cat=='success' else ('error' if cat=='error' else ('warning' if cat=='warning' else 'info')) }}" data-auto>
+            {{ msg }}
+          </div>
+        {% endfor %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/background.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script>
+  initBackground({ animate: {{ 'true' if bg_animate else 'false' }}, autoTheme: {{ 'true' if bg_auto else 'false' }}, theme: '{{ bg_theme }}' });
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -374,6 +374,60 @@ TABLE_SCHEMAS = {
             generated_at   TEXT
         )
     """,
+
+    # ── Authentication & Authorisation tables ────────────────────────────────
+
+    "users": """
+        CREATE TABLE IF NOT EXISTS users (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            full_name            TEXT NOT NULL,
+            email                TEXT NOT NULL,
+            username             TEXT UNIQUE NOT NULL,
+            password_hash        TEXT NOT NULL,
+            role                 TEXT NOT NULL DEFAULT 'PLANT_USER',
+            is_active            INTEGER NOT NULL DEFAULT 1,
+            must_change_password INTEGER NOT NULL DEFAULT 0,
+            created_at           TEXT,
+            updated_at           TEXT,
+            last_login_at        TEXT
+        )
+    """,
+
+    "user_plant_access": """
+        CREATE TABLE IF NOT EXISTS user_plant_access (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id      INTEGER NOT NULL,
+            plant_code   TEXT NOT NULL,
+            plant_name   TEXT NOT NULL,
+            created_at   TEXT,
+            UNIQUE(user_id, plant_name)
+        )
+    """,
+
+    "login_audit_log": """
+        CREATE TABLE IF NOT EXISTS login_audit_log (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id        INTEGER,
+            login_time     TEXT,
+            logout_time    TEXT,
+            ip_address     TEXT,
+            user_agent     TEXT,
+            status         TEXT,
+            failure_reason TEXT
+        )
+    """,
+
+    "user_activity_log": """
+        CREATE TABLE IF NOT EXISTS user_activity_log (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id      INTEGER,
+            action       TEXT,
+            module_name  TEXT,
+            details_json TEXT,
+            created_at   TEXT,
+            ip_address   TEXT
+        )
+    """,
 }
 
 
@@ -1230,5 +1284,280 @@ def get_ecmd_mf(plant_code: str) -> float:
         )
         row = cur.fetchone()
         return float(row[0]) if row and row[0] else 1.0
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Authentication / Authorisation DB helpers
+# ---------------------------------------------------------------------------
+
+def _user_row_to_dict(row) -> dict:
+    """Convert a sqlite3.Row or tuple+description to a plain dict."""
+    if row is None:
+        return None
+    cols = [d[0] for d in row.cursor_description] if hasattr(row, "cursor_description") else None
+    if hasattr(row, "keys"):
+        return dict(row)
+    return dict(row)
+
+
+def count_users() -> int:
+    """Return total number of rows in users table."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM users")
+        return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
+def create_user(full_name: str, email: str, username: str, password_hash: str,
+                role: str, is_active: bool = True,
+                must_change_password: bool = True) -> int:
+    """Insert a new user. Returns the new user id."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO users
+               (full_name, email, username, password_hash, role,
+                is_active, must_change_password, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (full_name.strip(), email.strip(), username.strip(), password_hash,
+             role, 1 if is_active else 0, 1 if must_change_password else 0,
+             _now(), _now())
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def get_user_by_id(user_id: int) -> dict | None:
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+        row = cur.fetchone()
+        if row is None:
+            return None
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
+    finally:
+        conn.close()
+
+
+def get_user_by_username(username: str) -> dict | None:
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE username = ?",
+                    (username.strip(),))
+        row = cur.fetchone()
+        if row is None:
+            return None
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
+    finally:
+        conn.close()
+
+
+def get_all_users() -> list:
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM users ORDER BY role, full_name"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def update_user(user_id: int, full_name: str, email: str, role: str,
+                is_active: bool, must_change_password: bool) -> None:
+    conn = get_connection()
+    try:
+        conn.execute(
+            """UPDATE users SET full_name=?, email=?, role=?,
+               is_active=?, must_change_password=?, updated_at=?
+               WHERE id=?""",
+            (full_name.strip(), email.strip(), role,
+             1 if is_active else 0, 1 if must_change_password else 0,
+             _now(), user_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def update_user_password(user_id: int, password_hash: str,
+                         must_change_password: bool = False) -> None:
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE users SET password_hash=?, must_change_password=?, updated_at=? WHERE id=?",
+            (password_hash, 1 if must_change_password else 0, _now(), user_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def update_last_login(user_id: int) -> None:
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE users SET last_login_at=? WHERE id=?", (_now(), user_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_user(user_id: int) -> None:
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM user_plant_access WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ── User Plant Access ─────────────────────────────────────────────────────────
+
+def get_user_plant_access(user_id: int) -> list:
+    """Return all plant rows assigned to a user."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM user_plant_access WHERE user_id=? ORDER BY plant_name",
+            (user_id,)
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def assign_plant_to_user(user_id: int, plant_code: str, plant_name: str) -> None:
+    """Add one plant assignment (ignore if already exists)."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT OR IGNORE INTO user_plant_access
+               (user_id, plant_code, plant_name, created_at)
+               VALUES (?,?,?,?)""",
+            (user_id, plant_code.strip(), plant_name.strip(), _now())
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def remove_plant_from_user(user_id: int, plant_name: str) -> None:
+    conn = get_connection()
+    try:
+        conn.execute(
+            "DELETE FROM user_plant_access WHERE user_id=? AND plant_name=?",
+            (user_id, plant_name.strip())
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def set_user_plants(user_id: int, plant_list: list[dict]) -> None:
+    """Replace all plant assignments for a user. plant_list = [{plant_code, plant_name}]."""
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM user_plant_access WHERE user_id=?", (user_id,))
+        for p in plant_list:
+            conn.execute(
+                "INSERT OR IGNORE INTO user_plant_access (user_id, plant_code, plant_name, created_at) VALUES (?,?,?,?)",
+                (user_id, p.get("plant_code", "").strip(), p.get("plant_name", "").strip(), _now())
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ── Audit Logs ────────────────────────────────────────────────────────────────
+
+def log_login_attempt(user_id, ip_address: str, user_agent: str,
+                      status: str, failure_reason: str = "") -> None:
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO login_audit_log
+               (user_id, login_time, ip_address, user_agent, status, failure_reason)
+               VALUES (?,?,?,?,?,?)""",
+            (user_id, _now(), ip_address[:45], user_agent, status, failure_reason)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def log_user_activity(user_id, action: str, module_name: str = "",
+                      details_json: str = "{}", ip_address: str = "") -> None:
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO user_activity_log
+               (user_id, action, module_name, details_json, created_at, ip_address)
+               VALUES (?,?,?,?,?,?)""",
+            (user_id, action, module_name, details_json, _now(), ip_address[:45])
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_login_audit_log(limit: int = 200) -> list:
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT l.*, u.username, u.full_name, u.role
+               FROM login_audit_log l
+               LEFT JOIN users u ON u.id = l.user_id
+               ORDER BY l.id DESC LIMIT ?""",
+            (limit,)
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_user_activity_log(limit: int = 500, user_id: int = None) -> list:
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        if user_id:
+            cur.execute(
+                """SELECT a.*, u.username, u.full_name
+                   FROM user_activity_log a
+                   LEFT JOIN users u ON u.id = a.user_id
+                   WHERE a.user_id=?
+                   ORDER BY a.id DESC LIMIT ?""",
+                (user_id, limit)
+            )
+        else:
+            cur.execute(
+                """SELECT a.*, u.username, u.full_name
+                   FROM user_activity_log a
+                   LEFT JOIN users u ON u.id = a.user_id
+                   ORDER BY a.id DESC LIMIT ?""",
+                (limit,)
+            )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
     finally:
         conn.close()

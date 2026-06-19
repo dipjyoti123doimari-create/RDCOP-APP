@@ -23,12 +23,20 @@ import traceback
 import uuid
 from datetime import date as _date, datetime as _dt, timedelta
 
+# Load .env if present (for SECRET_KEY, ADMIN_USERNAME, etc.)
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv()
+except ImportError:
+    pass  # python-dotenv not installed; rely on environment variables set externally
+
 import pandas as pd
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from flask import (Flask, flash, jsonify, redirect, render_template,
+from flask import (Flask, flash, g, jsonify, redirect, render_template,
                    request, send_file, url_for)
 
+import auth
 import cache_helpers
 import calculator
 import config
@@ -67,6 +75,8 @@ sys.excepthook = _handle_unhandled_exception
 # ── App setup ────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "rdc-incentive-local-key-2025")
+app.config["SESSION_PERMANENT"] = False
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=20)
 
 # ── Single-user in-memory state (no session serialization overhead) ──────────
 _S: dict = {}
@@ -106,6 +116,7 @@ def _set_progress(pct: int, msg: str = ""):
 
 # ── Boot ─────────────────────────────────────────────────────────────────────
 database.init_db()
+auth.bootstrap_admin(app)
 
 # Apply the rolling Oracle-data retention once at startup (covers the case
 # where the app was restarted after a month rolled over).
@@ -328,15 +339,76 @@ def bg_theme():
     return database.get_setting("bg_manual_theme", "Daytime")
 
 
-# ── Context processor (sidebar active-page + bg settings) ──────────────────
+# ── Global auth gate ─────────────────────────────────────────────────────────
+# Enforce login for every request except /login, /logout and static assets.
+# This is the "minimum disruption" approach — existing routes need no changes.
+
+_AUTH_EXEMPT = {"/login", "/logout"}
+
+@app.before_request
+def _require_login():
+    if request.path.startswith("/static/"):
+        return
+    if request.path in _AUTH_EXEMPT:
+        return
+    user = auth.get_current_user()
+    if user is None:
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Not authenticated"}), 401
+        from flask import flash as _flash
+        _flash("Please log in to continue.", "warning")
+        return redirect(url_for("page_login", next=request.path))
+    # Inject into g so route handlers can read it without calling get_current_user() again
+    g.current_user = user
+
+    # ── Role-based path restrictions ─────────────────────────────────────────
+    role = user.get("role", "")
+    path = request.path
+
+    # SUPER_ADMIN-only: settings, calculate, upload/sync actions, admin panel
+    _admin_only_patterns = (
+        "/settings", "/calculate", "/data-uploader",
+        "/action/upload-", "/action/sync-", "/action/fetch-oracle",
+        "/action/run-calculation", "/action/run-validation",
+        "/action/save-smtp", "/action/save-oracle",
+        "/action/add-employee", "/action/update-employee", "/action/delete-employee",
+        "/action/add-waiver", "/action/delete-waiver",
+        "/action/restart-server", "/action/save-email-schedule",
+        "/action/toggle-email-schedule", "/action/clear-",
+        "/action/assign-maintenance", "/action/delete-maintenance",
+        "/action/toggle-auto-sync", "/action/save-",
+        "/tp/action/add-plant", "/tp/action/update-plant", "/tp/action/delete-plant",
+        "/btrtp/settings", "/tp/settings",
+    )
+    if role != auth.SUPER_ADMIN:
+        for pattern in _admin_only_patterns:
+            if pattern in path:
+                auth.log_activity(user, "ACCESS_DENIED",
+                                  details={"path": path, "method": request.method})
+                return render_template("access_denied.html",
+                                       current_user=user,
+                                       required_roles=[auth.SUPER_ADMIN]), 403
+
+    # Email send: PLANT_USER cannot send emails
+    if role == auth.PLANT_USER and "/action/send-email" in path:
+        return render_template("access_denied.html",
+                               current_user=user,
+                               required_roles=[auth.SUPER_ADMIN, auth.HO_VIEWER,
+                                               auth.FINANCE_VIEWER, auth.REGIONAL_USER]), 403
+
+
+# ── Context processor (sidebar active-page + bg settings + auth) ────────────
 
 @app.context_processor
 def _ctx():
+    auth_ctx = auth.inject_auth_context()
     return dict(
         active_page=_s("active_page", ""),
         bg_auto=bg_auto(),
         bg_animate=bg_animate(),
         bg_theme=bg_theme(),
+        now=_dt.now(),
+        **auth_ctx,
     )
 
 
@@ -461,7 +533,225 @@ def _rows_to_df(rows: list, cols) -> pd.DataFrame:
 
 # ── PAGES ─────────────────────────────────────────────────────────────────────
 
+# ── Auth routes ───────────────────────────────────────────────────────────────
+
+@app.route("/login", methods=["GET", "POST"])
+def page_login():
+    return auth.login_view()
+
+
+@app.route("/logout", methods=["POST"])
+def page_logout():
+    return auth.logout_view()
+
+
+@app.route("/change-password", methods=["GET", "POST"])
+@auth.login_required
+def page_change_password():
+    return auth.change_password_view()
+
+
+# ── Admin / User Management routes (SUPER_ADMIN only) ─────────────────────────
+
+@app.route("/admin/users")
+@auth.admin_required
+def admin_users():
+    users = database.get_all_users()
+    plant_map = {u["id"]: database.get_user_plant_access(u["id"]) for u in users}
+    return render_template("admin/users.html",
+                           active_page="users",
+                           users=users,
+                           plant_map=plant_map)
+
+
+@app.route("/admin/users/create", methods=["GET", "POST"])
+@auth.admin_required
+def admin_create_user():
+    all_plants = database.get_tp_plants()
+    if request.method == "GET":
+        return render_template("admin/user_form.html",
+                               active_page="create",
+                               edit_mode=False,
+                               user={},
+                               all_plants=all_plants,
+                               assigned_plants=[],
+                               assigned_plant_names=[],
+                               allowed_roles=auth.ALLOWED_ROLES)
+    # POST
+    from werkzeug.security import generate_password_hash as _hash
+    full_name  = request.form.get("full_name", "").strip()
+    username   = request.form.get("username", "").strip()
+    email      = request.form.get("email", "").strip()
+    role       = request.form.get("role", "PLANT_USER")
+    password   = request.form.get("password", "")
+    is_active  = request.form.get("is_active", "1") == "1"
+    must_chg   = request.form.get("must_change_password", "1") == "1"
+    plant_names = request.form.getlist("plant_names")
+
+    if not all([full_name, username, email, password]):
+        flash("All required fields must be filled.", "error")
+        return render_template("admin/user_form.html",
+                               active_page="create",
+                               edit_mode=False,
+                               user=dict(full_name=full_name, username=username, email=email, role=role),
+                               all_plants=all_plants,
+                               assigned_plants=[],
+                               assigned_plant_names=[],
+                               allowed_roles=auth.ALLOWED_ROLES), 400
+    if len(password) < 8:
+        flash("Password must be at least 8 characters.", "error")
+        return render_template("admin/user_form.html",
+                               active_page="create",
+                               edit_mode=False,
+                               user=dict(full_name=full_name, username=username, email=email, role=role),
+                               all_plants=all_plants,
+                               assigned_plants=[],
+                               assigned_plant_names=[],
+                               allowed_roles=auth.ALLOWED_ROLES), 400
+    try:
+        user_id = database.create_user(
+            full_name=full_name, email=email, username=username,
+            password_hash=_hash(password),
+            role=role, is_active=is_active, must_change_password=must_chg,
+        )
+        if role in auth.RESTRICTED_ROLES and plant_names:
+            code_map = {p["plant_name"]: p["plant_code"] for p in all_plants}
+            plant_list = [{"plant_name": n, "plant_code": code_map.get(n, "")} for n in plant_names]
+            database.set_user_plants(user_id, plant_list)
+        auth.log_activity(auth.get_current_user(), "CREATE_USER",
+                          details={"username": username, "role": role})
+        flash(f"User '{username}' created successfully.", "success")
+        return redirect(url_for("admin_users"))
+    except Exception as exc:
+        flash(f"Error creating user: {exc}", "error")
+        return render_template("admin/user_form.html",
+                               active_page="create",
+                               edit_mode=False,
+                               user=dict(full_name=full_name, username=username, email=email, role=role),
+                               all_plants=all_plants,
+                               assigned_plants=[],
+                               assigned_plant_names=[],
+                               allowed_roles=auth.ALLOWED_ROLES), 400
+
+
+@app.route("/admin/users/<int:user_id>/edit", methods=["GET", "POST"])
+@auth.admin_required
+def admin_edit_user(user_id):
+    from werkzeug.security import generate_password_hash as _hash
+    user = database.get_user_by_id(user_id)
+    if not user:
+        flash("User not found.", "error")
+        return redirect(url_for("admin_users"))
+    all_plants      = database.get_tp_plants()
+    assigned_plants = database.get_user_plant_access(user_id)
+    assigned_names  = [p["plant_name"] for p in assigned_plants]
+
+    if request.method == "GET":
+        return render_template("admin/user_form.html",
+                               active_page="users",
+                               edit_mode=True,
+                               user=user,
+                               all_plants=all_plants,
+                               assigned_plants=assigned_plants,
+                               assigned_plant_names=assigned_names,
+                               allowed_roles=auth.ALLOWED_ROLES)
+    # POST
+    full_name  = request.form.get("full_name", "").strip()
+    email      = request.form.get("email", "").strip()
+    role       = request.form.get("role", user["role"])
+    is_active  = request.form.get("is_active", "1") == "1"
+    must_chg   = request.form.get("must_change_password", "0") == "1"
+    password   = request.form.get("password", "").strip()
+    plant_names = request.form.getlist("plant_names")
+
+    database.update_user(user_id, full_name=full_name, email=email, role=role,
+                         is_active=is_active, must_change_password=must_chg)
+    if password:
+        if len(password) < 8:
+            flash("Password must be at least 8 characters.", "error")
+            return redirect(url_for("admin_edit_user", user_id=user_id))
+        database.update_user_password(user_id, _hash(password))
+
+    code_map = {p["plant_name"]: p["plant_code"] for p in all_plants}
+    plant_list = [{"plant_name": n, "plant_code": code_map.get(n, "")} for n in plant_names]
+    database.set_user_plants(user_id, plant_list)
+
+    auth.log_activity(auth.get_current_user(), "EDIT_USER",
+                      details={"user_id": user_id, "role": role})
+    flash(f"User '{user['username']}' updated.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:user_id>/toggle", methods=["POST"])
+@auth.admin_required
+def admin_toggle_user(user_id):
+    current = auth.get_current_user()
+    if current and current["id"] == user_id:
+        flash("You cannot deactivate your own account.", "error")
+        return redirect(url_for("admin_users"))
+    user = database.get_user_by_id(user_id)
+    if not user:
+        flash("User not found.", "error")
+        return redirect(url_for("admin_users"))
+    database.update_user(user_id,
+                         full_name=user["full_name"], email=user["email"],
+                         role=user["role"],
+                         is_active=not user["is_active"],
+                         must_change_password=user["must_change_password"])
+    status = "activated" if not user["is_active"] else "deactivated"
+    auth.log_activity(current, "TOGGLE_USER",
+                      details={"user_id": user_id, "new_status": status})
+    flash(f"User '{user['username']}' {status}.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:user_id>/reset-password", methods=["GET", "POST"])
+@auth.admin_required
+def admin_reset_password(user_id):
+    from werkzeug.security import generate_password_hash as _hash
+    target_user = database.get_user_by_id(user_id)
+    if not target_user:
+        flash("User not found.", "error")
+        return redirect(url_for("admin_users"))
+    if request.method == "GET":
+        return render_template("admin/reset_password.html",
+                               active_page="users",
+                               target_user=target_user)
+    new_pw  = request.form.get("new_password", "")
+    conf_pw = request.form.get("confirm_password", "")
+    must_chg = request.form.get("must_change", "1") == "1"
+    if len(new_pw) < 8 or new_pw != conf_pw:
+        flash("Passwords must match and be at least 8 characters.", "error")
+        return redirect(url_for("admin_reset_password", user_id=user_id))
+    database.update_user_password(user_id, _hash(new_pw), must_change_password=must_chg)
+    auth.log_activity(auth.get_current_user(), "RESET_PASSWORD",
+                      details={"target_user_id": user_id})
+    flash(f"Password for '{target_user['username']}' has been reset.", "success")
+    return redirect(url_for("admin_edit_user", user_id=user_id))
+
+
+@app.route("/admin/audit-log")
+@auth.admin_required
+def admin_audit_log():
+    rows = database.get_login_audit_log(limit=500)
+    return render_template("admin/audit_log.html",
+                           active_page="audit",
+                           rows=rows)
+
+
+@app.route("/admin/activity-log")
+@auth.admin_required
+def admin_activity_log():
+    rows = database.get_user_activity_log(limit=500)
+    return render_template("admin/activity_log.html",
+                           active_page="activity",
+                           rows=rows)
+
+
+# ── Home page ─────────────────────────────────────────────────────────────────
+
 @app.route("/")
+@auth.login_required
 def page_home():
     return render_template("home.html")
 
@@ -3209,7 +3499,9 @@ def ecmd_data_entry():
     sel_month = int(request.args.get("month", today.month))
     sel_year  = int(request.args.get("year",  today.year))
 
-    plant_rows   = database.get_tp_plants()
+    all_plant_rows = database.get_tp_plants()
+    # Filter plants by user access (PLANT_USER / REGIONAL_USER see only their plants)
+    plant_rows = auth.apply_plant_filter_rows(all_plant_rows, g.current_user)
     readings_map = {r["plant_code"]: r
                     for r in database.get_ecmd_readings_for_month(sel_month, sel_year)}
 
@@ -3231,6 +3523,12 @@ def ecmd_save_reading():
     plant_code = request.form.get("plant_code", "").strip()
     month      = int(request.form.get("month", _date.today().month))
     year       = int(request.form.get("year",  _date.today().year))
+    # Plant-level access check for ECMD entry
+    user = g.current_user
+    plant_row = next((p for p in database.get_tp_plants() if p["plant_code"] == plant_code), None)
+    if plant_row and not auth.user_can_access_plant(user, plant_row["plant_name"]):
+        flash("You are not authorised to save readings for this plant.", "error")
+        return redirect(url_for("ecmd_data_entry", month=month, year=year))
 
     def _fv(key):
         v = request.form.get(key, "").strip()
