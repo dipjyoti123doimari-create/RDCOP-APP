@@ -192,7 +192,8 @@
           <label>Employee <span style="color:#8ea0b4;font-size:11px">(search by code or name)</span></label>
           <input type="text" id="waiver-emp-search" autocomplete="off"
                  placeholder="Type to search…" style="width:100%"
-                 oninput="waiverEmpFilter(this)"
+                 oninput="waiverEmpOpen(this)"
+                 onclick="waiverEmpOpen(this)"
                  onfocus="waiverEmpOpen(this)"
                  onblur="setTimeout(function(){document.getElementById('waiver-emp-dd').style.display='none'},200)">
           <input type="hidden" name="waiver_emp_code" id="waiver-emp-code" required>
@@ -353,9 +354,7 @@ function waiverEmpFilter(input) {
     opt.style.display = match ? '' : 'none';
     if (match) any = true;
   });
-  /* clear hidden code whenever user retypes */
-  document.getElementById('waiver-emp-code').value = '';
-  dd.style.display = opts.length ? 'block' : 'none';
+  dd.style.display = (opts.length > 0) ? 'block' : 'none';
 }
 
 function waiverEmpSelect(opt) {
