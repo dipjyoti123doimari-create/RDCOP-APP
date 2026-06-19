@@ -985,26 +985,26 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
                 "#92D492": "#1A5C1A", "#D9D9D9": "#222222"}.get(bg, "#19263A")
 
     F       = "font-family:Arial,sans-serif;font-size:11px;"
-    TBL_LOC = "border-collapse:collapse;width:auto;margin:10px 0 18px"
-    TBL_PLT = "border-collapse:collapse;width:100%;margin:10px 0 18px"
+    TBL_LOC = "border-collapse:collapse;width:auto;margin:4px 0 10px"
+    TBL_PLT = "border-collapse:collapse;width:100%;margin:4px 0 10px"
     TTL     = (f'style="{F}font-size:12px;font-weight:bold;background:#082B49;color:#fff;'
-               f'padding:6px 8px;border:1px solid #7A7A7A;text-align:left"')
+               f'padding:3px 6px;border:1px solid #7A7A7A;text-align:left"')
 
     def _th(align="center", wrap=False, w=None):
         ws = "" if wrap else "white-space:nowrap;"
         wd = f"width:{w}px;" if w else ""
         wa = f'width="{w}" ' if w else ""
         return (f'{wa}style="{F}background:#082B49;color:#fff;font-weight:bold;'
-                f'padding:6px 8px;border:1px solid #7A7A7A;text-align:{align};'
+                f'padding:3px 6px;border:1px solid #7A7A7A;text-align:{align};'
                 f'{ws}{wd}line-height:1.2;vertical-align:middle"')
 
     def _td(bg, fg, align, bold=False, top_bdr="", wrap=False):
         fw  = "font-weight:bold;" if bold else ""
         top = f"border-top:{top_bdr};" if top_bdr else ""
         ws  = "" if wrap else "white-space:nowrap;"
-        return (f'style="{F}padding:4px 8px;border:1px solid #9E9E9E;{top}'
+        return (f'style="{F}padding:2px 5px;border:1px solid #9E9E9E;{top}'
                 f'background:{bg};color:{fg};text-align:{align};'
-                f'{ws}line-height:1.4;vertical-align:middle;{fw}"')
+                f'{ws}line-height:1.2;vertical-align:middle;{fw}"')
 
     # ── Location table ────────────────────────────────────────────────────────
     loc_body = ""
@@ -1149,16 +1149,22 @@ def tp_send_email():
     month_name = _cal.month_name[month]
     if not subject:
         subject = f"RDC-TP Plant Throughput Report — {month_name} {year}"
-    if not body:
-        body = f"Dear Team,\n\nPlease find the Plant Throughput Report for {month_name} {year} below."
 
     # Build color-coded Excel attachment
     excel_bytes = _tp_build_excel(plant_rows, location_rows, month, year)
     fname = f"RDC_TP_{year}_{month:02d}.xlsx"
 
-    # HTML tables in body — no inline images
+    # Compact HTML email body — same style as BTRTP
+    _body_font = "font-family:Arial,Calibri,sans-serif;font-size:12px;color:#000000;"
     tables_html = _tp_build_html_tables(plant_rows, location_rows, month, year)
-    html_body   = email_helper.wrap_html_body(body, tables_html)
+    html_body = (
+        f'<html><body style="margin:0;padding:8px 10px;{_body_font}">'
+        f'<p style="margin:0 0 3px 0;">Dear Team,</p>'
+        f'<p style="margin:0 0 3px 0;">Please find attached the Plant Throughput Report for {month_name} {year}.</p>'
+        f'<p style="margin:0 0 6px 0;">Regards,<br>RDC Operations</p>'
+        f'{tables_html}'
+        f'</body></html>'
+    )
 
     result = email_helper.send_report_email(
         to_emails=to_addr, cc_emails=cc_addr,
@@ -3009,10 +3015,18 @@ def send_email():
     incl_tables = "include_tables" in request.form
 
     try:
-        fname      = f"incentive_report_{from_s}_to_{to_s}.xlsx"
-        xlsx_data  = report_generator.generate_excel_report(df_f, df_u, val_df, meta)
+        fname       = f"incentive_report_{from_s}_to_{to_s}.xlsx"
+        xlsx_data   = report_generator.generate_excel_report(df_f, df_u, val_df, meta)
         tables_html = report_generator.build_email_tables_html(df_f)
-        html_body  = email_helper.wrap_html_body(body, tables_html)
+        import html as _html_mod
+        _safe_body  = _html_mod.escape(body or "").replace("\n", "<br>")
+        _body_font  = "font-family:Arial,Calibri,sans-serif;font-size:12px;color:#000000;"
+        html_body   = (
+            f'<html><body style="margin:0;padding:8px 10px;{_body_font}">'
+            f'<p style="margin:0 0 3px 0;">{_safe_body}</p>'
+            f'{tables_html}'
+            f'</body></html>'
+        )
 
         res = email_helper.send_report_email(
             to_emails=to_addr, cc_emails=cc_addr,

@@ -256,11 +256,11 @@ def build_email_tables_html(results_df, sections=None) -> str:
         ttl_td = (
             f'colspan="{num_cols}" '
             f'style="{F}font-size:12px;font-weight:bold;background:#082B49;color:#fff;'
-            f'padding:6px 8px;{HDR_BDR};text-align:left"'
+            f'padding:3px 6px;{HDR_BDR};text-align:left"'
         )
         th_base = (
             f'{F}background:#082B49;color:#fff;font-weight:bold;'
-            f'padding:6px 8px;{HDR_BDR};white-space:nowrap;line-height:1.2;'
+            f'padding:3px 6px;{HDR_BDR};white-space:nowrap;line-height:1.2;'
             f'vertical-align:middle'
         )
 
@@ -273,7 +273,7 @@ def build_email_tables_html(results_df, sections=None) -> str:
         tbody_rows = []
         if out.empty:
             tbody_rows.append(
-                f'<tr><td colspan="{num_cols}" style="{F}padding:5px 8px;{CELL_BDR};'
+                f'<tr><td colspan="{num_cols}" style="{F}padding:2px 5px;{CELL_BDR};'
                 f'color:#777;text-align:center;background:#ffffff">'
                 f'No records for this section.</td></tr>'
             )
@@ -285,14 +285,14 @@ def build_email_tables_html(results_df, sections=None) -> str:
                 cells = ""
                 for h in headers:
                     align = "right" if _coltype(h) in ("int", "num") else "left"
-                    td_s  = (f'{F}background:{bg};padding:4px 8px;{CELL_BDR};'
-                             f'text-align:{align};white-space:nowrap;vertical-align:middle')
+                    td_s  = (f'{F}background:{bg};padding:2px 5px;{CELL_BDR};'
+                             f'text-align:{align};white-space:nowrap;line-height:1.2;vertical-align:middle')
                     cells += f'<td style="{td_s}">{_html.escape(_cell_value(h, row[h]))}</td>'
                 tbody_rows.append(f"<tr>{cells}</tr>")
 
         parts.append(
             f'<table cellpadding="0" cellspacing="0" '
-            f'style="border-collapse:collapse;width:100%;margin:14px 0 10px">'
+            f'style="border-collapse:collapse;width:100%;margin:6px 0 8px">'
             f'<tr><td {ttl_td}>{idx}. {_html.escape(title)}</td></tr>'
             f'<thead><tr>{thead_cells}</tr></thead>'
             f'<tbody>{"".join(tbody_rows)}</tbody>'
