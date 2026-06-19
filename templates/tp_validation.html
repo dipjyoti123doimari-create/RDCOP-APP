@@ -14,6 +14,11 @@
 </div>
 {% else %}
 
+<!-- Toolbar -->
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+  <a href="{{ url_for('tp_download_validation_excel') }}" class="btn btn-secondary">⬇️ Download Validation Report (Excel)</a>
+</div>
+
 <!-- Summary KPIs -->
 <div class="kpi-grid">
   <div class="kpi-card">

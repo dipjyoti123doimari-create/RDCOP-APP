@@ -2547,6 +2547,158 @@ def run_validation():
     return jsonify({"ok": True, "redirect": url_for("page_validation")})
 
 
+@app.route("/validation/download-excel")
+def download_validation_excel():
+    """Download I&D validation errors as an Excel file."""
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill, Font, Alignment
+    from openpyxl.utils import get_column_letter
+    import io
+
+    all_err_df = database.read_table("validation_errors")
+    errors = _records(all_err_df.drop(columns=["id"], errors="ignore")) \
+             if not all_err_df.empty else []
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Validation Errors"
+
+    hdr_fill = PatternFill("solid", fgColor="1E3A5F")
+    hdr_font = Font(bold=True, color="FFFFFF", size=11)
+    cols = ["source", "error_type", "employee_code", "field", "value", "message", "detected_at"]
+    headers = ["Source", "Error Type", "Employee Code", "Field", "Value", "Message", "Detected At"]
+
+    for ci, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=ci, value=h)
+        cell.fill = hdr_fill
+        cell.font = hdr_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    err_fill  = PatternFill("solid", fgColor="FFF3CD")
+    warn_fill = PatternFill("solid", fgColor="FFE0E0")
+    for ri, row in enumerate(errors, 2):
+        for ci, col in enumerate(cols, 1):
+            cell = ws.cell(row=ri, column=ci, value=str(row.get(col, "") or ""))
+            cell.alignment = Alignment(vertical="center", wrap_text=True)
+        etype = str(row.get("error_type", "")).lower()
+        fill  = warn_fill if "miss" in etype or "error" in etype else err_fill
+        for ci in range(1, len(cols) + 1):
+            ws.cell(row=ri, column=ci).fill = fill
+
+    col_widths = [18, 22, 16, 18, 20, 45, 20]
+    for ci, w in enumerate(col_widths, 1):
+        ws.column_dimensions[get_column_letter(ci)].width = w
+    ws.row_dimensions[1].height = 20
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    from flask import send_file
+    return send_file(buf, as_attachment=True,
+                     download_name="RDC_ID_Validation_Errors.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.route("/tp/validation/download-excel")
+def tp_download_validation_excel():
+    """Download TP skip log + calc warnings as Excel."""
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill, Font, Alignment
+    from openpyxl.utils import get_column_letter
+    import io
+
+    skip_log      = _ms("tp", "skip_log", [])
+    calc_warnings = _ms("tp", "calc_warnings", [])
+
+    wb = Workbook()
+
+    # Sheet 1 — Skip Log
+    ws1 = wb.active
+    ws1.title = "Skip Log"
+    hdr_fill = PatternFill("solid", fgColor="1E3A5F")
+    hdr_font = Font(bold=True, color="FFFFFF", size=11)
+    skip_cols    = ["batch_ref", "plant_code", "production_date", "quantity", "time_taken_min", "reason"]
+    skip_headers = ["Batch Ref", "Plant Code", "Date", "Quantity", "Time (min)", "Reason"]
+    for ci, h in enumerate(skip_headers, 1):
+        c = ws1.cell(row=1, column=ci, value=h)
+        c.fill = hdr_fill; c.font = hdr_font
+        c.alignment = Alignment(horizontal="center")
+    row_fill = PatternFill("solid", fgColor="FFE0E0")
+    for ri, row in enumerate(skip_log, 2):
+        for ci, col in enumerate(skip_cols, 1):
+            cell = ws1.cell(row=ri, column=ci, value=str(row.get(col, "") or ""))
+            cell.fill = row_fill
+    for ci, w in enumerate([18, 14, 14, 12, 12, 40], 1):
+        ws1.column_dimensions[get_column_letter(ci)].width = w
+
+    # Sheet 2 — Calc Warnings
+    ws2 = wb.create_sheet("Calc Warnings")
+    ws2.cell(row=1, column=1, value="Warning").fill = hdr_fill
+    ws2.cell(row=1, column=1).font = hdr_font
+    ws2.column_dimensions["A"].width = 80
+    warn_fill = PatternFill("solid", fgColor="FFF3CD")
+    for ri, w in enumerate(calc_warnings, 2):
+        cell = ws2.cell(row=ri, column=1, value=w)
+        cell.fill = warn_fill
+        cell.alignment = Alignment(wrap_text=True)
+
+    buf = io.BytesIO()
+    wb.save(buf); buf.seek(0)
+    from flask import send_file
+    return send_file(buf, as_attachment=True,
+                     download_name="RDC_TP_Validation_SkipLog.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.route("/btrtp/validation/download-excel")
+def btrtp_download_validation_excel():
+    """Download BTRTP skip log + calc warnings as Excel."""
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill, Font, Alignment
+    from openpyxl.utils import get_column_letter
+    import io
+
+    skip_log      = _ms("btrtp", "skip_log", [])
+    calc_warnings = _ms("btrtp", "calc_warnings", [])
+
+    wb = Workbook()
+
+    ws1 = wb.active
+    ws1.title = "Skip Log"
+    hdr_fill = PatternFill("solid", fgColor="1E3A5F")
+    hdr_font = Font(bold=True, color="FFFFFF", size=11)
+    skip_cols    = ["batcher_id", "batch_ref", "plant_code", "production_date", "quantity", "time_taken_min", "reason"]
+    skip_headers = ["Batcher ID", "Batch Ref", "Plant Code", "Date", "Quantity", "Time (min)", "Reason"]
+    for ci, h in enumerate(skip_headers, 1):
+        c = ws1.cell(row=1, column=ci, value=h)
+        c.fill = hdr_fill; c.font = hdr_font
+        c.alignment = Alignment(horizontal="center")
+    row_fill = PatternFill("solid", fgColor="FFE0E0")
+    for ri, row in enumerate(skip_log, 2):
+        for ci, col in enumerate(skip_cols, 1):
+            cell = ws1.cell(row=ri, column=ci, value=str(row.get(col, "") or ""))
+            cell.fill = row_fill
+    for ci, w in enumerate([16, 18, 14, 14, 12, 12, 40], 1):
+        ws1.column_dimensions[get_column_letter(ci)].width = w
+
+    ws2 = wb.create_sheet("Calc Warnings")
+    ws2.cell(row=1, column=1, value="Warning").fill = hdr_fill
+    ws2.cell(row=1, column=1).font = hdr_font
+    ws2.column_dimensions["A"].width = 80
+    warn_fill = PatternFill("solid", fgColor="FFF3CD")
+    for ri, w in enumerate(calc_warnings, 2):
+        cell = ws2.cell(row=ri, column=1, value=w)
+        cell.fill = warn_fill
+        cell.alignment = Alignment(wrap_text=True)
+
+    buf = io.BytesIO()
+    wb.save(buf); buf.seek(0)
+    from flask import send_file
+    return send_file(buf, as_attachment=True,
+                     download_name="RDC_BTRTP_Validation_SkipLog.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
 @app.route("/action/clear-validation", methods=["POST"])
 def clear_validation():
     validations.clear_validation_errors()

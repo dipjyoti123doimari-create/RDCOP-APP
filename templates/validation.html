@@ -20,11 +20,14 @@
 </div>
 {% endif %}
 
-<div style="margin:18px 0">
+<div style="margin:18px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
   <form method="POST" action="{{ url_for('run_validation') }}" id="val-form" style="display:inline">
     <button type="submit" class="btn btn-primary" id="val-btn">▶️ Run Validation Now</button>
   </form>
-  <div class="loading" id="val-loading" style="margin-left:12px"><div class="spinner"></div> Running validation…</div>
+  {% if total_errors > 0 %}
+  <a href="{{ url_for('download_validation_excel') }}" class="btn btn-secondary">⬇️ Download Report (Excel)</a>
+  {% endif %}
+  <div class="loading" id="val-loading"><div class="spinner"></div> Running validation…</div>
 </div>
 
 {% if total_errors > 0 %}
@@ -107,7 +110,8 @@
   </table>
 </div>
 
-<div style="margin-top:16px">
+<div style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+  <a href="{{ url_for('download_validation_excel') }}" class="btn btn-secondary">⬇️ Download Report (Excel)</a>
   <form method="POST" action="{{ url_for('clear_validation') }}"
         onsubmit="return confirm('Clear all validation errors?')">
     <button type="submit" class="btn btn-danger">🗑️ Clear All Validation Errors</button>
