@@ -131,11 +131,12 @@ def _write_table(ws, fmts, out_df, header_overrides=None, add_srno=True):
     headers = list(out_df.columns)
     overrides = header_overrides or {}
 
-    # Prepend Sr. no. column
+    # Prepend Sr. No. column
     if add_srno:
-        headers = ["Sr. no."] + headers
+        headers = ["Sr. No."] + headers
 
-    # Header row (frozen)
+    # Header row (row height 30 to allow text wrap on long headers)
+    ws.set_row(0, 30)
     for c, h in enumerate(headers):
         ws.write(0, c, overrides.get(h, h), fmts["header"])
     ws.freeze_panes(1, 0)
@@ -143,7 +144,7 @@ def _write_table(ws, fmts, out_df, header_overrides=None, add_srno=True):
     if out_df.empty:
         ws.write(1, 0, "No records.", fmts["normal_text"])
         for c, h in enumerate(headers):
-            ws.set_column(c, c, max(len(str(overrides.get(h, h))) + 1, 8))
+            ws.set_column(c, c, max(12, 8))
         return
 
     # Data rows
@@ -164,10 +165,10 @@ def _write_table(ws, fmts, out_df, header_overrides=None, add_srno=True):
             else:
                 ws.write(r, c + col_offset, val, fmt)
 
-    # Auto column widths (header length vs longest value) — capped tighter
+    # Column widths — driven by data length only (headers wrap, so ignore header length)
     for c, h in enumerate(headers):
         if add_srno and c == 0:
-            ws.set_column(0, 0, 7)
+            ws.set_column(0, 0, 6)   # Sr. No. — narrow
             continue
         data_col = h
         if data_col in out_df.columns:
@@ -175,8 +176,7 @@ def _write_table(ws, fmts, out_df, header_overrides=None, add_srno=True):
             longest = 0 if pd.isna(longest) else int(longest)
         else:
             longest = 0
-        width = max(len(str(overrides.get(h, h))), longest) + 1
-        ws.set_column(c, c, min(max(width, 8), 28))
+        ws.set_column(c, c, min(max(longest + 1, 10), 30))
 
 
 def _prepare_category_df(results_df, categories) -> pd.DataFrame:
@@ -230,8 +230,9 @@ def build_email_tables_html(results_df, sections=None) -> str:
     """
     Build per-section color-coded HTML tables for the I&D report email body.
     Uses fully inline styles (no <style> block) to survive Gmail's CSS stripper.
-    Colors and gridlines match the TP report email: reference-mail #9A9A9A borders,
-    #EEEEEE column headers, glossy rgba row fills, dark-navy section title rows.
+    Layout: report name above the table (separate <p>), then the table with
+    Sr. No. as first column (no Month/Year/Plant Code columns).
+    TH cells wrap text so long headers don't blow out column widths.
     """
     import html as _html
     sections = sections or EMAIL_SECTIONS
@@ -249,26 +250,22 @@ def build_email_tables_html(results_df, sections=None) -> str:
 
     for idx, (title, cats) in enumerate(sections, start=1):
         out       = _prepare_category_df(results_df, cats)
-        headers   = list(out.columns) if not out.empty else []
+        headers   = ["Sr. No."] + list(out.columns) if not out.empty else ["Sr. No."]
         ded_label = _ded_header_label(cats)
-        num_cols  = len(headers) if headers else 1
+        num_cols  = len(headers)
 
-        ttl_td = (
-            f'colspan="{num_cols}" '
-            f'style="{F}font-size:12px;font-weight:bold;background:#082B49;color:#fff;'
-            f'padding:3px 6px;{HDR_BDR};text-align:left"'
-        )
+        # TH: wrap text (no nowrap) so long headers don't force wide columns
         th_base = (
             f'{F}background:#082B49;color:#fff;font-weight:bold;'
-            f'padding:3px 6px;{HDR_BDR};white-space:nowrap;line-height:1.2;'
-            f'vertical-align:middle'
+            f'padding:3px 5px;{HDR_BDR};white-space:normal;line-height:1.2;'
+            f'vertical-align:middle;text-align:center;'
         )
 
-        thead_cells = "".join(
-            f'<th style="{th_base};text-align:center">'
-            f'{_html.escape(ded_label if h == "Deduction Amount" else str(h))}</th>'
-            for h in headers
-        )
+        thead_cells = ""
+        for h in headers:
+            label = "Sr. No." if h == "Sr. No." else (ded_label if h == "Deduction Amount" else str(h))
+            w = ' style="width:32px"' if h == "Sr. No." else ""
+            thead_cells += f'<th{w} style="{th_base}">{_html.escape(label)}</th>'
 
         tbody_rows = []
         if out.empty:
@@ -278,22 +275,29 @@ def build_email_tables_html(results_df, sections=None) -> str:
                 f'No records for this section.</td></tr>'
             )
         else:
-            for _, row in out.iterrows():
+            data_headers = list(out.columns)
+            for srno, (_, row) in enumerate(out.iterrows(), start=1):
                 inc = row.get("Incentive Amount", 0) or 0
                 ded = row.get("Deduction Amount", 0) or 0
                 bg  = _row_bg(inc, ded)
-                cells = ""
-                for h in headers:
+                # Sr. No. cell
+                sr_s = (f'{F}background:{bg};color:#000;padding:2px 4px;{CELL_BDR};'
+                        f'text-align:center;line-height:1.2;vertical-align:middle;white-space:nowrap;')
+                cells = f'<td style="{sr_s}">{srno}</td>'
+                for h in data_headers:
                     align = "right" if _coltype(h) in ("int", "num") else "left"
                     td_s  = (f'{F}background:{bg};padding:2px 5px;{CELL_BDR};'
                              f'text-align:{align};white-space:nowrap;line-height:1.2;vertical-align:middle')
                     cells += f'<td style="{td_s}">{_html.escape(_cell_value(h, row[h]))}</td>'
                 tbody_rows.append(f"<tr>{cells}</tr>")
 
+        # Report name as a separate line ABOVE the table
+        title_style = (f'{F}font-size:12px;font-weight:bold;color:#082B49;'
+                       f'margin:8px 0 3px 0;')
         parts.append(
+            f'<p style="{title_style}">{idx}. {_html.escape(title)}</p>'
             f'<table cellpadding="0" cellspacing="0" '
-            f'style="border-collapse:collapse;width:100%;margin:6px 0 8px">'
-            f'<tr><td {ttl_td}>{idx}. {_html.escape(title)}</td></tr>'
+            f'style="border-collapse:collapse;width:auto;margin:0 0 10px">'
             f'<thead><tr>{thead_cells}</tr></thead>'
             f'<tbody>{"".join(tbody_rows)}</tbody>'
             f'</table>'

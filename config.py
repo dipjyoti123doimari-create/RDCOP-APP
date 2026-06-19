@@ -161,14 +161,11 @@ REPORT_SHEETS = {
 
 # The exact columns every report sheet should contain (in this order).
 REPORT_OUTPUT_COLUMNS = [
-    "Month",
-    "Year",
     "Employee Code",
     "Employee Name",
     "Designation",
     "Category",
     "Plant",
-    "Plant Code",
     "Total Quantity",
     "YTD Maintenance Cost",
     "Incentive Eligible",
