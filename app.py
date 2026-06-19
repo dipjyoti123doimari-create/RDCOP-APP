@@ -2113,6 +2113,7 @@ def page_calculate():
                            maint_mismatch=maint_mismatch,
                            all_waivers=all_waivers,
                            waiver_month_opts=waiver_month_opts,
+                           waiver_employees=waiver_employees,
                            current_year=_date.today().year)
 
 
