@@ -43,7 +43,7 @@ _COL_MAP = {
     "category":             "Category",
     "plant":                "Plant",
     "plant_code":           "Plant Code",
-    "total_quantity":       "Total Quantity",
+    "total_quantity":       "Batching Quantity",
     "ytd_maintenance_cost": "YTD Maintenance Cost",
     "incentive_eligible":   "Incentive Eligible",
     "incentive_rate":       "Incentive Rate",
@@ -57,7 +57,7 @@ _COL_MAP = {
 # Which Excel columns are numbers (so we right-align + number-format them).
 _INT_COLS = {"Month", "Year", "Row Number", "Sr. no."}
 _NUM_COLS = {
-    "Total Quantity", "YTD Maintenance Cost", "Incentive Rate",
+    "Batching Quantity", "YTD Maintenance Cost", "Incentive Rate",
     "Incentive Amount", "Deduction Target", "Shortfall Quantity",
     "Deduction Amount",
 }

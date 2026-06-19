@@ -321,6 +321,16 @@ def run_calculation(month: int, year: int,
             ded_target, shortfall, ded_amount = _calculate_deduction(
                 total_qty, category
             )
+            # Override remark with context-specific message
+            if ded_amount > 0:
+                # Red row — quantity below deduction target
+                remark = (f"Quantity {total_qty:.0f} < minimum {int(ded_target)} "
+                          f"(deduction target)")
+            elif inc_amount == 0 and inc_elig == "No" and ded_amount == 0:
+                # White row — not eligible for incentive, no deduction either
+                if total_qty < config.INCENTIVE_MIN_QUANTITY:
+                    remark = (f"Quantity {total_qty:.0f} < minimum "
+                              f"{config.INCENTIVE_MIN_QUANTITY} for incentive")
 
             results.append({
                 "month":                month,

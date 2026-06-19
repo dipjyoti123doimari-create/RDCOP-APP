@@ -166,7 +166,7 @@ REPORT_OUTPUT_COLUMNS = [
     "Designation",
     "Category",
     "Plant",
-    "Total Quantity",
+    "Batching Quantity",
     "YTD Maintenance Cost",
     "Incentive Eligible",
     "Incentive Rate",
