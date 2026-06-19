@@ -2,9 +2,12 @@
 {% block title %}Calculate{% endblock %}
 {% block content %}
 
-<div class="page-header">
-  <h1>Calculate Incentive &amp; Deduction</h1>
-  <p>Choose a date range and run the full category-wise incentive &amp; deduction calculation</p>
+<div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+  <div>
+    <h1>Calculate Incentive &amp; Deduction</h1>
+    <p>Choose a date range and run the full category-wise incentive &amp; deduction calculation</p>
+  </div>
+  <button type="button" class="btn btn-secondary" onclick="openWaiverModal()">🛡️ Manage Waivers <span id="waiver-badge" style="display:inline-block;background:#e55;color:#fff;border-radius:10px;padding:0 7px;font-size:11px;margin-left:4px">{{ all_waivers | length }}</span></button>
 </div>
 
 {% if maint_month_label %}
@@ -167,81 +170,124 @@
 
 {% endif %}
 
-<!-- ── Waiver Management ─────────────────────────────────────────────── -->
-<div class="card" style="margin-top:28px" id="waivers">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-    <h3 style="margin:0">Deduction Waivers</h3>
-    <span style="font-size:12px;color:#8ea0b4">Employees with an approved waiver appear red but with ₹0 deduction</span>
-  </div>
+<!-- ── Waiver Management Modal ───────────────────────────────────────── -->
+<div id="waiver-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeWaiverModal()">
+  <div class="modal-box" style="max-width:780px;max-height:90vh;overflow-y:auto">
+    <div class="modal-header">
+      <span>🛡️ Deduction Waivers</span>
+      <button class="modal-close" onclick="closeWaiverModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:#8ea0b4;margin-bottom:16px">Waived employees appear <strong style="color:#ef4444">red</strong> in the report but their deduction amount is ₹0. The waiver reason is shown in Remarks.</p>
 
-  <!-- Add waiver form -->
-  <form method="POST" action="{{ url_for('action_add_waiver') }}" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:18px;padding:14px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid rgba(255,255,255,0.08)">
-    <div class="form-group" style="margin:0;min-width:140px">
-      <label>Employee Code</label>
-      <input type="text" name="waiver_emp_code" placeholder="e.g. E00123" required>
-    </div>
-    <div class="form-group" style="margin:0;min-width:130px">
-      <label>Month</label>
-      <select name="waiver_month" required>
-        {% for m_num, m_name in waiver_month_opts %}
-        <option value="{{ m_num }}" {% if m_num == last_calc.month | int %}selected{% endif %}>{{ m_name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="form-group" style="margin:0;min-width:90px">
-      <label>Year</label>
-      <input type="number" name="waiver_year" value="{{ last_calc.year or current_year }}" min="2020" max="2099" required style="width:90px">
-    </div>
-    <div class="form-group" style="margin:0;min-width:220px">
-      <label>Waiver Reason</label>
-      <select name="waiver_reason" id="waiver-reason-sel" onchange="toggleCustomReason(this)">
-        <option value="dr_bhoon">Waived by Dr. Bhoon</option>
-        <option value="approved_leave">Waived, on approved leave</option>
-        <option value="other">Waived, Other reason</option>
-      </select>
-    </div>
-    <div class="form-group" id="waiver-custom-group" style="margin:0;min-width:200px;display:none">
-      <label>Custom Reason</label>
-      <input type="text" name="waiver_custom" id="waiver-custom-input" placeholder="Type reason here…">
-    </div>
-    <button type="submit" class="btn btn-primary" style="align-self:flex-end">➕ Add Waiver</button>
-  </form>
+      <!-- Add waiver form -->
+      <form method="POST" action="{{ url_for('action_add_waiver') }}"
+            style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;
+                   margin-bottom:20px;padding:14px;
+                   background:rgba(255,255,255,0.03);border-radius:8px;
+                   border:1px solid rgba(255,255,255,0.08)">
 
-  <!-- Existing waivers table -->
-  {% if all_waivers %}
-  <div class="table-wrapper">
-    <table>
-      <thead>
-        <tr>
-          <th>Employee Code</th>
-          <th>Month</th>
-          <th>Year</th>
-          <th>Waiver Reason (shown in Remarks)</th>
-          <th style="width:80px">Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for w in all_waivers %}
-        {% set display = "Waived by Dr. Bhoon" if w.reason == "dr_bhoon" else ("Waived, on approved leave" if w.reason == "approved_leave" else ("Waived, " ~ w.custom_reason if w.custom_reason else "Waived")) %}
-        <tr class="row-red">
-          <td><strong>{{ w.employee_code }}</strong></td>
-          <td>{{ ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][w.month] }}</td>
-          <td>{{ w.year }}</td>
-          <td>{{ display }}</td>
-          <td>
-            <form method="POST" action="{{ url_for('action_delete_waiver') }}" onsubmit="return confirm('Remove waiver for {{ w.employee_code }}?')">
-              <input type="hidden" name="waiver_id" value="{{ w.id }}">
-              <button type="submit" class="btn btn-danger btn-sm">🗑️</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        <!-- Employee LOV with search -->
+        <div class="form-group" style="margin:0;flex:1 1 240px;position:relative">
+          <label>Employee <span style="color:#8ea0b4;font-size:11px">(search by code or name)</span></label>
+          <input type="text" id="waiver-emp-search" autocomplete="off"
+                 placeholder="Type to search…" style="width:100%"
+                 oninput="waiverEmpFilter(this)" onfocus="waiverEmpFilter(this)"
+                 onblur="setTimeout(function(){document.getElementById('waiver-emp-dd').style.display='none'},180)">
+          <input type="hidden" name="waiver_emp_code" id="waiver-emp-code" required>
+          <div id="waiver-emp-dd"
+               style="display:none;position:absolute;top:100%;left:0;right:0;z-index:9999;
+                      background:#0d2d4a;border:1px solid rgba(255,255,255,0.2);
+                      border-radius:6px;max-height:200px;overflow-y:auto;
+                      box-shadow:0 8px 28px rgba(0,0,0,0.5)">
+            {% for e in waiver_employees %}
+            <div class="waiver-emp-opt"
+                 data-code="{{ e.code }}"
+                 data-label="{{ e.code }} — {{ e.name }}"
+                 onmousedown="waiverEmpSelect(this)"
+                 style="padding:8px 12px;cursor:pointer;font-size:13px;
+                        border-bottom:1px solid rgba(255,255,255,0.05)">
+              <strong>{{ e.code }}</strong>&nbsp;&nbsp;{{ e.name }}
+            </div>
+            {% endfor %}
+            {% if not waiver_employees %}
+            <div style="padding:10px 12px;font-size:13px;color:#8ea0b4">No master data — upload first.</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="form-group" style="margin:0;flex:0 0 130px">
+          <label>Month</label>
+          <select name="waiver_month" required>
+            {% for m_num, m_name in waiver_month_opts %}
+            <option value="{{ m_num }}" {% if m_num == (last_calc.month | int) %}selected{% endif %}>{{ m_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-group" style="margin:0;flex:0 0 88px">
+          <label>Year</label>
+          <input type="number" name="waiver_year" value="{{ last_calc.year or current_year }}"
+                 min="2020" max="2099" required style="width:88px">
+        </div>
+
+        <div class="form-group" style="margin:0;flex:1 1 200px">
+          <label>Reason</label>
+          <select name="waiver_reason" id="waiver-reason-sel" onchange="toggleCustomReason(this)">
+            <option value="dr_bhoon">Waived by Dr. Bhoon</option>
+            <option value="approved_leave">Waived, on approved leave</option>
+            <option value="other">Waived, Other reason</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="waiver-custom-group" style="margin:0;flex:1 1 180px;display:none">
+          <label>Custom Reason</label>
+          <input type="text" name="waiver_custom" id="waiver-custom-input" placeholder="Type reason…">
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="align-self:flex-end;white-space:nowrap">➕ Add Waiver</button>
+      </form>
+
+      <!-- Existing waivers table -->
+      {% if all_waivers %}
+      <div class="table-wrapper" style="max-height:320px;overflow-y:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Employee Code</th>
+              <th>Month</th>
+              <th>Year</th>
+              <th>Waiver Reason (shown in Remarks)</th>
+              <th style="width:70px">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for w in all_waivers %}
+            {% set display = "Waived by Dr. Bhoon" if w.reason == "dr_bhoon"
+                        else ("Waived, on approved leave" if w.reason == "approved_leave"
+                        else ("Waived, " ~ w.custom_reason if w.custom_reason else "Waived")) %}
+            <tr class="row-red">
+              <td><strong>{{ w.employee_code }}</strong></td>
+              <td>{{ ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][w.month] }}</td>
+              <td>{{ w.year }}</td>
+              <td>{{ display }}</td>
+              <td>
+                <form method="POST" action="{{ url_for('action_delete_waiver') }}"
+                      onsubmit="return confirm('Remove waiver for {{ w.employee_code }}?')">
+                  <input type="hidden" name="waiver_id" value="{{ w.id }}">
+                  <button type="submit" class="btn btn-danger btn-sm">🗑️</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p style="color:#8ea0b4;font-size:13px;text-align:center;padding:20px 0">No waivers recorded yet.</p>
+      {% endif %}
+    </div>
   </div>
-  {% else %}
-  <p style="color:#8ea0b4;font-size:13px">No waivers recorded yet.</p>
-  {% endif %}
 </div>
 
 {% endblock %}
@@ -252,6 +298,19 @@ submitFormAjax(
   document.getElementById('calc-loading'),
   document.getElementById('run-btn')
 );
+
+/* ── Waiver modal ── */
+function openWaiverModal() {
+  document.getElementById('waiver-modal').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+function closeWaiverModal() {
+  document.getElementById('waiver-modal').style.display = 'none';
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeWaiverModal(); });
+
+/* ── Reason toggle ── */
 function toggleCustomReason(sel) {
   var grp = document.getElementById('waiver-custom-group');
   var inp = document.getElementById('waiver-custom-input');
@@ -261,7 +320,41 @@ function toggleCustomReason(sel) {
   } else {
     grp.style.display = 'none';
     inp.required = false;
+    inp.value = '';
   }
 }
+
+/* ── Employee search LOV ── */
+function waiverEmpFilter(input) {
+  var dd = document.getElementById('waiver-emp-dd');
+  var q  = input.value.trim().toLowerCase();
+  var opts = dd.querySelectorAll('.waiver-emp-opt');
+  var any = false;
+  opts.forEach(function(opt) {
+    var match = opt.dataset.label.toLowerCase().indexOf(q) >= 0;
+    opt.style.display = match ? '' : 'none';
+    if (match) any = true;
+  });
+  dd.style.display = (opts.length && (q.length >= 0)) ? 'block' : 'none';
+  /* clear hidden value when user retypes */
+  document.getElementById('waiver-emp-code').value = '';
+}
+
+function waiverEmpSelect(opt) {
+  document.getElementById('waiver-emp-search').value = opt.dataset.label;
+  document.getElementById('waiver-emp-code').value   = opt.dataset.code;
+  document.getElementById('waiver-emp-dd').style.display = 'none';
+}
+
+/* Hover highlight */
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.waiver-emp-opt').forEach(function(opt) {
+    opt.addEventListener('mouseenter', function() { this.style.background = 'rgba(255,255,255,0.08)'; });
+    opt.addEventListener('mouseleave', function() { this.style.background = ''; });
+  });
+  {% if request.args.get('anchor') == 'waivers' %}
+  openWaiverModal();
+  {% endif %}
+});
 </script>
 {% endblock %}

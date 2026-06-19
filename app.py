@@ -2088,9 +2088,15 @@ def page_calculate():
         maint_mismatch    = False
 
     all_waivers = database.get_all_waivers()
-    # Build month/year options for the waiver form (all months that have backend data)
     import calendar as _cal2
     waiver_month_opts = [(m, _cal2.month_name[m]) for m in range(1, 13)]
+    # Employee list for searchable waiver LOV
+    _emp_df = database.read_table_limited("master_data", order_by="employee_code", limit=100000)
+    waiver_employees = (
+        [{"code": str(r["employee_code"]), "name": str(r.get("employee_name", ""))}
+         for _, r in _emp_df.iterrows()]
+        if not _emp_df.empty else []
+    )
 
     return render_template("calculate.html",
                            available=available,
@@ -3045,13 +3051,13 @@ def action_add_waiver():
     cust = request.form.get("waiver_custom", "").strip()
     if not emp or not mon or not yr or not rsn:
         flash("All waiver fields are required.", "error")
-        return redirect(url_for("page_calculate") + "#waivers")
+        return redirect(url_for("page_calculate", anchor="waivers"))
     try:
         database.upsert_waiver(emp, int(mon), int(yr), rsn, cust)
         flash(f"✅ Waiver saved for {emp}.", "success")
     except Exception as e:
         flash(f"Could not save waiver: {e}", "error")
-    return redirect(url_for("page_calculate") + "#waivers")
+    return redirect(url_for("page_calculate", anchor="waivers"))
 
 
 @app.route("/action/delete-waiver", methods=["POST"])
@@ -3059,10 +3065,10 @@ def action_delete_waiver():
     wid = request.form.get("waiver_id", "").strip()
     if not wid:
         flash("Invalid waiver ID.", "error")
-        return redirect(url_for("page_calculate") + "#waivers")
+        return redirect(url_for("page_calculate", anchor="waivers"))
     database.delete_waiver(int(wid))
     flash("Waiver removed.", "success")
-    return redirect(url_for("page_calculate") + "#waivers")
+    return redirect(url_for("page_calculate", anchor="waivers"))
 
 
 @app.route("/action/send-email", methods=["POST"])
