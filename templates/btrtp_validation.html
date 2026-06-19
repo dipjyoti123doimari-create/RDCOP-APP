@@ -1,0 +1,80 @@
+{% extends "btrtp_base.html" %}
+{% block title %}Validation / Skip Log{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Validation / Skip Log</h1>
+  <p>Rows excluded during Oracle data parsing and warnings raised during calculation</p>
+</div>
+
+{% if not skip_log and not calc_warnings %}
+<div class="glass-card" style="text-align:center;padding:28px">
+  <h3>Nothing to review</h3>
+  <p>No skipped rows and no calculation warnings. Fetch Oracle data and run a calculation to populate this page.</p>
+</div>
+{% else %}
+
+<!-- Summary KPIs -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">Skipped Rows</div>
+    <div class="kpi-value">{{ skip_log | length | format_int }}</div>
+    <div class="kpi-sub">Excluded from calculation</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Calc Warnings</div>
+    <div class="kpi-value">{{ calc_warnings | length | format_int }}</div>
+    <div class="kpi-sub">Raised on last run</div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <button class="tab-btn active" data-tabset="val" data-tab="skip">🚫 Skip Log</button>
+  <button class="tab-btn" data-tabset="val" data-tab="warn">⚠️ Calc Warnings</button>
+</div>
+
+<!-- Skip Log -->
+<div class="tab-panel active" data-tabpanel="val" data-tab="skip">
+  {% if skip_log %}
+  <p class="caption" style="margin-bottom:10px">Showing <strong>{{ skip_log | length | format_int }}</strong> skipped row(s)</p>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Batcher ID</th><th>Batch Ref</th><th>Plant Code</th><th>Date</th><th>Qty</th><th>Time (min)</th><th>Reason</th></tr>
+      </thead>
+      <tbody>
+        {% for row in skip_log %}
+        <tr class="row-red">
+          <td>{{ loop.index }}</td>
+          <td>{{ row.batcher_id or '—' }}</td>
+          <td>{{ row.batch_ref or '—' }}</td>
+          <td>{{ row.plant_code or '—' }}</td>
+          <td>{{ row.production_date or '—' }}</td>
+          <td>{{ row.quantity or '—' }}</td>
+          <td>{{ row.time_taken_min or '—' }}</td>
+          <td>{{ row.reason }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="alert alert-success">✅ No skipped rows — all fetched data passed validation.</div>
+  {% endif %}
+</div>
+
+<!-- Calc Warnings -->
+<div class="tab-panel" data-tabpanel="val" data-tab="warn">
+  {% if calc_warnings %}
+  {% for w in calc_warnings %}
+  <div class="alert alert-warning">{{ w }}</div>
+  {% endfor %}
+  {% else %}
+  <div class="alert alert-success">✅ No calculation warnings.</div>
+  {% endif %}
+</div>
+
+{% endif %}
+
+{% endblock %}

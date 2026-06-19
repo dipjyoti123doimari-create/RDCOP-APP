@@ -1832,6 +1832,17 @@ def btrtp_send_email():
     return redirect(url_for("btrtp_reports"))
 
 
+# ── Validation ────────────────────────────────────────────────────────────────
+@app.route("/btrtp/validation")
+def btrtp_validation():
+    skip_log      = _ms("btrtp", "skip_log", [])
+    calc_warnings = _ms("btrtp", "calc_warnings", [])
+    ctx = _btrtp_ctx()
+    ctx["active_page"] = "validation"
+    return render_template("btrtp_validation.html",
+                           skip_log=skip_log, calc_warnings=calc_warnings, **ctx)
+
+
 # ── Settings ──────────────────────────────────────────────────────────────────
 @app.route("/btrtp/settings", methods=["GET"])
 def btrtp_settings():
