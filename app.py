@@ -2080,8 +2080,13 @@ def page_calculate():
     if _maint_months:
         _mm, _my = _maint_months[0]
         maint_month_label = f"{_cal.month_name[_mm]} {_my}" if _mm else "Unassigned"
+        # Compare against the month of the last calculation run (if any)
+        _lc_month = int(last_calc.get("month") or 0)
+        _lc_year  = int(last_calc.get("year")  or 0)
+        maint_mismatch = bool(_lc_month and _lc_year and (_mm != _lc_month or _my != _lc_year))
     else:
         maint_month_label = None
+        maint_mismatch    = False
 
     return render_template("calculate.html",
                            available=available,
@@ -2094,7 +2099,8 @@ def page_calculate():
                            result_cols=RESULT_COLS, result_labels=RESULT_LABELS,
                            total_emps=total_emps, elig_count=elig_count,
                            total_inc=total_inc, total_ded=total_ded,
-                           maint_month_label=maint_month_label)
+                           maint_month_label=maint_month_label,
+                           maint_mismatch=maint_mismatch)
 
 
 @app.route("/reports")
@@ -2241,8 +2247,10 @@ def page_reports():
     if _maint_months:
         _mm, _my = _maint_months[0]
         maint_month_label = f"{_cal.month_name[_mm]} {_my}" if _mm else "Unassigned"
+        maint_mismatch = (_mm != from_date.month or _my != from_date.year)
     else:
         maint_month_label = None
+        maint_mismatch    = False
 
     return render_template("reports.html",
                            from_date=str(from_date), to_date=str(to_date),

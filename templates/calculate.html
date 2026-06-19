@@ -8,11 +8,15 @@
 </div>
 
 {% if maint_month_label %}
-<div class="alert alert-info" style="margin-bottom:10px">
+<div class="alert {{ 'alert-error' if maint_mismatch else 'alert-info' }}" style="margin-bottom:10px">
+  {% if maint_mismatch %}
+  ⚠️ <strong>Maintenance cost month mismatch:</strong> Uploaded data is for <strong>{{ maint_month_label }}</strong>, but you are calculating a different month. Upload the correct month's maintenance cost before running.
+  {% else %}
   📋 <strong>YTD Maintenance Cost applied:</strong> {{ maint_month_label }}
+  {% endif %}
 </div>
 {% else %}
-<div class="alert alert-warning" style="margin-bottom:10px">
+<div class="alert alert-error" style="margin-bottom:10px">
   ⚠️ <strong>No maintenance cost data uploaded.</strong> Calculation will fail — please upload maintenance cost data first.
 </div>
 {% endif %}
