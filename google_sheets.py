@@ -348,19 +348,11 @@ def fetch_master_data(sheet_id: str, worksheet_name: str) -> pd.DataFrame:
     """
     Fetch and return master data as a clean DataFrame.
 
-    Automatically chooses the right mode:
-      - Service account mode  →  if credentials/service_account.json exists
-      - Public CSV mode       →  otherwise (works for publicly shared sheets)
-
-    Always accepts a full Google Sheets URL or a raw Sheet ID.
+    Tries service account mode first (if credentials exist), then falls back
+    to public URL mode so sheets not shared with the service account still work.
     """
     sheet_id = extract_sheet_id(sheet_id)
-
-    if credentials_exist():
-        raw_df = _fetch_private(sheet_id, worksheet_name)
-    else:
-        raw_df = _fetch_public(sheet_id, worksheet_name)
-
+    raw_df, _ = _fetch_with_fallback(sheet_id, worksheet_name)
     return _clean_and_validate(raw_df)
 
 
@@ -471,18 +463,28 @@ def _clean_tp_plant_data(raw_df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _fetch_with_fallback(sheet_id: str, worksheet_name: str) -> tuple:
+    """
+    Try private (service account) fetch first; fall back to public URL fetch.
+    Returns (DataFrame, mode_string).
+    """
+    if credentials_exist():
+        try:
+            return _fetch_private(sheet_id, worksheet_name), "private"
+        except Exception:
+            pass  # service account doesn't have access to this sheet → try public
+    return _fetch_public(sheet_id, worksheet_name), "public"
+
+
 def sync_tp_plant_data(sheet_id: str, worksheet_name: str = "Plant Data for TP") -> dict:
     """
     Fetch the Plant Data for TP sheet and save to tp_plant_data table.
     Returns {"rows_synced": int, "synced_at": str|None, "error": str|None, "mode": str}
     """
-    mode = "private" if credentials_exist() else "public"
+    mode = "public"
     try:
         clean_id = extract_sheet_id(sheet_id)
-        if credentials_exist():
-            raw_df = _fetch_private(clean_id, worksheet_name)
-        else:
-            raw_df = _fetch_public(clean_id, worksheet_name)
+        raw_df, mode = _fetch_with_fallback(clean_id, worksheet_name)
 
         df = _clean_tp_plant_data(raw_df)
         now = datetime.now().isoformat(timespec="seconds")
@@ -517,13 +519,10 @@ def sync_btrtp_master_data(sheet_id: str, worksheet_name: str = "BT Master Data"
     Expected sheet columns: Batcher ID, Batcher Name
     Returns {"rows_synced": int, "synced_at": str|None, "error": str|None, "mode": str}
     """
-    mode = "private" if credentials_exist() else "public"
+    mode = "public"
     try:
         clean_id = extract_sheet_id(sheet_id)
-        if credentials_exist():
-            raw_df = _fetch_private(clean_id, worksheet_name)
-        else:
-            raw_df = _fetch_public(clean_id, worksheet_name)
+        raw_df, mode = _fetch_with_fallback(clean_id, worksheet_name)
 
         if raw_df is None or raw_df.empty:
             raise ValueError(
