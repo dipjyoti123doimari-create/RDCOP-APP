@@ -1479,10 +1479,12 @@ def btrtp_calculate():
         return jsonify({"ok": True, "redirect": url_for("btrtp_calculate")})
 
     today = _date.today()
+    plant_groups = _group_btrtp_by_plant(batcher_rows)
     ctx = _btrtp_ctx()
     ctx["active_page"] = "calculate"
     return render_template("btrtp_calculate.html",
-                           batcher_rows=batcher_rows, warnings=warnings, ran=ran,
+                           batcher_rows=batcher_rows, plant_groups=plant_groups,
+                           warnings=warnings, ran=ran,
                            default_from=_ms("btrtp", "calc_from", str(today.replace(day=1))),
                            default_to=_ms("btrtp", "calc_to", str(today)),
                            **ctx)
@@ -1579,10 +1581,12 @@ def btrtp_reports():
                        or f"Dear Team,\n\nPlease find attached the Batcher Throughput "
                           f"Report for {month_label}.\n\nRegards,\nRDC Operations")
 
+    plant_groups = _group_btrtp_by_plant(batcher_rows)
     ctx = _btrtp_ctx()
     ctx["active_page"] = "reports"
     return render_template("btrtp_reports.html",
-                           batcher_rows=batcher_rows, total_rows=len(all_rows),
+                           batcher_rows=batcher_rows, plant_groups=plant_groups,
+                           total_rows=len(all_rows),
                            from_date=str(fd), to_date=str(td),
                            unique_excos=unique_excos, unique_bheads=unique_bheads,
                            unique_plants=unique_plants, unique_batchers=unique_batchers,
@@ -1593,6 +1597,43 @@ def btrtp_reports():
                            default_to=default_to, default_cc=default_cc,
                            default_subject=default_subject, default_body=default_body,
                            btrtp_email_log=btrtp_email_log, **ctx)
+
+
+def _group_btrtp_by_plant(batcher_rows: list) -> list:
+    """
+    Group flat batcher rows by plant (lookup_code), return list of plant-group dicts.
+    Each group: {plant_name, lookup_code, mixer_label, exco_location, business_head,
+                 plant_manager, mixer_theo_cap, rows, avg_tp, total_qty, total_time_hrs}
+    Rows within each group sorted by TP% descending.
+    """
+    groups: dict = {}
+    for r in batcher_rows:
+        key = r["lookup_code"]
+        if key not in groups:
+            parts = key.split("_", 1)
+            mixer_label = parts[1] if len(parts) > 1 else ""
+            groups[key] = {
+                "plant_name":     r["plant_name"],
+                "lookup_code":    key,
+                "mixer_label":    mixer_label,
+                "exco_location":  r["exco_location"],
+                "business_head":  r["business_head"],
+                "plant_manager":  r["plant_manager"],
+                "mixer_theo_cap": r["mixer_theo_cap"],
+                "rows": [],
+            }
+        groups[key]["rows"].append(r)
+
+    # Compute aggregates and sort rows within each group by TP% descending
+    result = sorted(groups.values(), key=lambda g: (g["plant_name"], g["mixer_label"]))
+    for g in result:
+        g["rows"].sort(key=lambda r: -r["throughput_pct"])
+        tps   = [r["throughput_pct"] for r in g["rows"]]
+        g["avg_tp"]        = round(sum(tps) / len(tps), 1) if tps else 0
+        g["total_qty"]     = round(sum(r["total_quantity"]  for r in g["rows"]), 1)
+        g["total_time_hrs"]= round(sum(r["total_time_hrs"]  for r in g["rows"]), 2)
+        g["batch_count"]   = sum(r["batch_count"] for r in g["rows"])
+    return result
 
 
 def _btrtp_mon_tag(month, year):

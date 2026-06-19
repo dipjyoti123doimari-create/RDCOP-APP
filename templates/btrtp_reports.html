@@ -236,46 +236,52 @@
   </div>
 </div>
 
-<!-- Report table -->
-<div class="table-wrapper">
+<!-- Plant-grouped report tables -->
+{% for g in plant_groups %}
+<div class="card" style="margin-top:16px;padding:0;overflow:hidden">
+  <!-- Plant section header -->
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(255,180,0,0.07);border-bottom:1px solid rgba(255,180,0,0.18)">
+    <div>
+      <span style="font-weight:700;font-size:15px;color:#FFB400">{{ g.plant_name }}</span>
+      {% if g.mixer_label %}<span style="margin-left:8px;font-size:12px;padding:2px 8px;border-radius:12px;background:rgba(255,180,0,0.15);color:#FFB400;font-weight:600">{{ g.mixer_label }}</span>{% endif %}
+      <span style="margin-left:12px;font-size:12px;color:#8ea0b4">{{ g.exco_location }}</span>
+      <span style="margin-left:8px;font-size:12px;color:#8ea0b4">· {{ g.business_head }}</span>
+    </div>
+    <div style="font-size:12px;color:#8ea0b4;text-align:right">
+      Mixer Cap: <strong>{{ g.mixer_theo_cap }}</strong> &nbsp;|&nbsp;
+      Avg TP%: <strong>{{ g.avg_tp }}%</strong> &nbsp;|&nbsp;
+      {{ g.rows | length }} batcher{{ 's' if g.rows | length != 1 }}
+    </div>
+  </div>
   <table>
     <thead>
       <tr>
-        <th>#</th>
+        <th style="width:36px">#</th>
         <th>Batcher ID</th>
         <th>Batcher Name</th>
-        <th>Plant</th>
-        <th>Exco Location</th>
-        <th>Business Head</th>
-        <th>Plant Manager</th>
-        <th>Mixer Cap</th>
         <th>Total Qty</th>
         <th>Time (hr)</th>
-        <th>TP %</th>
         <th>Batches</th>
+        <th>TP %</th>
       </tr>
     </thead>
     <tbody>
-      {% for r in batcher_rows %}
+      {% for r in g.rows %}
       {% set tp = r.throughput_pct %}
       <tr class="{% if tp < 60 %}row-red{% elif tp < 75 %}row-yellow{% else %}row-green{% endif %}">
         <td>{{ loop.index }}</td>
         <td><strong>{{ r.batcher_id }}</strong></td>
         <td>{{ r.batcher_name }}</td>
-        <td>{{ r.plant_name }}</td>
-        <td>{{ r.exco_location }}</td>
-        <td>{{ r.business_head }}</td>
-        <td>{{ r.plant_manager }}</td>
-        <td>{{ r.mixer_theo_cap }}</td>
         <td>{{ r.total_quantity | round(1) }}</td>
         <td>{{ r.total_time_hrs | round(2) }}</td>
-        <td><strong>{{ tp | round(0) | int }}%</strong></td>
         <td>{{ r.batch_count }}</td>
+        <td><strong>{{ tp | round(0) | int }}%</strong></td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+{% endfor %}
 
 {% endif %}
 
