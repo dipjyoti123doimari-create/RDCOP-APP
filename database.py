@@ -366,6 +366,21 @@ def get_maintenance_months() -> list:
         conn.close()
 
 
+def assign_maintenance_month(month: int, year: int) -> int:
+    """Set month+year on all rows where month IS NULL (legacy/unassigned rows)."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE maintenance_cost SET month = ?, year = ? WHERE month IS NULL OR year IS NULL",
+            (month, year)
+        )
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
 def delete_maintenance_month(month: int, year: int) -> int:
     """Delete all maintenance_cost rows for the given month+year. Returns rows deleted."""
     conn = get_connection()

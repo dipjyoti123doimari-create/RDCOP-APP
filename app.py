@@ -1979,6 +1979,10 @@ def page_data_uploader():
     maint_month_groups = sorted(maint_months_data.values(),
                                 key=lambda g: (g["year"], g["month"]), reverse=True)
     maint_count = len(maint_df) if not maint_df.empty else 0
+    # Set of (month, year) tuples already uploaded — used to lock the upload form
+    maint_uploaded_keys = {(g["month"], g["year"]) for g in maint_month_groups
+                           if g["month"] and g["year"]}
+    has_unassigned = any(g["month"] == 0 for g in maint_month_groups)
 
     codes_df = database.read_table_limited("master_data", order_by="employee_code", limit=100000)
     codes = codes_df["employee_code"].astype(str).tolist() if not codes_df.empty else []
@@ -2008,6 +2012,8 @@ def page_data_uploader():
                            maint_count=maint_count,
                            current_month=_date.today().month,
                            current_year=_date.today().year,
+                           maint_uploaded_keys=maint_uploaded_keys,
+                           has_unassigned=has_unassigned,
                            codes=codes, log_rows=log_rows, ora_b_preview=ora_b_preview,
                            edit_emp=edit_emp, del_emp=del_emp,
                            categories=config.CATEGORIES,
@@ -2444,6 +2450,19 @@ def upload_maintenance():
         flash(f"Saved {saved:,} plant maintenance cost rows for {_cal.month_name[month]} {year}.", "success")
     except Exception as exc:
         flash(f"Upload failed: {exc}", "error")
+    return redirect(url_for("page_data_uploader") + "#maintenance")
+
+
+@app.route("/action/assign-maintenance-month", methods=["POST"])
+def assign_maintenance_month():
+    try:
+        month = int(request.form.get("month"))
+        year  = int(request.form.get("year"))
+        import calendar as _cal
+        updated = database.assign_maintenance_month(month, year)
+        flash(f"✅ Assigned {updated} existing rows to {_cal.month_name[month]} {year}.", "success")
+    except Exception as exc:
+        flash(f"Assignment failed: {exc}", "error")
     return redirect(url_for("page_data_uploader") + "#maintenance")
 
 
