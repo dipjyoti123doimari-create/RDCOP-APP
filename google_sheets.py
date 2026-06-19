@@ -511,9 +511,9 @@ def sync_tp_plant_data(sheet_id: str, worksheet_name: str = "Plant Data for TP")
         return {"rows_synced": 0, "synced_at": None, "error": str(exc), "mode": mode}
 
 
-def sync_btrtp_master_data(sheet_id: str, worksheet_name: str = "BT Master") -> dict:
+def sync_btrtp_master_data(sheet_id: str, worksheet_name: str = "BT Master Data") -> dict:
     """
-    Fetch the BT Master sheet and save to btrtp_master_data table.
+    Fetch the BT Master Data sheet and save to btrtp_master_data table.
     Expected sheet columns: Batcher ID, Batcher Name
     Returns {"rows_synced": int, "synced_at": str|None, "error": str|None, "mode": str}
     """
@@ -525,33 +525,64 @@ def sync_btrtp_master_data(sheet_id: str, worksheet_name: str = "BT Master") -> 
         else:
             raw_df = _fetch_public(clean_id, worksheet_name)
 
-        raw_df.columns = [str(c).strip() for c in raw_df.columns]
+        if raw_df is None or raw_df.empty:
+            raise ValueError(
+                f"Sheet '{worksheet_name}' returned no data. "
+                "Check the tab name and sharing settings."
+            )
 
-        id_col   = next((c for c in raw_df.columns if "id" in c.lower()), None)
-        name_col = next((c for c in raw_df.columns if "name" in c.lower()), None)
+        raw_df.columns = [str(c).strip() for c in raw_df.columns]
+        cols_lower = {c.lower(): c for c in raw_df.columns}
+
+        # Exact match first, then progressively looser fallbacks
+        id_col = (
+            cols_lower.get("batcher id")
+            or next((c for c in raw_df.columns if "batcher" in c.lower() and "id" in c.lower()), None)
+            or next((c for c in raw_df.columns if c.lower().rstrip() in ("id", "batcher_id", "employee id", "emp id")), None)
+        )
+        name_col = (
+            cols_lower.get("batcher name")
+            or next((c for c in raw_df.columns if "batcher" in c.lower() and "name" in c.lower()), None)
+            or next((c for c in raw_df.columns if "name" in c.lower()), None)
+        )
 
         if not id_col or not name_col:
             raise ValueError(
-                f"Sheet must have 'Batcher ID' and 'Batcher Name' columns. Found: {list(raw_df.columns)}"
+                f"Columns 'Batcher ID' and 'Batcher Name' not found in sheet. "
+                f"Found columns: {list(raw_df.columns)}"
             )
 
+        def _clean_id(val) -> str:
+            """Strip whitespace; remove trailing '.0' that pandas adds to numeric codes."""
+            s = str(val).strip()
+            if s.endswith(".0"):
+                try:
+                    s = str(int(float(s)))
+                except Exception:
+                    pass
+            return s
+
         now = datetime.now().isoformat(timespec="seconds")
-        rows = [
-            {
-                "batcher_id":   str(r[id_col]).strip(),
+
+        # Build rows — deduplicate by batcher_id (keep last) to avoid UNIQUE constraint errors
+        seen: dict = {}
+        for _, r in raw_df.iterrows():
+            bid = _clean_id(r[id_col])
+            if bid in ("", "nan"):
+                continue
+            seen[bid] = {
+                "batcher_id":   bid,
                 "batcher_name": str(r[name_col]).strip(),
                 "updated_at":   now,
             }
-            for _, r in raw_df.iterrows()
-            if str(r[id_col]).strip() not in ("", "nan")
-        ]
+        rows = list(seen.values())
 
-        inserted = database.replace_table_rows("btrtp_master_data", rows)
+        database.replace_table_rows("btrtp_master_data", rows)
         database.set_module_setting("btrtp", "gsheet_last_sync",  now)
-        database.set_module_setting("btrtp", "gsheet_last_count", str(inserted))
+        database.set_module_setting("btrtp", "gsheet_last_count", str(len(rows)))
         database.set_module_setting("btrtp", "gsheet_worksheet",  worksheet_name)
 
-        return {"rows_synced": inserted, "synced_at": now, "error": None, "mode": mode}
+        return {"rows_synced": len(rows), "synced_at": now, "error": None, "mode": mode}
 
     except Exception as exc:
         return {"rows_synced": 0, "synced_at": None, "error": str(exc), "mode": mode}

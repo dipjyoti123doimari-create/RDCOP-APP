@@ -1401,6 +1401,10 @@ def btrtp_sync_master():
     _set_progress(85, "Saving settings…")
     if result["error"]:
         flash(f"Sync failed: {result['error']}", "error")
+    elif result["rows_synced"] == 0:
+        flash("⚠️ Sync completed but 0 batcher rows were saved. "
+              "Check that the sheet tab name, 'Batcher ID' and 'Batcher Name' columns exist and have data.",
+              "warning")
     else:
         database.set_module_setting("btrtp", "gsheet_id",
                                     google_sheets.extract_sheet_id(sheet_id))
