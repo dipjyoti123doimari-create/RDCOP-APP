@@ -229,8 +229,9 @@ def run_calculation(month: int, year: int,
         master_df = database.read_table("master_data")
         master_df["employee_code"] = master_df["employee_code"].astype(str).str.strip()
 
-        # Load maintenance cost for the exact calculation month/year.
-        # Fall back to any available data if no exact match exists.
+        # Load maintenance cost for the exact calculation month/year ONLY.
+        # If not uploaded yet, calculation is blocked — no silent fallback.
+        import calendar as _cal
         conn_m = database.get_connection()
         try:
             import pandas as _pd2
@@ -239,15 +240,23 @@ def run_calculation(month: int, year: int,
                 "WHERE month = ? AND year = ?",
                 conn_m, params=(month, year)
             )
-            if maint_df.empty:
-                # No exact month — fall back to most recent available month
-                maint_df = _pd2.read_sql_query(
-                    "SELECT plant_code, ytd_maintenance_cost FROM maintenance_cost "
-                    "ORDER BY year DESC, month DESC",
-                    conn_m
-                )
         finally:
             conn_m.close()
+
+        if maint_df.empty:
+            month_label = f"{_cal.month_name[month]} {year}"
+            return {
+                "total_employees": 0, "mapped": 0, "unmapped": 0,
+                "total_incentive": 0, "total_deduction": 0,
+                "generated_at": _now(), "results_rows": [],
+                "calc_warnings": [],
+                "error": (
+                    f"No maintenance cost data found for {month_label}. "
+                    f"Please upload the maintenance cost file for {month_label} "
+                    f"in Data Uploader → Maintenance Cost before running the calculation."
+                ),
+            }
+
         maint_df["plant_code"] = maint_df["plant_code"].astype(str).str.strip()
         maint_lookup = dict(
             zip(maint_df["plant_code"], maint_df["ytd_maintenance_cost"])
