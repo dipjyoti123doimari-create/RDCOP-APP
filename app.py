@@ -1783,12 +1783,12 @@ def btrtp_send_email():
 
     # Compact HTML email body with inline CSS (Gmail / Outlook safe)
     _TH = ('style="background-color:#082B49;color:#ffffff;font-weight:bold;'
-           'text-align:center;padding:4px 5px;border:1px solid #808080;'
-           'line-height:1.15;white-space:nowrap;"')
+           'text-align:center;padding:3px 6px;border:1px solid #808080;'
+           'font-size:11px;font-family:Arial,sans-serif;line-height:1.2;white-space:nowrap;"')
     def _td_b(bg, fg, align="center"):
-        return (f'style="background-color:{bg};color:{fg};padding:3px 5px;'
+        return (f'style="background-color:{bg};color:{fg};padding:2px 5px;'
                 f'border:1px solid #999999;text-align:{align};'
-                f'line-height:1.15;white-space:nowrap;"')
+                f'font-size:11px;font-family:Arial,sans-serif;line-height:1.2;white-space:nowrap;"')
     def _row_color(pct):
         if pct < 60: return "#FFB3B3", "#7B1F1F"
         if pct < 75: return "#FFE066", "#5C4200"
@@ -1815,18 +1815,18 @@ def btrtp_send_email():
             f'<td {_td_b(bg,fg,"center")}>{int(r.get("batch_count",0))}</td>'
             f'</tr>'
         )
-    _tbl_css = ('border-collapse:collapse;width:100%;font-family:Arial,Calibri,sans-serif;'
+    _tbl_css = ('border-collapse:collapse;width:auto;font-family:Arial,sans-serif;'
                 'font-size:11px;margin:0;padding:0;')
+    _body_font = 'font-family:Arial,Calibri,sans-serif;font-size:12px;color:#000000;'
     html_body = (
-        '<html><body style="margin:0;padding:12px;font-family:Arial,Calibri,sans-serif;'
-        'font-size:12px;color:#000;">'
-        '<p style="margin:0 0 6px 0;">Dear Team,</p>'
-        f'<p style="margin:0 0 8px 0;">Please find attached the Batcher Throughput Report for {month_name} {year}.</p>'
-        '<p style="margin:0 0 10px 0;">Regards,<br>RDC Operations</p>'
-        f'<h3 style="margin:6px 0 6px 0;font-size:14px;font-family:Arial,Calibri,sans-serif;color:#082B49;">'
-        f'Batcher Throughput Report - {mon_tag}</h3>'
+        f'<html><body style="margin:0;padding:8px 10px;{_body_font}">'
+        f'<p style="margin:0 0 3px 0;">Dear Team,</p>'
+        f'<p style="margin:0 0 3px 0;">Please find attached the Batcher Throughput Report for {month_name} {year}.</p>'
+        f'<p style="margin:0 0 6px 0;">Regards,<br>RDC Operations</p>'
+        f'<p style="margin:0 0 4px 0;font-size:13px;font-weight:bold;color:#082B49;">'
+        f'Batcher Throughput Report - {mon_tag}</p>'
         f'<table style="{_tbl_css}">{head_row}{body_rows}</table>'
-        '</body></html>'
+        f'</body></html>'
     )
 
     result = email_helper.send_report_email(
