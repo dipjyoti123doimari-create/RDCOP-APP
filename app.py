@@ -2247,30 +2247,78 @@ def page_validation():
     sel_src  = request.args.get("src", "")
     sel_etype = request.args.get("etype", "")
 
+    # Human-readable labels and fix instructions for each error type
+    _ERR_META = {
+        "BLANK_FIELD":          ("🔴 Blank Field",          "A required column is empty. Fill it in the Google Sheet and re-sync."),
+        "INVALID_CATEGORY":     ("🔴 Invalid Category",     f"Category value is not in the allowed list: {config.CATEGORIES}. Fix spelling in the Google Sheet and re-sync."),
+        "DUPLICATE_CODE":       ("🔴 Duplicate Employee Code", "The same Employee Code appears more than once. Remove the duplicate row from the Google Sheet and re-sync."),
+        "NO_DATA":              ("⚠️ No Data",              "This data source is empty. Upload or sync data first."),
+        "BLANK_EMPLOYEE_CODE":  ("🔴 Blank Employee Code",  "The 'Created by' column is blank for this batch row. Fix in the Backend Data Excel."),
+        "UNMAPPED_EMPLOYEE":    ("🟡 Unmapped Employee",    "Employee Code exists in Backend Data but not in Master Data. Add the employee to the Master Data Google Sheet and re-sync."),
+        "INVALID_QUANTITY":     ("🔴 Invalid Quantity",     "Quantity is zero, negative, or not a number. Fix in the Backend Data Excel."),
+        "INVALID_DATE":         ("🔴 Invalid Date",         "Date is not in YYYY-MM-DD format. Fix in the Backend Data Excel."),
+        "BLANK_PLANT_CODE":     ("🔴 Blank Plant Code",     "Plant Code is missing in the Maintenance Cost file."),
+        "UNMAPPED_PLANT":       ("🟡 Unmapped Plant",       "Plant Code in Maintenance Cost file is not in Master Data. Check spelling."),
+        "INVALID_COST":         ("🔴 Invalid Cost",         "YTD Maintenance Cost is negative or not a number."),
+    }
+    _SRC_LABEL = {
+        "master_data":       "Master Data",
+        "backend_data":      "Backend Data",
+        "maintenance_cost":  "Maintenance Cost",
+    }
+
     if total_errors > 0:
-        summary_df = validations.get_validation_summary()
-        if not summary_df.empty:
-            summary_cols = summary_df.columns.tolist()
-            summary_rows = _records(summary_df)
-            master_n  = int(summary_df[summary_df["Source"] == "master_data"]["Count"].sum())
-            backend_n = int(summary_df[summary_df["Source"] == "backend_data"]["Count"].sum())
-            maint_n   = int(summary_df[summary_df["Source"] == "maintenance_cost"]["Count"].sum())
-
         all_err_df = database.read_table("validation_errors")
-        sources = sorted(all_err_df["source"].unique().tolist()) if not all_err_df.empty else []
-        etypes  = sorted(all_err_df["error_type"].unique().tolist()) if not all_err_df.empty else []
+        if not all_err_df.empty:
+            master_n  = int((all_err_df["source"] == "master_data").sum())
+            backend_n = int((all_err_df["source"] == "backend_data").sum())
+            maint_n   = int((all_err_df["source"] == "maintenance_cost").sum())
 
-        filtered_err = all_err_df.copy()
-        if sel_src:   filtered_err = filtered_err[filtered_err["source"] == sel_src]
-        if sel_etype: filtered_err = filtered_err[filtered_err["error_type"] == sel_etype]
-        errors = _records(filtered_err.drop(columns=["id"], errors="ignore"))
+            # Build grouped sections for the template
+            # Section = one card per (source, error_type) combination
+            from collections import OrderedDict
+            sections = OrderedDict()
+            for _, r in all_err_df.iterrows():
+                src   = r["source"]
+                etype = r["error_type"]
+                key   = (src, etype)
+                if key not in sections:
+                    label, fix = _ERR_META.get(etype, (etype, "Review and correct this data."))
+                    sections[key] = {
+                        "source":       src,
+                        "source_label": _SRC_LABEL.get(src, src),
+                        "error_type":   etype,
+                        "label":        label,
+                        "fix":          fix,
+                        "rows":         [],
+                    }
+                sections[key]["rows"].append({
+                    "row_number":  r.get("row_number", ""),
+                    "column_name": r.get("column_name", ""),
+                    "message":     r.get("error_message", ""),
+                })
+
+            # Apply source filter
+            if sel_src:
+                sections = {k: v for k, v in sections.items() if v["source"] == sel_src}
+            if sel_etype:
+                sections = {k: v for k, v in sections.items() if v["error_type"] == sel_etype}
+
+            err_sections = list(sections.values())
+            sources = sorted(all_err_df["source"].unique().tolist())
+            etypes  = sorted(all_err_df["error_type"].unique().tolist())
+        else:
+            err_sections = []
+    else:
+        err_sections = []
 
     return render_template("validation.html",
                            last=last, total_errors=total_errors,
-                           summary_rows=summary_rows, summary_cols=summary_cols,
                            master_n=master_n, backend_n=backend_n, maint_n=maint_n,
-                           errors=errors, sources=sources, etypes=etypes,
-                           sel_src=sel_src, sel_etype=sel_etype)
+                           err_sections=err_sections,
+                           sources=sources, etypes=etypes,
+                           sel_src=sel_src, sel_etype=sel_etype,
+                           src_label=_SRC_LABEL)
 
 
 @app.route("/settings")
@@ -2584,8 +2632,8 @@ def download_validation_excel():
 
     hdr_fill = PatternFill("solid", fgColor="1E3A5F")
     hdr_font = Font(bold=True, color="FFFFFF", size=11)
-    cols = ["source", "error_type", "employee_code", "field", "value", "message", "detected_at"]
-    headers = ["Source", "Error Type", "Employee Code", "Field", "Value", "Message", "Detected At"]
+    cols    = ["source", "row_number", "column_name", "error_type", "error_message", "created_at"]
+    headers = ["Source", "Row #", "Column", "Issue Type", "What's Wrong — What to Fix", "Detected At"]
 
     for ci, h in enumerate(headers, 1):
         cell = ws.cell(row=1, column=ci, value=h)
@@ -2593,18 +2641,18 @@ def download_validation_excel():
         cell.font = hdr_font
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
-    err_fill  = PatternFill("solid", fgColor="FFF3CD")
-    warn_fill = PatternFill("solid", fgColor="FFE0E0")
+    red_fill    = PatternFill("solid", fgColor="FFE0E0")
+    yellow_fill = PatternFill("solid", fgColor="FFF3CD")
     for ri, row in enumerate(errors, 2):
         for ci, col in enumerate(cols, 1):
             cell = ws.cell(row=ri, column=ci, value=str(row.get(col, "") or ""))
             cell.alignment = Alignment(vertical="center", wrap_text=True)
-        etype = str(row.get("error_type", "")).lower()
-        fill  = warn_fill if "miss" in etype or "error" in etype else err_fill
+        etype = str(row.get("error_type", "")).upper()
+        fill  = yellow_fill if "UNMAPPED" in etype or "NO_DATA" in etype else red_fill
         for ci in range(1, len(cols) + 1):
             ws.cell(row=ri, column=ci).fill = fill
 
-    col_widths = [18, 22, 16, 18, 20, 45, 20]
+    col_widths = [18, 8, 18, 24, 65, 20]
     for ci, w in enumerate(col_widths, 1):
         ws.column_dimensions[get_column_letter(ci)].width = w
     ws.row_dimensions[1].height = 20

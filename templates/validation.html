@@ -9,14 +9,14 @@
 
 {% if last.last_run %}
   {% if last.error_count | int == 0 %}
-  <div class="alert alert-success">Last validation ran at <strong>{{ last.last_run }}</strong> — ✅ No errors found.</div>
+  <div class="alert alert-success">Last run: <strong>{{ last.last_run }}</strong> — ✅ All data looks good. Safe to calculate.</div>
   {% else %}
-  <div class="alert alert-warning">Last validation ran at <strong>{{ last.last_run }}</strong> — ⚠️ <strong>{{ last.error_count }}</strong> error(s) found. Review below.</div>
+  <div class="alert alert-warning">Last run: <strong>{{ last.last_run }}</strong> — ⚠️ <strong>{{ last.error_count }}</strong> issue(s) found. Fix them before calculating.</div>
   {% endif %}
 {% else %}
 <div class="glass-card" style="text-align:center;padding:28px">
   <h3>Validation not run yet</h3>
-  <p>Click <strong>Run Validation</strong> below to check all three data sources.</p>
+  <p>Click <strong>Run Validation Now</strong> to check all three data sources.</p>
 </div>
 {% endif %}
 
@@ -25,98 +25,119 @@
     <button type="submit" class="btn btn-primary" id="val-btn">▶️ Run Validation Now</button>
   </form>
   {% if total_errors > 0 %}
-  <a href="{{ url_for('download_validation_excel') }}" class="btn btn-secondary">⬇️ Download Report (Excel)</a>
+  <a href="{{ url_for('download_validation_excel') }}" class="btn btn-secondary">⬇️ Download Full Report (Excel)</a>
   {% endif %}
   <div class="loading" id="val-loading"><div class="spinner"></div> Running validation…</div>
 </div>
 
 {% if total_errors > 0 %}
-<hr class="divider">
-<div class="section-title">📊 Error Summary</div>
 
+<!-- Summary KPIs -->
 <div class="kpi-grid">
   <div class="kpi-card">
-    <div class="kpi-label">Total Errors</div>
-    <div class="kpi-value">{{ total_errors | format_int }}</div>
+    <div class="kpi-label">Total Issues</div>
+    <div class="kpi-value" style="color:#f87171">{{ total_errors | format_int }}</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Master Data</div>
-    <div class="kpi-value">{{ master_n | format_int }}</div>
+    <div class="kpi-value" {% if master_n > 0 %}style="color:#f87171"{% endif %}>{{ master_n | format_int }}</div>
+    <div class="kpi-sub">issues</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Backend Data</div>
-    <div class="kpi-value">{{ backend_n | format_int }}</div>
+    <div class="kpi-value" {% if backend_n > 0 %}style="color:#f87171"{% endif %}>{{ backend_n | format_int }}</div>
+    <div class="kpi-sub">issues</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Maintenance Cost</div>
-    <div class="kpi-value">{{ maint_n | format_int }}</div>
+    <div class="kpi-value" {% if maint_n > 0 %}style="color:#f87171"{% endif %}>{{ maint_n | format_int }}</div>
+    <div class="kpi-sub">issues</div>
   </div>
 </div>
 
-{% if summary_rows %}
-<div class="table-wrapper" style="margin-bottom:20px">
-  <table>
-    <thead><tr>{% for c in summary_cols %}<th>{{ c }}</th>{% endfor %}</tr></thead>
-    <tbody>
-      {% for row in summary_rows %}
-      <tr>{% for c in summary_cols %}<td>{{ row[c] }}</td>{% endfor %}</tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
-
-<hr class="divider">
-<div class="section-title">🔍 Error Details</div>
-
-<form method="GET" action="{{ url_for('page_validation') }}" style="margin-bottom:16px">
-  <div class="filter-grid">
-    <div class="form-group">
+<!-- Filters -->
+<div class="card" style="padding:14px 18px">
+  <form method="GET" action="{{ url_for('page_validation') }}" style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
+    <div class="form-group" style="margin:0;min-width:180px">
       <label>Filter by Source</label>
-      <select name="src" data-searchable onchange="this.form.submit()">
-        <option value="">All</option>
+      <select name="src" onchange="this.form.submit()">
+        <option value="">All Sources</option>
         {% for s in sources %}
-        <option value="{{ s }}" {% if s == sel_src %}selected{% endif %}>{{ s }}</option>
+        <option value="{{ s }}" {% if s == sel_src %}selected{% endif %}>{{ src_label.get(s, s) }}</option>
         {% endfor %}
       </select>
     </div>
-    <div class="form-group">
-      <label>Filter by Error Type</label>
-      <select name="etype" data-searchable onchange="this.form.submit()">
-        <option value="">All</option>
+    <div class="form-group" style="margin:0;min-width:220px">
+      <label>Filter by Issue Type</label>
+      <select name="etype" onchange="this.form.submit()">
+        <option value="">All Issue Types</option>
         {% for t in etypes %}
         <option value="{{ t }}" {% if t == sel_etype %}selected{% endif %}>{{ t }}</option>
         {% endfor %}
-      </select>
+    </select>
     </div>
-  </div>
-</form>
-
-<p class="caption" style="margin-bottom:10px">Showing <strong>{{ errors | length | format_int }}</strong> of <strong>{{ total_errors | format_int }}</strong> errors</p>
-<div class="table-wrapper">
-  <table>
-    <thead>
-      <tr>{% for c in ['source','error_type','employee_code','field','value','message','detected_at'] %}<th>{{ c }}</th>{% endfor %}</tr>
-    </thead>
-    <tbody>
-      {% for row in errors %}
-      <tr>
-        {% for c in ['source','error_type','employee_code','field','value','message','detected_at'] %}
-        <td>{{ row.get(c,'') }}</td>
-        {% endfor %}
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-
-<div style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
-  <a href="{{ url_for('download_validation_excel') }}" class="btn btn-secondary">⬇️ Download Report (Excel)</a>
-  <form method="POST" action="{{ url_for('clear_validation') }}"
-        onsubmit="return confirm('Clear all validation errors?')">
-    <button type="submit" class="btn btn-danger">🗑️ Clear All Validation Errors</button>
+    {% if sel_src or sel_etype %}
+    <a href="{{ url_for('page_validation') }}" class="btn btn-secondary btn-sm" style="align-self:flex-end">✕ Clear</a>
+    {% endif %}
   </form>
 </div>
+
+<!-- Issue Cards — one per (source × error_type) -->
+{% for sec in err_sections %}
+<div class="card" style="margin-top:14px;padding:0;overflow:hidden;
+  border-left:4px solid {% if '🔴' in sec.label %}rgba(239,68,68,0.7){% elif '🟡' in sec.label %}rgba(245,158,11,0.7){% else %}rgba(99,102,241,0.7){% endif %}">
+
+  <!-- Section header -->
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(255,255,255,0.03)">
+    <div>
+      <span style="font-weight:700;font-size:14px">{{ sec.label }}</span>
+      <span style="margin-left:10px;font-size:12px;padding:2px 8px;border-radius:10px;
+        background:rgba(255,255,255,0.07);color:#8ea0b4">{{ sec.source_label }}</span>
+      <span style="margin-left:8px;font-size:12px;color:#8ea0b4">{{ sec.rows | length }} issue{{ 's' if sec.rows | length != 1 }}</span>
+    </div>
+  </div>
+
+  <!-- Fix instruction -->
+  <div style="padding:8px 16px 10px;background:rgba(255,255,255,0.02);border-bottom:1px solid rgba(255,255,255,0.06)">
+    <span style="font-size:12px;color:#94a3b8">🛠️ <strong>How to fix:</strong> {{ sec.fix }}</span>
+  </div>
+
+  <!-- Detail rows -->
+  <div class="table-wrapper" style="margin:0">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:80px">Row #</th>
+          <th style="width:160px">Column</th>
+          <th>What's wrong — what to fix</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in sec.rows %}
+        <tr class="{% if '🔴' in sec.label %}row-red{% elif '🟡' in sec.label %}row-yellow{% endif %}">
+          <td>{{ r.row_number or '—' }}</td>
+          <td><code style="font-size:11px">{{ r.column_name or '—' }}</code></td>
+          <td>{{ r.message }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+{% if sel_src or sel_etype %}
+<div class="alert alert-success" style="margin-top:14px">✅ No issues match the current filter.</div>
+{% endif %}
+{% endfor %}
+
+<div style="margin-top:20px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+  <a href="{{ url_for('download_validation_excel') }}" class="btn btn-secondary">⬇️ Download Full Report (Excel)</a>
+  <form method="POST" action="{{ url_for('clear_validation') }}"
+        onsubmit="return confirm('Clear all validation errors?')">
+    <button type="submit" class="btn btn-danger">🗑️ Clear All</button>
+  </form>
+</div>
+
 {% endif %}
 
 {% endblock %}
