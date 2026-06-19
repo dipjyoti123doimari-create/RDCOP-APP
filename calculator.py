@@ -229,33 +229,44 @@ def run_calculation(month: int, year: int,
         master_df = database.read_table("master_data")
         master_df["employee_code"] = master_df["employee_code"].astype(str).str.strip()
 
-        # Load maintenance cost for the exact calculation month/year ONLY.
-        # If not uploaded yet, calculation is blocked — no silent fallback.
+        # Load maintenance cost — try exact month/year first, fall back to whatever is uploaded.
         import calendar as _cal
+        calc_month_label = f"{_cal.month_name[month]} {year}"
         conn_m = database.get_connection()
         try:
             import pandas as _pd2
             maint_df = _pd2.read_sql_query(
-                "SELECT plant_code, ytd_maintenance_cost FROM maintenance_cost "
-                "WHERE month = ? AND year = ?",
+                "SELECT plant_code, ytd_maintenance_cost, month, year "
+                "FROM maintenance_cost WHERE month = ? AND year = ?",
                 conn_m, params=(month, year)
             )
+            if maint_df.empty:
+                # Fall back to all uploaded rows (use whatever month is available)
+                maint_df = _pd2.read_sql_query(
+                    "SELECT plant_code, ytd_maintenance_cost, month, year "
+                    "FROM maintenance_cost",
+                    conn_m
+                )
         finally:
             conn_m.close()
 
         if maint_df.empty:
-            month_label = f"{_cal.month_name[month]} {year}"
             return {
                 "total_employees": 0, "mapped": 0, "unmapped": 0,
                 "total_incentive": 0, "total_deduction": 0,
                 "generated_at": _now(), "results_rows": [],
                 "calc_warnings": [],
                 "error": (
-                    f"No maintenance cost data found for {month_label}. "
-                    f"Please upload the maintenance cost file for {month_label} "
-                    f"in Data Uploader → Maintenance Cost before running the calculation."
+                    "No maintenance cost data found. "
+                    "Please upload maintenance cost data in Data Uploader → Maintenance Cost."
                 ),
             }
+
+        # Detect which month's data is actually being used and warn if it differs
+        _m_used = int(maint_df["month"].dropna().mode().iloc[0]) if not maint_df["month"].dropna().empty else 0
+        _y_used = int(maint_df["year"].dropna().mode().iloc[0])  if not maint_df["year"].dropna().empty else 0
+        maint_applied_label = (f"{_cal.month_name[_m_used]} {_y_used}"
+                               if _m_used else "Unassigned")
 
         maint_df["plant_code"] = maint_df["plant_code"].astype(str).str.strip()
         maint_lookup = dict(
@@ -343,6 +354,12 @@ def run_calculation(month: int, year: int,
 
         # ── Data quality warnings ────────────────────────────────────────────
         calc_warnings = []
+        if _m_used != month or _y_used != year:
+            calc_warnings.append(
+                f"⚠️ Maintenance cost month mismatch: calculation is for {calc_month_label} "
+                f"but maintenance cost data applied is from {maint_applied_label}. "
+                f"Upload {calc_month_label} maintenance cost for accurate results."
+            )
         if bad_qty_count > 0:
             calc_warnings.append(
                 f"⚠️ {bad_qty_count} backend row(s) had non-numeric Quantity and were "
