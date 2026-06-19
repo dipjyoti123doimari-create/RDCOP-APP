@@ -2075,6 +2075,7 @@ def page_calculate():
     total_inc  = sum((r.get("incentive_amount") or 0) for r in results)
     total_ded  = sum((r.get("deduction_amount") or 0) for r in results)
 
+    import calendar as _cal
     _maint_months = database.get_maintenance_months()
     if _maint_months:
         _mm, _my = _maint_months[0]
@@ -2235,6 +2236,7 @@ def page_reports():
     for label, cats in CAT_TABS.items():
         cat_results[label] = [r for r in (results or []) if r.get("category") in cats]
 
+    import calendar as _cal
     _maint_months = database.get_maintenance_months()
     if _maint_months:
         _mm, _my = _maint_months[0]
