@@ -256,7 +256,7 @@ def build_email_tables_html(results_df, sections=None) -> str:
 
         # TH: wrap text (no nowrap) so long headers don't force wide columns
         th_base = (
-            f'{F}background:#082B49;color:#fff;font-weight:bold;'
+            f'{F}background-color:#082B49;color:#ffffff;font-weight:bold;'
             f'padding:3px 5px;{HDR_BDR};white-space:normal;line-height:1.2;'
             f'vertical-align:middle;text-align:center;'
         )
@@ -264,8 +264,9 @@ def build_email_tables_html(results_df, sections=None) -> str:
         thead_cells = ""
         for h in headers:
             label = "Sr. No." if h == "Sr. No." else (ded_label if h == "Deduction Amount" else str(h))
-            w = ' style="width:32px"' if h == "Sr. No." else ""
-            thead_cells += f'<th{w} style="{th_base}">{_html.escape(label)}</th>'
+            # width goes INSIDE the style string — two style attrs would make the second win
+            extra = "width:32px;" if h == "Sr. No." else ""
+            thead_cells += f'<th style="{th_base}{extra}">{_html.escape(label)}</th>'
 
         tbody_rows = []
         if out.empty:
@@ -291,11 +292,15 @@ def build_email_tables_html(results_df, sections=None) -> str:
                     cells += f'<td style="{td_s}">{_html.escape(_cell_value(h, row[h]))}</td>'
                 tbody_rows.append(f"<tr>{cells}</tr>")
 
-        # Report name as a separate line ABOVE the table
-        title_style = (f'{F}font-size:12px;font-weight:bold;color:#082B49;'
-                       f'margin:8px 0 3px 0;')
+        # Report name: navy bar above the column header row, same width as the table
+        title_style = (
+            f'{F}font-size:12px;font-weight:bold;'
+            f'background-color:#082B49;color:#ffffff;'
+            f'padding:4px 6px;border:1px solid #7A7A7A;'
+            f'display:block;margin:8px 0 0 0;'
+        )
         parts.append(
-            f'<p style="{title_style}">{idx}. {_html.escape(title)}</p>'
+            f'<div style="{title_style}">{idx}. {_html.escape(title)}</div>'
             f'<table cellpadding="0" cellspacing="0" '
             f'style="border-collapse:collapse;width:auto;margin:0 0 10px">'
             f'<thead><tr>{thead_cells}</tr></thead>'
