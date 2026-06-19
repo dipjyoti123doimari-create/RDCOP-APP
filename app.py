@@ -2247,7 +2247,8 @@ def page_reports():
     if _maint_months:
         _mm, _my = _maint_months[0]
         maint_month_label = f"{_cal.month_name[_mm]} {_my}" if _mm else "Unassigned"
-        maint_mismatch = (_mm != from_date.month or _my != from_date.year)
+        # Only flag mismatch after user has explicitly chosen a date range
+        maint_mismatch = has_params and (_mm != from_date.month or _my != from_date.year)
     else:
         maint_month_label = None
         maint_mismatch    = False
@@ -2271,7 +2272,8 @@ def page_reports():
                            email_cfg=email_cfg, email_ready=email_ready,
                            default_subject=default_subj, default_body=default_body,
                            email_log=email_log,
-                           maint_month_label=maint_month_label)
+                           maint_month_label=maint_month_label,
+                           maint_mismatch=maint_mismatch)
 
 
 @app.route("/validation")
