@@ -144,11 +144,15 @@ def fetch_backend_data(from_date, to_date) -> tuple:
             status_clause = "AND STATUS = :status"
             params["status"] = cfg["status_filter"]
 
+        # Use the same configurable time column as TP (default TIMETAKEN)
+        time_col = (database.get_module_setting("tp", "oracle_time_col", "TIMETAKEN") or "TIMETAKEN").strip()
+
         sql = f"""
             SELECT
                 CREATED_BY        AS created_by,
                 PRODDATE          AS prod_date,
-                PRODUCED_QUANTITY AS quantity
+                PRODUCED_QUANTITY AS quantity,
+                {time_col}        AS time_taken
             FROM {_TABLE}
             WHERE PRODDATE >= :from_date
               AND PRODDATE <= :to_date
@@ -168,7 +172,14 @@ def fetch_backend_data(from_date, to_date) -> tuple:
 
         df = pd.DataFrame(rows, columns=cols)
         df = df.rename(columns={"prod_date": "date"})
-        df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0)
+        df["quantity"]   = pd.to_numeric(df["quantity"],   errors="coerce").fillna(0)
+        df["time_taken"] = pd.to_numeric(df["time_taken"], errors="coerce").fillna(0)
+
+        # Drop rows where time_taken = 0 (quantity should not be counted per business rule)
+        zero_time = df["time_taken"] == 0
+        if zero_time.sum():
+            warnings.append(f"{zero_time.sum()} row(s) skipped — time taken = 0.")
+        df = df[~zero_time].reset_index(drop=True)
 
         # Drop rows with blank employee code.
         before = len(df)
@@ -183,6 +194,9 @@ def fetch_backend_data(from_date, to_date) -> tuple:
         if bad_qty.sum():
             warnings.append(f"{bad_qty.sum()} row(s) skipped — zero or negative PRODUCED_QUANTITY.")
         df = df[~bad_qty].reset_index(drop=True)
+
+        # Drop the time_taken column before returning (backend_data table has no such column)
+        df = df.drop(columns=["time_taken"], errors="ignore")
 
         return df, warnings
 

@@ -192,6 +192,20 @@ TABLE_SCHEMAS = {
         )
     """,
 
+    # Deduction waivers — employee approved for zero deduction for a given month
+    "waivers": """
+        CREATE TABLE IF NOT EXISTS waivers (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_code TEXT NOT NULL,
+            month         INTEGER NOT NULL,
+            year          INTEGER NOT NULL,
+            reason        TEXT NOT NULL,
+            custom_reason TEXT,
+            created_at    TEXT,
+            UNIQUE(employee_code, month, year)
+        )
+    """,
+
     # ── RDC-TP tables ────────────────────────────────────────────────────────
 
     # Plant reference data synced from "Plant Data for TP" Google Sheet tab
@@ -916,3 +930,82 @@ def delete_tp_plant(plant_code, changed_by="Admin"):
         conn.close()
     log_tp_plant_change("DELETE", code, old_value=_tp_plant_snapshot(old),
                         new_value=None, changed_by=changed_by)
+
+
+# ---------------------------------------------------------------------------
+# Waiver CRUD helpers
+# ---------------------------------------------------------------------------
+
+def get_waivers(month: int, year: int) -> list:
+    """Return all waivers for a given month/year as a list of dicts."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, employee_code, month, year, reason, custom_reason, created_at "
+            "FROM waivers WHERE month = ? AND year = ? ORDER BY employee_code",
+            (month, year)
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_all_waivers() -> list:
+    """Return all waivers (all months) as a list of dicts."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, employee_code, month, year, reason, custom_reason, created_at "
+            "FROM waivers ORDER BY year DESC, month DESC, employee_code"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def upsert_waiver(employee_code: str, month: int, year: int,
+                  reason: str, custom_reason: str = "") -> None:
+    """Insert or replace a waiver for the given employee+month+year."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO waivers (employee_code, month, year, reason, custom_reason, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(employee_code, month, year) DO UPDATE SET "
+            "reason=excluded.reason, custom_reason=excluded.custom_reason, created_at=excluded.created_at",
+            (str(employee_code).strip(), month, year, reason, custom_reason or "", _now())
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_waiver(waiver_id: int) -> None:
+    """Delete a waiver by its id."""
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM waivers WHERE id = ?", (waiver_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_waiver_lookup(month: int, year: int) -> dict:
+    """Return {employee_code: waiver_display_text} for the given month/year."""
+    rows = get_waivers(month, year)
+    result = {}
+    for r in rows:
+        if r["reason"] == "other":
+            text = f"Waived, {r['custom_reason']}" if r["custom_reason"] else "Waived"
+        elif r["reason"] == "dr_bhoon":
+            text = "Waived by Dr. Bhoon"
+        elif r["reason"] == "approved_leave":
+            text = "Waived, on approved leave"
+        else:
+            text = f"Waived: {r['reason']}"
+        result[str(r["employee_code"]).strip()] = text
+    return result

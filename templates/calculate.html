@@ -166,6 +166,84 @@
 {% endif %}
 
 {% endif %}
+
+<!-- ── Waiver Management ─────────────────────────────────────────────── -->
+<div class="card" style="margin-top:28px" id="waivers">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+    <h3 style="margin:0">Deduction Waivers</h3>
+    <span style="font-size:12px;color:#8ea0b4">Employees with an approved waiver appear red but with ₹0 deduction</span>
+  </div>
+
+  <!-- Add waiver form -->
+  <form method="POST" action="{{ url_for('action_add_waiver') }}" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:18px;padding:14px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid rgba(255,255,255,0.08)">
+    <div class="form-group" style="margin:0;min-width:140px">
+      <label>Employee Code</label>
+      <input type="text" name="waiver_emp_code" placeholder="e.g. E00123" required>
+    </div>
+    <div class="form-group" style="margin:0;min-width:130px">
+      <label>Month</label>
+      <select name="waiver_month" required>
+        {% for m_num, m_name in waiver_month_opts %}
+        <option value="{{ m_num }}" {% if m_num == last_calc.month | int %}selected{% endif %}>{{ m_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group" style="margin:0;min-width:90px">
+      <label>Year</label>
+      <input type="number" name="waiver_year" value="{{ last_calc.year or current_year }}" min="2020" max="2099" required style="width:90px">
+    </div>
+    <div class="form-group" style="margin:0;min-width:220px">
+      <label>Waiver Reason</label>
+      <select name="waiver_reason" id="waiver-reason-sel" onchange="toggleCustomReason(this)">
+        <option value="dr_bhoon">Waived by Dr. Bhoon</option>
+        <option value="approved_leave">Waived, on approved leave</option>
+        <option value="other">Waived, Other reason</option>
+      </select>
+    </div>
+    <div class="form-group" id="waiver-custom-group" style="margin:0;min-width:200px;display:none">
+      <label>Custom Reason</label>
+      <input type="text" name="waiver_custom" id="waiver-custom-input" placeholder="Type reason here…">
+    </div>
+    <button type="submit" class="btn btn-primary" style="align-self:flex-end">➕ Add Waiver</button>
+  </form>
+
+  <!-- Existing waivers table -->
+  {% if all_waivers %}
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Employee Code</th>
+          <th>Month</th>
+          <th>Year</th>
+          <th>Waiver Reason (shown in Remarks)</th>
+          <th style="width:80px">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for w in all_waivers %}
+        {% set display = "Waived by Dr. Bhoon" if w.reason == "dr_bhoon" else ("Waived, on approved leave" if w.reason == "approved_leave" else ("Waived, " ~ w.custom_reason if w.custom_reason else "Waived")) %}
+        <tr class="row-red">
+          <td><strong>{{ w.employee_code }}</strong></td>
+          <td>{{ ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][w.month] }}</td>
+          <td>{{ w.year }}</td>
+          <td>{{ display }}</td>
+          <td>
+            <form method="POST" action="{{ url_for('action_delete_waiver') }}" onsubmit="return confirm('Remove waiver for {{ w.employee_code }}?')">
+              <input type="hidden" name="waiver_id" value="{{ w.id }}">
+              <button type="submit" class="btn btn-danger btn-sm">🗑️</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p style="color:#8ea0b4;font-size:13px">No waivers recorded yet.</p>
+  {% endif %}
+</div>
+
 {% endblock %}
 {% block scripts %}
 <script>
@@ -174,5 +252,16 @@ submitFormAjax(
   document.getElementById('calc-loading'),
   document.getElementById('run-btn')
 );
+function toggleCustomReason(sel) {
+  var grp = document.getElementById('waiver-custom-group');
+  var inp = document.getElementById('waiver-custom-input');
+  if (sel.value === 'other') {
+    grp.style.display = '';
+    inp.required = true;
+  } else {
+    grp.style.display = 'none';
+    inp.required = false;
+  }
+}
 </script>
 {% endblock %}

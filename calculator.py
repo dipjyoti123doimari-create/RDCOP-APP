@@ -300,6 +300,9 @@ def run_calculation(month: int, year: int,
         # ── Step 5: Calculate incentive & deduction for mapped employees ─────
         merged = mapped_agg.merge(master_df, on="employee_code", how="left")
 
+        # Load waivers for this month/year — {employee_code: display_text}
+        waiver_lookup = database.get_waiver_lookup(month, year)
+
         results = []
         for _, row in merged.iterrows():
             emp_code  = str(row["employee_code"])
@@ -322,7 +325,12 @@ def run_calculation(month: int, year: int,
                 total_qty, category
             )
             # Override remark with context-specific message
-            if ded_amount > 0:
+            if emp_code in waiver_lookup:
+                # Waived employee — keep red row (ded_target/shortfall intact for display)
+                # but zero the actual deduction amount
+                ded_amount = 0.0
+                remark = waiver_lookup[emp_code]
+            elif ded_amount > 0:
                 # Red row — quantity below deduction target
                 remark = (f"Quantity {total_qty:.0f} < minimum {int(ded_target)} "
                           f"(deduction target)")

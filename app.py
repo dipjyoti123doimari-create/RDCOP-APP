@@ -2080,13 +2080,17 @@ def page_calculate():
     if _maint_months:
         _mm, _my = _maint_months[0]
         maint_month_label = f"{_cal.month_name[_mm]} {_my}" if _mm else "Unassigned"
-        # Compare against the month of the last calculation run (if any)
         _lc_month = int(last_calc.get("month") or 0)
         _lc_year  = int(last_calc.get("year")  or 0)
         maint_mismatch = bool(_lc_month and _lc_year and (_mm != _lc_month or _my != _lc_year))
     else:
         maint_month_label = None
         maint_mismatch    = False
+
+    all_waivers = database.get_all_waivers()
+    # Build month/year options for the waiver form (all months that have backend data)
+    import calendar as _cal2
+    waiver_month_opts = [(m, _cal2.month_name[m]) for m in range(1, 13)]
 
     return render_template("calculate.html",
                            available=available,
@@ -2100,7 +2104,10 @@ def page_calculate():
                            total_emps=total_emps, elig_count=elig_count,
                            total_inc=total_inc, total_ded=total_ded,
                            maint_month_label=maint_month_label,
-                           maint_mismatch=maint_mismatch)
+                           maint_mismatch=maint_mismatch,
+                           all_waivers=all_waivers,
+                           waiver_month_opts=waiver_month_opts,
+                           current_year=_date.today().year)
 
 
 @app.route("/reports")
@@ -3027,6 +3034,35 @@ def download_csv():
     fname = f"incentive_report_{from_s}_to_{to_s}.csv"
     return send_file(io.BytesIO(csv_bytes), as_attachment=True,
                      download_name=fname, mimetype="text/csv")
+
+
+@app.route("/action/add-waiver", methods=["POST"])
+def action_add_waiver():
+    emp  = request.form.get("waiver_emp_code", "").strip()
+    mon  = request.form.get("waiver_month", "").strip()
+    yr   = request.form.get("waiver_year", "").strip()
+    rsn  = request.form.get("waiver_reason", "").strip()
+    cust = request.form.get("waiver_custom", "").strip()
+    if not emp or not mon or not yr or not rsn:
+        flash("All waiver fields are required.", "error")
+        return redirect(url_for("page_calculate") + "#waivers")
+    try:
+        database.upsert_waiver(emp, int(mon), int(yr), rsn, cust)
+        flash(f"✅ Waiver saved for {emp}.", "success")
+    except Exception as e:
+        flash(f"Could not save waiver: {e}", "error")
+    return redirect(url_for("page_calculate") + "#waivers")
+
+
+@app.route("/action/delete-waiver", methods=["POST"])
+def action_delete_waiver():
+    wid = request.form.get("waiver_id", "").strip()
+    if not wid:
+        flash("Invalid waiver ID.", "error")
+        return redirect(url_for("page_calculate") + "#waivers")
+    database.delete_waiver(int(wid))
+    flash("Waiver removed.", "success")
+    return redirect(url_for("page_calculate") + "#waivers")
 
 
 @app.route("/action/send-email", methods=["POST"])
