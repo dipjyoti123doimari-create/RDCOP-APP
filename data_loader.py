@@ -311,18 +311,37 @@ def load_maintenance_cost(uploaded_file) -> tuple:
     return df, warnings
 
 
-def save_maintenance_cost(df: pd.DataFrame) -> int:
+def save_maintenance_cost(df: pd.DataFrame, month: int, year: int) -> int:
     """
-    Save cleaned Maintenance Cost data to SQLite (always replaces existing data).
+    Save Maintenance Cost data for a specific month+year.
+    Replaces any existing rows for that month+year, leaves other months untouched.
     Returns the number of rows saved.
     """
     now = _now()
-    rows = [
-        {
-            "plant_code":           str(row["Plant Code"]),
-            "ytd_maintenance_cost": float(row["YTD Maintenance Cost"]),
-            "uploaded_at":          now,
-        }
-        for _, row in df.iterrows()
-    ]
-    return database.replace_table_rows("maintenance_cost", rows)
+    conn = database.get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM maintenance_cost WHERE month = ? AND year = ?",
+            (month, year)
+        )
+        rows = [
+            {
+                "plant_code":           str(row["Plant Code"]),
+                "month":                month,
+                "year":                 year,
+                "ytd_maintenance_cost": float(row["YTD Maintenance Cost"]),
+                "uploaded_at":          now,
+            }
+            for _, row in df.iterrows()
+        ]
+        if rows:
+            columns = list(rows[0].keys())
+            placeholders = ", ".join(["?"] * len(columns))
+            sql = (f"INSERT INTO maintenance_cost ({', '.join(columns)}) "
+                   f"VALUES ({placeholders})")
+            cur.executemany(sql, [list(r.values()) for r in rows])
+        conn.commit()
+        return len(rows)
+    finally:
+        conn.close()

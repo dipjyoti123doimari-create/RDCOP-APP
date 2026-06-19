@@ -1959,13 +1959,26 @@ def page_data_uploader():
         backend_preview = _records(df_p.drop(columns=["id"], errors="ignore"))
 
     maint_df = database.read_table("maintenance_cost", order_by="plant_code")
-    maint_cols, maint_rows, maint_avg, maint_above = [], [], 0, 0
+    maint_cols, maint_months_data, maint_avg, maint_above = [], {}, 0, 0
     if not maint_df.empty:
-        df_m2 = maint_df.drop(columns=["id"], errors="ignore")
-        maint_cols = df_m2.columns.tolist()
-        maint_rows = _records(df_m2)
-        maint_avg  = round(maint_df["ytd_maintenance_cost"].mean(), 2)
+        maint_avg   = round(maint_df["ytd_maintenance_cost"].mean(), 2)
         maint_above = int((maint_df["ytd_maintenance_cost"] > config.MAINTENANCE_COST_THRESHOLD).sum())
+        # Group rows by (year, month) for the template
+        import calendar as _cal
+        for _, r in maint_df.iterrows():
+            m, y = int(r.get("month") or 0), int(r.get("year") or 0)
+            key = (y, m)
+            if key not in maint_months_data:
+                label = f"{_cal.month_name[m]} {y}" if m else "Unassigned"
+                maint_months_data[key] = {"label": label, "month": m, "year": y, "rows": []}
+            maint_months_data[key]["rows"].append({
+                "plant_code":           r["plant_code"],
+                "ytd_maintenance_cost": r["ytd_maintenance_cost"],
+                "uploaded_at":          r.get("uploaded_at", ""),
+            })
+    maint_month_groups = sorted(maint_months_data.values(),
+                                key=lambda g: (g["year"], g["month"]), reverse=True)
+    maint_count = len(maint_df) if not maint_df.empty else 0
 
     codes_df = database.read_table_limited("master_data", order_by="employee_code", limit=100000)
     codes = codes_df["employee_code"].astype(str).tolist() if not codes_df.empty else []
@@ -1990,9 +2003,11 @@ def page_data_uploader():
                            m_count=m_count, master_cols=master_cols, master_rows=master_rows,
                            b_count=b_count, b_earliest=b_earliest, b_latest=b_latest,
                            backend_preview=backend_preview,
-                           maint_cols=maint_cols, maint_rows=maint_rows,
+                           maint_month_groups=maint_month_groups,
                            maint_avg=maint_avg, maint_above=maint_above,
-                           maint_count=len(maint_rows),
+                           maint_count=maint_count,
+                           current_month=_date.today().month,
+                           current_year=_date.today().year,
                            codes=codes, log_rows=log_rows, ora_b_preview=ora_b_preview,
                            edit_emp=edit_emp, del_emp=del_emp,
                            categories=config.CATEGORIES,
@@ -2415,13 +2430,33 @@ def upload_maintenance():
         return redirect(url_for("page_data_uploader") + "#maintenance")
     f = request.files["file"]
     try:
+        month = int(request.form.get("maint_month", _date.today().month))
+        year  = int(request.form.get("maint_year",  _date.today().year))
+    except (ValueError, TypeError):
+        flash("Invalid month or year selected.", "error")
+        return redirect(url_for("page_data_uploader") + "#maintenance")
+    try:
+        import calendar as _cal
         df, warns = data_loader.load_maintenance_cost(f)
         for w in warns:
             flash(w, "warning")
-        saved = data_loader.save_maintenance_cost(df)
-        flash(f"Saved {saved:,} plant maintenance cost rows.", "success")
+        saved = data_loader.save_maintenance_cost(df, month, year)
+        flash(f"Saved {saved:,} plant maintenance cost rows for {_cal.month_name[month]} {year}.", "success")
     except Exception as exc:
         flash(f"Upload failed: {exc}", "error")
+    return redirect(url_for("page_data_uploader") + "#maintenance")
+
+
+@app.route("/action/delete-maintenance-month", methods=["POST"])
+def delete_maintenance_month():
+    try:
+        month = int(request.form.get("month"))
+        year  = int(request.form.get("year"))
+        import calendar as _cal
+        deleted = database.delete_maintenance_month(month, year)
+        flash(f"Deleted {deleted} maintenance cost rows for {_cal.month_name[month]} {year}.", "success")
+    except Exception as exc:
+        flash(f"Delete failed: {exc}", "error")
     return redirect(url_for("page_data_uploader") + "#maintenance")
 
 

@@ -229,9 +229,26 @@ def run_calculation(month: int, year: int,
         master_df = database.read_table("master_data")
         master_df["employee_code"] = master_df["employee_code"].astype(str).str.strip()
 
-        maint_df = database.read_table("maintenance_cost")
+        # Load maintenance cost for the exact calculation month/year.
+        # Fall back to any available data if no exact match exists.
+        conn_m = database.get_connection()
+        try:
+            import pandas as _pd2
+            maint_df = _pd2.read_sql_query(
+                "SELECT plant_code, ytd_maintenance_cost FROM maintenance_cost "
+                "WHERE month = ? AND year = ?",
+                conn_m, params=(month, year)
+            )
+            if maint_df.empty:
+                # No exact month — fall back to most recent available month
+                maint_df = _pd2.read_sql_query(
+                    "SELECT plant_code, ytd_maintenance_cost FROM maintenance_cost "
+                    "ORDER BY year DESC, month DESC",
+                    conn_m
+                )
+        finally:
+            conn_m.close()
         maint_df["plant_code"] = maint_df["plant_code"].astype(str).str.strip()
-        # Build a fast lookup dict: plant_code → ytd_maintenance_cost
         maint_lookup = dict(
             zip(maint_df["plant_code"], maint_df["ytd_maintenance_cost"])
         )

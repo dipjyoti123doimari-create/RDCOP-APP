@@ -91,12 +91,17 @@ TABLE_SCHEMAS = {
     """,
 
     # Rows read from the uploaded Maintenance Cost Excel (Phase 4)
+    # month + year added so each calendar month can hold its own cost file.
+    # UNIQUE on (plant_code, month, year) — one cost per plant per month.
     "maintenance_cost": """
         CREATE TABLE IF NOT EXISTS maintenance_cost (
             id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-            plant_code           TEXT UNIQUE,
+            plant_code           TEXT,
+            month                INTEGER,
+            year                 INTEGER,
             ytd_maintenance_cost REAL,
-            uploaded_at          TEXT
+            uploaded_at          TEXT,
+            UNIQUE(plant_code, month, year)
         )
     """,
 
@@ -324,17 +329,54 @@ def get_connection():
 
 def init_db():
     """
-    Create every table if it does not already exist.
-
-    This is safe to call as often as you like (for example, once each time the
-    app starts). Existing tables and their data are never touched.
+    Create every table if it does not already exist, and run any one-time
+    column migrations needed on older databases.
     """
     conn = get_connection()
     try:
         cur = conn.cursor()
         for create_sql in TABLE_SCHEMAS.values():
             cur.execute(create_sql)
+
+        # Migration: add month + year columns to maintenance_cost if they don't exist
+        cur.execute("PRAGMA table_info(maintenance_cost)")
+        existing_cols = {row[1] for row in cur.fetchall()}
+        if "month" not in existing_cols:
+            cur.execute("ALTER TABLE maintenance_cost ADD COLUMN month INTEGER")
+        if "year" not in existing_cols:
+            cur.execute("ALTER TABLE maintenance_cost ADD COLUMN year  INTEGER")
+
         conn.commit()
+    finally:
+        conn.close()
+
+
+def get_maintenance_months() -> list:
+    """Return list of (month, year) tuples that exist in maintenance_cost, newest first."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT DISTINCT month, year FROM maintenance_cost "
+            "WHERE month IS NOT NULL AND year IS NOT NULL "
+            "ORDER BY year DESC, month DESC"
+        )
+        return [(r[0], r[1]) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def delete_maintenance_month(month: int, year: int) -> int:
+    """Delete all maintenance_cost rows for the given month+year. Returns rows deleted."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM maintenance_cost WHERE month = ? AND year = ?",
+            (month, year)
+        )
+        conn.commit()
+        return cur.rowcount
     finally:
         conn.close()
 
