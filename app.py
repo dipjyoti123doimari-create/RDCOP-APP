@@ -986,7 +986,7 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
 
     F       = "font-family:Arial,sans-serif;font-size:11px;"
     TBL_LOC = "border-collapse:collapse;width:auto;margin:4px 0 10px"
-    TBL_PLT = "border-collapse:collapse;width:100%;margin:4px 0 10px"
+    TBL_PLT = "border-collapse:collapse;width:auto;margin:4px 0 10px"
     TTL     = (f'style="{F}font-size:12px;font-weight:bold;background:#082B49;color:#fff;'
                f'padding:3px 6px;border:1px solid #7A7A7A;text-align:left"')
 
