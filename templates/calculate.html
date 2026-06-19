@@ -2,12 +2,9 @@
 {% block title %}Calculate{% endblock %}
 {% block content %}
 
-<div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
-  <div>
-    <h1>Calculate Incentive &amp; Deduction</h1>
-    <p>Choose a date range and run the full category-wise incentive &amp; deduction calculation</p>
-  </div>
-  <button type="button" class="btn btn-secondary" onclick="openWaiverModal()">🛡️ Manage Waivers <span id="waiver-badge" style="display:inline-block;background:#e55;color:#fff;border-radius:10px;padding:0 7px;font-size:11px;margin-left:4px">{{ all_waivers | length }}</span></button>
+<div class="page-header">
+  <h1>Calculate Incentive &amp; Deduction</h1>
+  <p>Choose a date range and run the full category-wise incentive &amp; deduction calculation</p>
 </div>
 
 {% if maint_month_label %}
@@ -77,10 +74,13 @@
   </div>
 </div>
 
-<!-- Legend -->
-<div class="legend">
-  <span class="legend-item legend-green">🟢 Green — Incentive earned</span>
-  <span class="legend-item legend-red">🔴 Red — Deduction applied (overrides incentive if both)</span>
+<!-- Legend + Waiver button -->
+<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:2px">
+  <div class="legend" style="margin:0">
+    <span class="legend-item legend-green">🟢 Green — Incentive earned</span>
+    <span class="legend-item legend-red">🔴 Red — Deduction applied (overrides incentive if both)</span>
+  </div>
+  <button type="button" class="btn btn-secondary btn-sm" onclick="openWaiverModal()">🛡️ Manage Waivers <span style="display:inline-block;background:#e55;color:#fff;border-radius:10px;padding:0 7px;font-size:11px;margin-left:4px">{{ all_waivers | length }}</span></button>
 </div>
 
 <!-- Category tabs -->
