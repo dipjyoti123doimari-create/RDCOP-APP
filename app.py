@@ -39,6 +39,7 @@ import google_sheets
 import oracle_connector
 import report_generator
 import btrtp_calculator
+import ecmd_calculator
 import tp_calculator
 import validations
 
@@ -3158,6 +3159,602 @@ def toggle_email_schedule():
     database.set_setting("email_schedule_enabled", new_val)
     flash(f"Scheduled monthly report {'enabled' if new_val == 'true' else 'disabled'}.", "success")
     return redirect(url_for("page_settings"))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# RDC-ECMD MODULE — Energy Consumption & Mixer DG Ratio
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _ecmd_ctx():
+    """Base context dict for every ECMD page."""
+    return dict(
+        active_page="",
+        bg_auto=bg_auto(), bg_animate=bg_animate(), bg_theme=bg_theme(),
+    )
+
+
+def _ecmd_mon_tag(month, year):
+    import calendar as _cal
+    return f"{_cal.month_abbr[month]}'{str(year)[2:]}"
+
+
+@app.route("/ecmd")
+def page_ecmd():
+    return redirect(url_for("ecmd_dashboard"))
+
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+@app.route("/ecmd/dashboard")
+def ecmd_dashboard():
+    all_counts  = database.get_table_counts()
+    counts = {
+        "ecmd_readings": all_counts.get("ecmd_readings", 0),
+        "ecmd_results":  all_counts.get("ecmd_results",  0),
+        "tp_plant_data": all_counts.get("tp_plant_data", 0),
+    }
+    ora_ready   = oracle_connector.is_configured()
+    ecmd_months = database.get_ecmd_months()
+    ctx = _ecmd_ctx()
+    ctx["active_page"] = "dashboard"
+    return render_template("ecmd_dashboard.html", counts=counts,
+                           ora_ready=ora_ready, ecmd_months=ecmd_months, **ctx)
+
+
+# ── Data Entry ────────────────────────────────────────────────────────────────
+@app.route("/ecmd/data-entry", methods=["GET", "POST"])
+def ecmd_data_entry():
+    import calendar as _cal
+
+    today = _date.today()
+    sel_month = int(request.args.get("month", today.month))
+    sel_year  = int(request.args.get("year",  today.year))
+
+    plant_rows   = database.get_tp_plants()
+    readings_map = {r["plant_code"]: r
+                    for r in database.get_ecmd_readings_for_month(sel_month, sel_year)}
+
+    months_list = [(m, _cal.month_name[m]) for m in range(1, 13)]
+    years_list  = list(range(today.year - 2, today.year + 2))
+
+    ctx = _ecmd_ctx()
+    ctx["active_page"] = "data_entry"
+    return render_template("ecmd_data_entry.html",
+                           plant_rows=plant_rows,
+                           readings_map=readings_map,
+                           sel_month=sel_month, sel_year=sel_year,
+                           months_list=months_list, years_list=years_list,
+                           **ctx)
+
+
+@app.route("/ecmd/action/save-reading", methods=["POST"])
+def ecmd_save_reading():
+    plant_code = request.form.get("plant_code", "").strip()
+    month      = int(request.form.get("month", _date.today().month))
+    year       = int(request.form.get("year",  _date.today().year))
+
+    def _fv(key):
+        v = request.form.get(key, "").strip()
+        return float(v) if v != "" else None
+
+    data = {
+        "eb_kwh_open":        _fv("eb_kwh_open"),
+        "eb_kwh_close":       _fv("eb_kwh_close"),
+        "eb_kvah_open":       _fv("eb_kvah_open"),
+        "eb_kvah_close":      _fv("eb_kvah_close"),
+        "mf":                 _fv("mf") or 1.0,
+        "dg_hr_open":         _fv("dg_hr_open"),
+        "dg_hr_close":        _fv("dg_hr_close"),
+        "dg_kwh_open":        _fv("dg_kwh_open"),
+        "dg_kwh_close":       _fv("dg_kwh_close"),
+        "mixer_dg_hr_open":   _fv("mixer_dg_hr_open"),
+        "mixer_dg_hr_close":  _fv("mixer_dg_hr_close"),
+        "diesel_issued_ltrs": _fv("diesel_issued_ltrs"),
+        "volume_on_dg":       _fv("volume_on_dg"),
+    }
+    if not plant_code:
+        flash("Plant Code is required.", "error")
+        return redirect(url_for("ecmd_data_entry", month=month, year=year))
+    try:
+        database.upsert_ecmd_reading(plant_code, month, year, data)
+        flash(f"✅ Readings saved for plant {plant_code} — {month}/{year}.", "success")
+    except Exception as exc:
+        flash(f"Save failed: {exc}", "error")
+    return redirect(url_for("ecmd_data_entry", month=month, year=year))
+
+
+@app.route("/ecmd/action/delete-reading", methods=["POST"])
+def ecmd_delete_reading():
+    plant_code = request.form.get("plant_code", "").strip()
+    month      = int(request.form.get("month", _date.today().month))
+    year       = int(request.form.get("year",  _date.today().year))
+    n = database.delete_ecmd_reading(plant_code, month, year)
+    if n:
+        flash(f"✅ Reading for {plant_code} ({month}/{year}) deleted.", "success")
+    else:
+        flash("Reading not found.", "warning")
+    return redirect(url_for("ecmd_data_entry", month=month, year=year))
+
+
+# ── Calculate ─────────────────────────────────────────────────────────────────
+@app.route("/ecmd/calculate", methods=["GET", "POST"])
+def ecmd_calculate():
+    import calendar as _cal
+
+    today = _date.today()
+    plant_rows = _ms("ecmd", "plant_rows", [])
+    loc_rows   = _ms("ecmd", "loc_rows",   [])
+    warnings   = _ms("ecmd", "calc_warnings", [])
+    ran        = _ms("ecmd", "calc_ran", False)
+
+    months_list = [(m, _cal.month_name[m]) for m in range(1, 13)]
+    years_list  = list(range(today.year - 2, today.year + 2))
+
+    if request.method == "POST":
+        from_s = request.form.get("from_date", "")
+        to_s   = request.form.get("to_date",   "")
+        try:
+            fd = _date.fromisoformat(from_s)
+            td = _date.fromisoformat(to_s)
+        except (ValueError, TypeError):
+            flash("Please select valid From and To dates.", "error")
+            return jsonify({"ok": False, "redirect": url_for("ecmd_calculate")})
+        if fd > td:
+            flash("'From Date' must be on or before 'To Date'.", "error")
+            return jsonify({"ok": False, "redirect": url_for("ecmd_calculate")})
+
+        month, year = fd.month, fd.year
+        _set_progress(20, "Running ECMD calculations…")
+        plant_rows, warnings = ecmd_calculator.run_ecmd_calculation(
+            month, year, from_date=str(fd), to_date=str(td))
+        _set_progress(70, "Building location summary…")
+        loc_rows = ecmd_calculator.build_location_summary(plant_rows)
+        _set_progress(85, "Saving results…")
+        _mss("ecmd", "plant_rows",     plant_rows)
+        _mss("ecmd", "loc_rows",       loc_rows)
+        _mss("ecmd", "calc_warnings",  warnings)
+        _mss("ecmd", "calc_month",     month)
+        _mss("ecmd", "calc_year",      year)
+        _mss("ecmd", "calc_from",      str(fd))
+        _mss("ecmd", "calc_to",        str(td))
+        _mss("ecmd", "calc_ran",       True)
+        ran = True
+
+        if plant_rows:
+            database.save_ecmd_results(plant_rows, month, year)
+            flash(f"✅ Calculated {len(plant_rows)} plant(s) for {fd} → {td}.", "success")
+        else:
+            flash("No results — enter readings first or check warnings.", "warning")
+        _set_progress(100, "Complete")
+        return jsonify({"ok": True, "redirect": url_for("ecmd_calculate")})
+
+    ctx = _ecmd_ctx()
+    ctx["active_page"] = "calculate"
+    return render_template("ecmd_calculate.html",
+                           plant_rows=plant_rows, loc_rows=loc_rows,
+                           warnings=warnings, ran=ran,
+                           months_list=months_list, years_list=years_list,
+                           default_from=_ms("ecmd", "calc_from", str(today.replace(day=1))),
+                           default_to=_ms("ecmd", "calc_to", str(today)),
+                           **ctx)
+
+
+# ── Reports ───────────────────────────────────────────────────────────────────
+@app.route("/ecmd/reports")
+def ecmd_reports():
+    import calendar as _cal
+
+    today = _date.today()
+    from_s = request.args.get("from_date",
+                              _ms("ecmd", "calc_from", str(today.replace(day=1))))
+    to_s   = request.args.get("to_date",
+                              _ms("ecmd", "calc_to", str(today)))
+    try:
+        fd = _date.fromisoformat(from_s)
+        td = _date.fromisoformat(to_s)
+    except ValueError:
+        fd, td = today.replace(day=1), today
+
+    if "from_date" in request.args:
+        month, year = fd.month, fd.year
+        all_plants, warnings = ecmd_calculator.run_ecmd_calculation(
+            month, year, from_date=str(fd), to_date=str(td))
+        loc_rows = ecmd_calculator.build_location_summary(all_plants)
+        _mss("ecmd", "plant_rows",    all_plants)
+        _mss("ecmd", "loc_rows",      loc_rows)
+        _mss("ecmd", "calc_warnings", warnings)
+        _mss("ecmd", "calc_from",     str(fd))
+        _mss("ecmd", "calc_to",       str(td))
+        _mss("ecmd", "calc_month",    month)
+        _mss("ecmd", "calc_year",     year)
+    else:
+        all_plants = _ms("ecmd", "plant_rows", [])
+        loc_rows   = _ms("ecmd", "loc_rows",   [])
+
+    # Filters
+    excos  = request.args.getlist("exco")
+    bheads = request.args.getlist("bhead")
+    search = request.args.get("search", "")
+
+    unique_excos  = sorted({r.get("exco_location", "") for r in all_plants if r.get("exco_location")})
+    unique_bheads = sorted({r.get("business_head", "") for r in all_plants if r.get("business_head")})
+
+    plant_rows = all_plants
+    if excos:
+        plant_rows = [r for r in plant_rows if r.get("exco_location") in excos]
+    if bheads:
+        plant_rows = [r for r in plant_rows if r.get("business_head") in bheads]
+    if search.strip():
+        s = search.strip().lower()
+        plant_rows = [r for r in plant_rows
+                      if s in str(r.get("plant_code", "")).lower()
+                      or s in str(r.get("plant_name", "")).lower()]
+
+    if plant_rows is not all_plants:
+        loc_rows = ecmd_calculator.build_location_summary(plant_rows)
+
+    _mss("ecmd", "report_plant_rows", plant_rows)
+    _mss("ecmd", "report_loc_rows",   loc_rows)
+
+    smtp        = email_helper.get_smtp_config()
+    email_ready = email_helper.is_configured()
+    month = _ms("ecmd", "calc_month", fd.month)
+    year  = _ms("ecmd", "calc_year",  fd.year)
+
+    _elog = database.read_table("email_log", order_by="id DESC")
+    if not _elog.empty and "report_file_name" in _elog.columns:
+        _elog = _elog[_elog["report_file_name"].str.startswith("RDC_ECMD_", na=False)]
+    ecmd_email_log = _records(_elog.drop(columns=["id"], errors="ignore").head(20)) \
+        if not _elog.empty else []
+
+    if (fd.year, fd.month) == (td.year, td.month):
+        month_label = f"{_cal.month_name[fd.month]} {fd.year}"
+    else:
+        month_label = f"{fd:%d %b %Y} → {td:%d %b %Y}"
+
+    default_to      = database.get_module_setting("ecmd", "email_default_to", "") or smtp.get("default_to", "")
+    default_cc      = database.get_module_setting("ecmd", "email_default_cc", "") or smtp.get("default_cc", "")
+    default_subject = (database.get_module_setting("ecmd", "email_default_subject", "")
+                       or f"RDC-ECMD Energy & DG Report — {month_label}")
+    default_body    = (database.get_module_setting("ecmd", "email_default_body", "")
+                       or f"Dear Team,\n\nPlease find attached the Energy Consumption & "
+                          f"Mixer DG Ratio Report for {month_label}.\n\nRegards,\nRDC Operations")
+
+    ctx = _ecmd_ctx()
+    ctx["active_page"] = "reports"
+    return render_template("ecmd_reports.html",
+                           plant_rows=plant_rows, loc_rows=loc_rows,
+                           total_plants=len(all_plants),
+                           from_date=str(fd), to_date=str(td),
+                           unique_excos=unique_excos, unique_bheads=unique_bheads,
+                           excos=excos, bheads=bheads, search=search,
+                           month_label=month_label,
+                           email_cfg=smtp, email_ready=email_ready,
+                           default_to=default_to, default_cc=default_cc,
+                           default_subject=default_subject, default_body=default_body,
+                           ecmd_email_log=ecmd_email_log, **ctx)
+
+
+def _ecmd_build_excel(plant_rows, loc_rows, month, year):
+    """Build colour-coded Excel report for ECMD (Energy + DG tabs)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    mon_tag    = _ecmd_mon_tag(month, year)
+    HDR_FILL   = PatternFill("solid", fgColor="0A2540")
+    PAN_FILL   = PatternFill("solid", fgColor="D9D9D9")
+    PLAIN_FILL = PatternFill("solid", fgColor="FFFFFF")
+    ALT_FILL   = PatternFill("solid", fgColor="F0F4FA")
+    HDR_FONT   = Font(bold=True, color="FFFFFF", size=10)
+    TITLE_FONT = Font(bold=True, color="FFFFFF", size=11)
+    PAN_FONT   = Font(bold=True, color="222222", size=10)
+    PLAIN_FONT = Font(color="19263A", size=10)
+    ALT_FONT   = Font(color="19263A", size=10)
+    CTR  = Alignment(vertical="center", horizontal="center")
+    LEFT = Alignment(vertical="center", horizontal="left")
+    WRAP = Alignment(wrap_text=True, vertical="center", horizontal="center")
+    thin = Side(style="thin", color="9A9A9A")
+    BDR  = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    wb = Workbook()
+
+    # ── Sheet 1: Energy Consumption ───────────────────────────────────────────
+    ws_e = wb.active
+    ws_e.title = "Energy Consumption"
+    E_HEADS = ["Sr.", "Plant Code", "Plant Name", "Exco Location", "Business Head",
+               "EB KWh", "DG KWh", "Total KWh", "Total Vol (MT)", "Energy/MT (KWh)"]
+    ws_e.merge_cells(f"A1:{get_column_letter(len(E_HEADS))}1")
+    t = ws_e.cell(1, 1, f"Plant Energy Consumption - {mon_tag}")
+    t.fill = HDR_FILL; t.font = TITLE_FONT; t.alignment = CTR
+    ws_e.row_dimensions[1].height = 22
+    for ci, h in enumerate(E_HEADS, 1):
+        c = ws_e.cell(2, ci, h)
+        c.fill = HDR_FILL; c.font = HDR_FONT; c.alignment = WRAP; c.border = BDR
+    ws_e.row_dimensions[2].height = 28
+    for ri, row in enumerate(plant_rows, 3):
+        fill = ALT_FILL if ri % 2 == 0 else PLAIN_FILL
+        font = ALT_FONT if ri % 2 == 0 else PLAIN_FONT
+        vals = [ri - 2, row.get("plant_code",""), row.get("plant_name",""),
+                row.get("exco_location",""), row.get("business_head",""),
+                round(float(row.get("eb_kwh",0)),2),
+                round(float(row.get("dg_kwh",0)),2),
+                round(float(row.get("total_kwh",0)),2),
+                round(float(row.get("total_volume",0)),2),
+                round(float(row.get("energy_per_mt",0)),4)]
+        for ci, v in enumerate(vals, 1):
+            c = ws_e.cell(ri, ci, v)
+            c.fill = fill; c.font = font; c.border = BDR
+            c.alignment = LEFT if ci in (2, 3, 4, 5) else CTR
+    # Location summary rows at bottom
+    ws_e.append([])
+    loc_hdr_row = len(plant_rows) + 4
+    ws_e.merge_cells(f"A{loc_hdr_row}:{get_column_letter(len(E_HEADS))}{loc_hdr_row}")
+    th = ws_e.cell(loc_hdr_row, 1, f"Location Summary - {mon_tag}")
+    th.fill = HDR_FILL; th.font = TITLE_FONT; th.alignment = CTR
+    for ci, h in enumerate(["Sr.", "Exco Location", "Plants", "EB KWh", "DG KWh",
+                              "Total KWh", "Total Vol (MT)", "Energy/MT"], 1):
+        c = ws_e.cell(loc_hdr_row + 1, ci, h)
+        c.fill = HDR_FILL; c.font = HDR_FONT; c.alignment = WRAP; c.border = BDR
+    srno = 1
+    for ri, row in enumerate(loc_rows, loc_hdr_row + 2):
+        pan  = bool(row.get("is_pan_india"))
+        fill = PAN_FILL if pan else PLAIN_FILL
+        font = PAN_FONT if pan else PLAIN_FONT
+        srno_val = "—" if pan else srno
+        vals = [srno_val, row.get("exco_location",""), row.get("plant_count",0),
+                round(float(row.get("eb_kwh", row.get("total_kwh",0)) - float(row.get("dg_kwh",0))),2)
+                    if "eb_kwh" not in row else round(float(row.get("eb_kwh",0)),2),
+                round(float(row.get("dg_kwh",0) if "dg_kwh" in row else 0),2),
+                round(float(row.get("total_kwh",0)),2),
+                round(float(row.get("total_volume",0)),2),
+                round(float(row.get("energy_per_mt",0)),4)]
+        for ci, v in enumerate(vals, 1):
+            c = ws_e.cell(ri, ci, v)
+            c.fill = fill; c.font = font; c.border = BDR
+            c.alignment = LEFT if ci == 2 else CTR
+        if not pan:
+            srno += 1
+    for ci, w in enumerate([5, 12, 22, 20, 18, 12, 12, 14, 14, 14], 1):
+        ws_e.column_dimensions[get_column_letter(ci)].width = w
+
+    # ── Sheet 2: Mixer DG Ratio ───────────────────────────────────────────────
+    ws_d = wb.create_sheet("Mixer DG Ratio")
+    D_HEADS = ["Sr.", "Plant Code", "Plant Name", "Exco Location", "Business Head",
+               "DG Run Hrs", "Mixer DG Hrs", "Mixer DG %", "Diesel (L)", "L/Hr",
+               "Vol on DG (MT)"]
+    ws_d.merge_cells(f"A1:{get_column_letter(len(D_HEADS))}1")
+    t2 = ws_d.cell(1, 1, f"Mixer DG Ratio Report - {mon_tag}")
+    t2.fill = HDR_FILL; t2.font = TITLE_FONT; t2.alignment = CTR
+    ws_d.row_dimensions[1].height = 22
+    for ci, h in enumerate(D_HEADS, 1):
+        c = ws_d.cell(2, ci, h)
+        c.fill = HDR_FILL; c.font = HDR_FONT; c.alignment = WRAP; c.border = BDR
+    ws_d.row_dimensions[2].height = 28
+    for ri, row in enumerate(plant_rows, 3):
+        fill = ALT_FILL if ri % 2 == 0 else PLAIN_FILL
+        font = ALT_FONT if ri % 2 == 0 else PLAIN_FONT
+        pct  = float(row.get("mixer_dg_ratio", 0))
+        vals = [ri - 2, row.get("plant_code",""), row.get("plant_name",""),
+                row.get("exco_location",""), row.get("business_head",""),
+                round(float(row.get("dg_run_hrs",0)),2),
+                round(float(row.get("mixer_dg_hrs",0)),2),
+                f"{round(pct,1)}%",
+                round(float(row.get("diesel_issued_ltrs",0)),2),
+                round(float(row.get("ltr_per_hr",0)),3),
+                round(float(row.get("volume_on_dg",0)),2)]
+        for ci, v in enumerate(vals, 1):
+            c = ws_d.cell(ri, ci, v)
+            c.fill = fill; c.font = font; c.border = BDR
+            c.alignment = LEFT if ci in (2, 3, 4, 5) else CTR
+    for ci, w in enumerate([5, 12, 22, 20, 18, 10, 11, 10, 10, 8, 12], 1):
+        ws_d.column_dimensions[get_column_letter(ci)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.read()
+
+
+@app.route("/ecmd/download-excel")
+def ecmd_download_excel():
+    plant_rows = _ms("ecmd", "report_plant_rows", _ms("ecmd", "plant_rows", []))
+    loc_rows   = _ms("ecmd", "report_loc_rows",   _ms("ecmd", "loc_rows",   []))
+    month = _ms("ecmd", "calc_month", _date.today().month)
+    year  = _ms("ecmd", "calc_year",  _date.today().year)
+    if not plant_rows:
+        flash("No data to download — run Calculate first.", "warning")
+        return redirect(url_for("ecmd_reports"))
+    excel_bytes = _ecmd_build_excel(plant_rows, loc_rows, month, year)
+    fname = f"RDC_ECMD_{year}_{month:02d}.xlsx"
+    return send_file(io.BytesIO(excel_bytes), as_attachment=True, download_name=fname,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.route("/ecmd/download-csv")
+def ecmd_download_csv():
+    plant_rows = _ms("ecmd", "report_plant_rows", _ms("ecmd", "plant_rows", []))
+    month = _ms("ecmd", "calc_month", _date.today().month)
+    year  = _ms("ecmd", "calc_year",  _date.today().year)
+    if not plant_rows:
+        flash("No data to download — run Calculate first.", "warning")
+        return redirect(url_for("ecmd_reports"))
+    buf = io.BytesIO(pd.DataFrame(plant_rows).to_csv(index=False).encode("utf-8"))
+    return send_file(buf, as_attachment=True,
+                     download_name=f"RDC_ECMD_{year}_{month:02d}.csv",
+                     mimetype="text/csv")
+
+
+@app.route("/ecmd/action/send-email", methods=["POST"])
+def ecmd_send_email():
+    plant_rows = _ms("ecmd", "report_plant_rows", _ms("ecmd", "plant_rows", []))
+    loc_rows   = _ms("ecmd", "report_loc_rows",   _ms("ecmd", "loc_rows",   []))
+    month      = _ms("ecmd", "calc_month", _date.today().month)
+    year       = _ms("ecmd", "calc_year",  _date.today().year)
+    to_addr    = request.form.get("to", "").strip()
+    cc_addr    = request.form.get("cc", "").strip()
+    subject    = request.form.get("subject", "").strip()
+    body       = request.form.get("body", "").strip()
+
+    if not plant_rows:
+        flash("No results to email — run Calculate first.", "warning")
+        return redirect(url_for("ecmd_reports"))
+    if not to_addr:
+        flash("Please enter at least one To email address.", "error")
+        return redirect(url_for("ecmd_reports"))
+
+    import calendar as _cal
+    month_name = _cal.month_name[month]
+    mon_tag    = _ecmd_mon_tag(month, year)
+    if not subject:
+        subject = f"RDC-ECMD Energy & DG Report — {month_name} {year}"
+
+    excel_bytes = _ecmd_build_excel(plant_rows, loc_rows, month, year)
+    fname = f"RDC_ECMD_{year}_{month:02d}.xlsx"
+
+    _TH = ('style="background-color:#082B49;color:#fff;font-weight:bold;'
+           'text-align:center;padding:3px 6px;border:1px solid #808080;'
+           'font-size:11px;font-family:Arial,sans-serif;white-space:nowrap;"')
+    def _td_e(align="center"):
+        return (f'style="background-color:#fff;color:#19263A;padding:2px 5px;'
+                f'border:1px solid #999;text-align:{align};'
+                f'font-size:11px;font-family:Arial,sans-serif;white-space:nowrap;"')
+    def _td_pan(align="center"):
+        return (f'style="background-color:#D9D9D9;color:#222;font-weight:bold;'
+                f'padding:2px 5px;border:1px solid #999;text-align:{align};'
+                f'font-size:11px;font-family:Arial,sans-serif;white-space:nowrap;"')
+
+    _tbl = 'border-collapse:collapse;width:auto;margin:4px 0 10px'
+    _bf  = 'font-family:Arial,Calibri,sans-serif;font-size:12px;color:#000;'
+
+    # Energy table
+    e_head = (f'<tr><th {_TH}>Sr.</th><th {_TH}>Plant</th><th {_TH}>Location</th>'
+              f'<th {_TH}>EB KWh</th><th {_TH}>DG KWh</th><th {_TH}>Total KWh</th>'
+              f'<th {_TH}>Total Vol (MT)</th><th {_TH}>Energy/MT</th></tr>')
+    e_rows = ""
+    for i, r in enumerate(plant_rows, 1):
+        e_rows += (f'<tr><td {_td_e("center")}>{i}</td>'
+                   f'<td {_td_e("left")}>{r.get("plant_name","")}</td>'
+                   f'<td {_td_e("left")}>{r.get("exco_location","")}</td>'
+                   f'<td {_td_e("right")}>{round(float(r.get("eb_kwh",0)),2)}</td>'
+                   f'<td {_td_e("right")}>{round(float(r.get("dg_kwh",0)),2)}</td>'
+                   f'<td {_td_e("right")}><b>{round(float(r.get("total_kwh",0)),2)}</b></td>'
+                   f'<td {_td_e("right")}>{round(float(r.get("total_volume",0)),2)}</td>'
+                   f'<td {_td_e("right")}>{round(float(r.get("energy_per_mt",0)),4)}</td></tr>')
+
+    # DG table
+    d_head = (f'<tr><th {_TH}>Sr.</th><th {_TH}>Plant</th><th {_TH}>Location</th>'
+              f'<th {_TH}>DG Run Hrs</th><th {_TH}>Mixer DG Hrs</th>'
+              f'<th {_TH}>Mixer DG %</th><th {_TH}>Diesel (L)</th>'
+              f'<th {_TH}>L/Hr</th><th {_TH}>Vol on DG</th></tr>')
+    d_rows = ""
+    for i, r in enumerate(plant_rows, 1):
+        d_rows += (f'<tr><td {_td_e("center")}>{i}</td>'
+                   f'<td {_td_e("left")}>{r.get("plant_name","")}</td>'
+                   f'<td {_td_e("left")}>{r.get("exco_location","")}</td>'
+                   f'<td {_td_e("right")}>{round(float(r.get("dg_run_hrs",0)),2)}</td>'
+                   f'<td {_td_e("right")}>{round(float(r.get("mixer_dg_hrs",0)),2)}</td>'
+                   f'<td {_td_e("center")}><b>{round(float(r.get("mixer_dg_ratio",0)),1)}%</b></td>'
+                   f'<td {_td_e("right")}>{round(float(r.get("diesel_issued_ltrs",0)),2)}</td>'
+                   f'<td {_td_e("right")}>{round(float(r.get("ltr_per_hr",0)),3)}</td>'
+                   f'<td {_td_e("right")}>{round(float(r.get("volume_on_dg",0)),2)}</td></tr>')
+
+    html_body = (
+        f'<html><body style="margin:0;padding:8px 10px;{_bf}">'
+        f'<p style="margin:0 0 3px 0;">Dear Team,</p>'
+        f'<p style="margin:0 0 3px 0;">Please find attached the Energy Consumption &amp; '
+        f'Mixer DG Ratio Report for {month_name} {year}.</p>'
+        f'<p style="margin:0 0 6px 0;">Regards,<br>RDC Operations</p>'
+        f'<p style="margin:0 0 4px 0;font-size:13px;font-weight:bold;color:#082B49;">'
+        f'Plant Energy Consumption - {mon_tag}</p>'
+        f'<table style="{_tbl}">{e_head}{e_rows}</table>'
+        f'<p style="margin:10px 0 4px 0;font-size:13px;font-weight:bold;color:#082B49;">'
+        f'Mixer DG Ratio - {mon_tag}</p>'
+        f'<table style="{_tbl}">{d_head}{d_rows}</table>'
+        f'</body></html>'
+    )
+
+    result = email_helper.send_report_email(
+        to_emails=to_addr, cc_emails=cc_addr,
+        subject=subject, body=body,
+        attachment_bytes=excel_bytes, attachment_name=fname,
+        html_body=html_body,
+    )
+    if result.get("success"):
+        flash(f"✅ Report emailed to {to_addr}.", "success")
+    else:
+        flash(f"Email failed: {result.get('error')}", "error")
+    return redirect(url_for("ecmd_reports"))
+
+
+# ── Settings ──────────────────────────────────────────────────────────────────
+@app.route("/ecmd/settings", methods=["GET"])
+def ecmd_settings():
+    smtp             = email_helper.get_smtp_config()
+    email_configured = bool(smtp.get("host") and smtp.get("sender"))
+    ora_configured   = oracle_connector.is_configured()
+    sched_enabled    = database.get_module_setting("ecmd", "email_schedule_enabled", "false") == "true"
+    sched_time       = database.get_module_setting("ecmd", "email_schedule_time", "08:00")
+    sched_to         = database.get_module_setting("ecmd", "email_schedule_to", "")
+    sched_cc         = database.get_module_setting("ecmd", "email_schedule_cc", "")
+    sched_last_status = database.get_module_setting("ecmd", "email_schedule_last_status", "")
+    ecmd_email_to      = database.get_module_setting("ecmd", "email_default_to", "")
+    ecmd_email_cc      = database.get_module_setting("ecmd", "email_default_cc", "")
+    ecmd_email_subject = database.get_module_setting("ecmd", "email_default_subject", "")
+    ecmd_email_body    = database.get_module_setting("ecmd", "email_default_body", "")
+    ctx = _ecmd_ctx()
+    ctx["active_page"] = "settings"
+    return render_template("ecmd_settings.html",
+                           smtp=smtp, email_configured=email_configured,
+                           ora_configured=ora_configured,
+                           sched_enabled=sched_enabled, sched_time=sched_time,
+                           sched_to=sched_to, sched_cc=sched_cc,
+                           sched_last_status=sched_last_status,
+                           ecmd_email_to=ecmd_email_to, ecmd_email_cc=ecmd_email_cc,
+                           ecmd_email_subject=ecmd_email_subject,
+                           ecmd_email_body=ecmd_email_body, **ctx)
+
+
+@app.route("/ecmd/settings/save-schedule", methods=["POST"])
+def ecmd_save_schedule():
+    sched_time = request.form.get("sched_time", "08:00").strip()
+    database.set_module_settings_bulk("ecmd", {
+        "email_schedule_time": sched_time,
+        "email_schedule_to":   request.form.get("sched_to", "").strip(),
+        "email_schedule_cc":   request.form.get("sched_cc", "").strip(),
+    })
+    if _scheduler:
+        try:
+            h, m = map(int, sched_time.split(":"))
+        except Exception:
+            h, m = 8, 0
+        try:
+            _scheduler.reschedule_job("ecmd_monthly_email",
+                                      trigger=CronTrigger(day=1, hour=h, minute=m))
+        except Exception:
+            pass
+    flash("ECMD schedule settings saved.", "success")
+    return redirect(url_for("ecmd_settings", m="schedule"))
+
+
+@app.route("/ecmd/settings/toggle-schedule", methods=["POST"])
+def ecmd_toggle_schedule():
+    current = database.get_module_setting("ecmd", "email_schedule_enabled", "false")
+    new_val = "false" if current == "true" else "true"
+    database.set_module_setting("ecmd", "email_schedule_enabled", new_val)
+    flash(f"RDC-ECMD scheduled report {'enabled' if new_val == 'true' else 'disabled'}.", "success")
+    return redirect(url_for("ecmd_settings", m="schedule"))
+
+
+@app.route("/ecmd/settings/save-email-defaults", methods=["POST"])
+def ecmd_save_email_defaults():
+    database.set_module_settings_bulk("ecmd", {
+        "email_default_to":      request.form.get("default_to", "").strip(),
+        "email_default_cc":      request.form.get("default_cc", "").strip(),
+        "email_default_subject": request.form.get("default_subject", "").strip(),
+        "email_default_body":    request.form.get("default_body", "").strip(),
+    })
+    flash("ECMD email defaults saved.", "success")
+    return redirect(url_for("ecmd_settings", m="email"))
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

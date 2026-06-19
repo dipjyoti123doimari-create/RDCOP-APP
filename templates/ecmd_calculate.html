@@ -1,0 +1,208 @@
+{% extends "ecmd_base.html" %}
+{% block title %}Calculate{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Calculate</h1>
+  <p>Run energy consumption &amp; DG ratio calculations for a date range</p>
+</div>
+
+<!-- Date range form -->
+<div class="card">
+  <div class="section-title">📅 Select Date Range</div>
+  <form id="ecmd-calc-form" method="POST" action="{{ url_for('ecmd_calculate') }}">
+    <div class="date-row">
+      <div class="form-group">
+        <label>From Date</label>
+        <input type="date" name="from_date" value="{{ default_from }}" required>
+      </div>
+      <div class="form-group">
+        <label>To Date</label>
+        <input type="date" name="to_date" value="{{ default_to }}" required>
+      </div>
+      <div class="form-group" style="align-self:flex-end">
+        <button type="submit" class="btn btn-primary" id="ecmd-calc-btn">⚡ Run Calculation</button>
+      </div>
+    </div>
+  </form>
+  <div class="loading" id="ecmd-calc-loading">
+    <div class="spinner"></div> Calculating — please wait…
+  </div>
+</div>
+
+{% if warnings %}
+<div class="card">
+  <div class="section-title">⚠️ Warnings</div>
+  {% for w in warnings %}
+  <div class="alert alert-warning">{{ w }}</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if ran and plant_rows %}
+<!-- KPI summary -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">Plants Calculated</div>
+    <div class="kpi-value">{{ plant_rows | length }}</div>
+    <div class="kpi-sub">Readings processed</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Total Energy (KWh)</div>
+    <div class="kpi-value">{{ (plant_rows | sum(attribute='total_kwh')) | round(0) | int | format_int }}</div>
+    <div class="kpi-sub">EB + DG combined</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Total Volume (MT)</div>
+    <div class="kpi-value">{{ (plant_rows | sum(attribute='total_volume')) | round(1) | format_int }}</div>
+    <div class="kpi-sub">From Oracle</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Total DG Run Hrs</div>
+    <div class="kpi-value">{{ (plant_rows | sum(attribute='dg_run_hrs')) | round(1) }}</div>
+    <div class="kpi-sub">Across all plants</div>
+  </div>
+</div>
+
+<!-- Energy Consumption results table -->
+<div class="card">
+  <div class="section-title">⚡ Plant Energy Consumption</div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Sr.</th>
+          <th>Plant</th>
+          <th>Location</th>
+          <th>EB KWh</th>
+          <th>DG KWh</th>
+          <th>Total KWh</th>
+          <th>Vol (MT)</th>
+          <th>KWh/MT</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in plant_rows %}
+        <tr>
+          <td style="text-align:center">{{ loop.index }}</td>
+          <td>{{ r.plant_name }} <span style="font-size:11px;color:var(--text-faint)">({{ r.plant_code }})</span></td>
+          <td>{{ r.exco_location }}</td>
+          <td style="text-align:right">{{ r.eb_kwh | round(2) }}</td>
+          <td style="text-align:right">{{ r.dg_kwh | round(2) }}</td>
+          <td style="text-align:right;font-weight:600">{{ r.total_kwh | round(2) }}</td>
+          <td style="text-align:right">{{ r.total_volume | round(2) }}</td>
+          <td style="text-align:right;font-weight:600">{{ r.energy_per_mt | round(4) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- DG Ratio results table -->
+<div class="card">
+  <div class="section-title">🔋 Mixer DG Ratio</div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Sr.</th>
+          <th>Plant</th>
+          <th>Location</th>
+          <th>DG Run Hrs</th>
+          <th>Mixer DG Hrs</th>
+          <th>Mixer DG %</th>
+          <th>Diesel (L)</th>
+          <th>L/Hr</th>
+          <th>Vol on DG</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in plant_rows %}
+        <tr>
+          <td style="text-align:center">{{ loop.index }}</td>
+          <td>{{ r.plant_name }}</td>
+          <td>{{ r.exco_location }}</td>
+          <td style="text-align:right">{{ r.dg_run_hrs | round(2) }}</td>
+          <td style="text-align:right">{{ r.mixer_dg_hrs | round(2) }}</td>
+          <td style="text-align:center;font-weight:600">{{ r.mixer_dg_ratio | round(1) }}%</td>
+          <td style="text-align:right">{{ r.diesel_issued_ltrs | round(2) }}</td>
+          <td style="text-align:right">{{ r.ltr_per_hr | round(3) }}</td>
+          <td style="text-align:right">{{ r.volume_on_dg | round(2) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Location summary -->
+{% if loc_rows %}
+<div class="card">
+  <div class="section-title">📍 Location Summary</div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Sr.</th>
+          <th>Exco Location</th>
+          <th>Plants</th>
+          <th>Total KWh</th>
+          <th>Total Vol (MT)</th>
+          <th>KWh/MT</th>
+          <th>DG Run Hrs</th>
+          <th>Mixer DG %</th>
+          <th>L/Hr</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set ns = namespace(srno=1) %}
+        {% for r in loc_rows %}
+        <tr class="{% if r.is_pan_india %}row-yellow{% endif %}">
+          <td style="text-align:center">{% if r.is_pan_india %}—{% else %}{{ ns.srno }}{% set ns.srno = ns.srno + 1 %}{% endif %}</td>
+          <td style="font-weight:{% if r.is_pan_india %}700{% else %}400{% endif %}">
+            {% if r.is_pan_india %}🌐 PAN India{% else %}{{ r.exco_location }}{% endif %}
+          </td>
+          <td style="text-align:center">{{ r.plant_count }}</td>
+          <td style="text-align:right;font-weight:600">{{ r.total_kwh | round(2) }}</td>
+          <td style="text-align:right">{{ r.total_volume | round(2) }}</td>
+          <td style="text-align:right;font-weight:600">{{ r.energy_per_mt | round(4) }}</td>
+          <td style="text-align:right">{{ r.dg_run_hrs | round(2) }}</td>
+          <td style="text-align:center;font-weight:600">{{ r.mixer_dg_ratio | round(1) }}%</td>
+          <td style="text-align:right">{{ r.ltr_per_hr | round(3) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="btn-group" style="margin-top:8px">
+  <a href="{{ url_for('ecmd_reports') }}" class="btn btn-primary">📋 View Full Reports</a>
+</div>
+
+{% elif ran %}
+<div class="glass-card" style="text-align:center;padding:40px">
+  <div style="font-size:40px;margin-bottom:12px">📭</div>
+  <div style="font-size:16px;font-weight:600;margin-bottom:8px">No results produced</div>
+  <div style="color:var(--text-muted)">Enter readings in <a href="{{ url_for('ecmd_data_entry') }}">Data Entry</a> first.</div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('ecmd-calc-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  document.getElementById('ecmd-calc-loading').classList.add('active');
+  document.getElementById('ecmd-calc-btn').disabled = true;
+  const fd = new FormData(this);
+  fetch(this.action, { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(d => { if (d.redirect) window.location.href = d.redirect; })
+    .catch(() => { window.location.reload(); });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,145 @@
+{% extends "ecmd_base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Settings</h1>
+  <p>Email defaults and scheduled report configuration for RDC-ECMD</p>
+</div>
+
+{% set open_modal = request.args.get('m', '') %}
+
+<div class="settings-card-grid">
+
+  <!-- Oracle status (read-only info tile) -->
+  <div class="settings-tile">
+    <div class="settings-tile-icon">⚙️</div>
+    <div class="settings-tile-title">Oracle</div>
+    <div class="settings-tile-desc">
+      {% if ora_configured %}Configured — volume fetched live{% else %}Not configured{% endif %}
+    </div>
+    <a href="{{ url_for('page_settings') }}" class="btn btn-secondary btn-sm" style="margin-top:8px">Configure in I&amp;D Settings</a>
+  </div>
+
+  <!-- Email Defaults -->
+  <div class="settings-tile" onclick="document.getElementById('modal-email').classList.add('active')">
+    <div class="settings-tile-icon">📧</div>
+    <div class="settings-tile-title">Email Defaults</div>
+    <div class="settings-tile-desc">
+      {% if ecmd_email_to %}To: {{ ecmd_email_to[:40] }}{% else %}Not configured{% endif %}
+    </div>
+  </div>
+
+  <!-- Scheduled Monthly Report -->
+  <div class="settings-tile" onclick="document.getElementById('modal-schedule').classList.add('active')">
+    <div class="settings-tile-icon">🕐</div>
+    <div class="settings-tile-title">Scheduled Report</div>
+    <div class="settings-tile-desc">
+      {% if sched_enabled %}
+        Enabled — {{ sched_time }} on 1st of month
+      {% else %}
+        Disabled
+      {% endif %}
+      {% if sched_last_status %}
+        <br><small>{{ sched_last_status[:60] }}</small>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- SMTP status -->
+  <div class="settings-tile">
+    <div class="settings-tile-icon">📮</div>
+    <div class="settings-tile-title">SMTP</div>
+    <div class="settings-tile-desc">
+      {% if email_configured %}Configured: {{ smtp.host }}{% else %}Not configured{% endif %}
+    </div>
+    <a href="{{ url_for('page_settings') }}" class="btn btn-secondary btn-sm" style="margin-top:8px">Configure in I&amp;D Settings</a>
+  </div>
+
+</div>
+
+
+<!-- ── Email Defaults Modal ──────────────────────────────────────────────── -->
+<div class="modal-overlay" id="modal-email"
+     {% if open_modal == 'email' %}style="display:flex"{% endif %}>
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">📧 Email Defaults</span>
+      <button class="modal-close" onclick="document.getElementById('modal-email').classList.remove('active')">✕</button>
+    </div>
+    <form method="POST" action="{{ url_for('ecmd_save_email_defaults') }}">
+      <div class="form-group">
+        <label>Default To</label>
+        <input type="text" name="default_to" value="{{ ecmd_email_to }}" placeholder="to@example.com">
+      </div>
+      <div class="form-group">
+        <label>Default CC</label>
+        <input type="text" name="default_cc" value="{{ ecmd_email_cc }}" placeholder="cc@example.com">
+      </div>
+      <div class="form-group">
+        <label>Default Subject</label>
+        <input type="text" name="default_subject" value="{{ ecmd_email_subject }}"
+               placeholder="RDC-ECMD Energy &amp; DG Report — Month Year">
+      </div>
+      <div class="form-group">
+        <label>Default Body</label>
+        <textarea name="default_body" rows="5">{{ ecmd_email_body }}</textarea>
+      </div>
+      <div class="btn-group">
+        <button type="submit" class="btn btn-primary">💾 Save</button>
+        <button type="button" class="btn btn-secondary"
+                onclick="document.getElementById('modal-email').classList.remove('active')">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
+<!-- ── Scheduled Report Modal ────────────────────────────────────────────── -->
+<div class="modal-overlay" id="modal-schedule"
+     {% if open_modal == 'schedule' %}style="display:flex"{% endif %}>
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">🕐 Scheduled Monthly Report</span>
+      <button class="modal-close" onclick="document.getElementById('modal-schedule').classList.remove('active')">✕</button>
+    </div>
+
+    <div class="alert alert-{{ 'success' if sched_enabled else 'warning' }}">
+      Status: <strong>{{ 'Enabled' if sched_enabled else 'Disabled' }}</strong>
+      {% if sched_last_status %} · Last: {{ sched_last_status }}{% endif %}
+    </div>
+
+    <form method="POST" action="{{ url_for('ecmd_save_schedule') }}" style="margin-bottom:12px">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Send Time (1st of month)</label>
+          <input type="time" name="sched_time" value="{{ sched_time }}">
+        </div>
+        <div class="form-group">
+          <label>To</label>
+          <input type="text" name="sched_to" value="{{ sched_to }}" placeholder="to@example.com">
+        </div>
+        <div class="form-group">
+          <label>CC</label>
+          <input type="text" name="sched_cc" value="{{ sched_cc }}" placeholder="cc@example.com">
+        </div>
+      </div>
+      <div class="btn-group">
+        <button type="submit" class="btn btn-primary">💾 Save Schedule</button>
+      </div>
+    </form>
+
+    <form method="POST" action="{{ url_for('ecmd_toggle_schedule') }}">
+      <button type="submit" class="btn {% if sched_enabled %}btn-danger{% else %}btn-secondary{% endif %} btn-sm">
+        {% if sched_enabled %}🔴 Disable Schedule{% else %}🟢 Enable Schedule{% endif %}
+      </button>
+    </form>
+
+    <div style="margin-top:10px">
+      <button type="button" class="btn btn-secondary"
+              onclick="document.getElementById('modal-schedule').classList.remove('active')">Close</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

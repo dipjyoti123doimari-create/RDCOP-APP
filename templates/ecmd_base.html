@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}RDC-ECMD{% endblock %} — Energy & DG Ratio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Meie+Script&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+<div id="cursor-glow" aria-hidden="true"></div>
+<div id="toast-container"></div>
+
+<div class="app">
+
+  <!-- ── Sidebar ─────────────────────────────────────── -->
+  <nav class="sidebar">
+    <div class="sidebar-header">
+      <a href="{{ url_for('page_home') }}" class="sidebar-back-btn" title="All Modules">⬅ All Modules</a>
+      <div class="sidebar-brand">
+        <img src="{{ url_for('static', filename='img/logo.gif') }}" alt="RDC-OP" id="app-logo">
+        <div class="sidebar-name">
+          <span class="sidebar-name-main">RDC-OP</span>
+          <span class="sidebar-name-sub">by Dipjyoti</span>
+        </div>
+        <span class="sidebar-module-badge" style="background:rgba(0,200,100,0.15);color:#00C864;border-color:rgba(0,200,100,0.3)">RDC-ECMD</span>
+        <span class="sidebar-tagline">Energy & DG Ratio</span>
+      </div>
+    </div>
+
+    <div class="sidebar-nav">
+      <a href="{{ url_for('ecmd_dashboard') }}" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
+        <span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span>
+      </a>
+      <a href="{{ url_for('ecmd_data_entry') }}" class="nav-item {% if active_page == 'data_entry' %}active{% endif %}">
+        <span class="nav-icon">📝</span><span class="nav-label">Data Entry</span>
+      </a>
+      <a href="{{ url_for('ecmd_calculate') }}" class="nav-item {% if active_page == 'calculate' %}active{% endif %}">
+        <span class="nav-icon">⚡</span><span class="nav-label">Calculate</span>
+      </a>
+      <a href="{{ url_for('ecmd_reports') }}" class="nav-item {% if active_page == 'reports' %}active{% endif %}">
+        <span class="nav-icon">📋</span><span class="nav-label">View Reports</span>
+      </a>
+      <a href="{{ url_for('ecmd_settings') }}" class="nav-item {% if active_page == 'settings' %}active{% endif %}">
+        <span class="nav-icon">⚙️</span><span class="nav-label">Settings</span>
+      </a>
+    </div>
+
+    <div class="sidebar-footer">Energy · Consumption · DG Ratio</div>
+  </nav>
+
+  <!-- ── Main ────────────────────────────────────────── -->
+  <div class="main">
+    <div class="topbar">
+      <div class="ora-status checking" id="ora-status" title="Checking Oracle…">
+        <span class="ora-dot"></span>
+        <span class="ora-text" id="ora-status-text">Oracle…</span>
+      </div>
+      <span class="topbar-divider"></span>
+      <span class="topbar-label">Theme</span>
+      {% set _themes = [('Pre-dawn','🌑','ti-predawn'),('Sunrise','🌅','ti-sunrise'),('Daytime','☀️','ti-daytime'),('Dusk','🌆','ti-dusk'),('Sunset','🌇','ti-sunset'),('Night','🌙','')] %}
+      <div class="theme-picker" id="theme-picker">
+        <div class="theme-picker-btn" id="theme-picker-btn" onclick="toggleThemePicker()">
+          <span id="theme-icon-display">{% for t,i,cls in _themes %}{% if t == bg_theme %}<span class="{{ cls }}">{{ i }}</span>{% if t == 'Night' %}<span class="star-sparkle">✦</span>{% endif %}{% endif %}{% endfor %}</span>
+          <span id="theme-label-display">{{ bg_theme }}</span>
+          <span class="ms-arrow">▾</span>
+        </div>
+        <div class="theme-picker-panel" id="theme-picker-panel" style="display:none">
+          {% for t, icon, cls in _themes %}
+          <div class="theme-picker-opt {% if t == bg_theme %}active{% endif %}" onclick="selectTheme('{{ t }}')">
+            <span><span class="{{ cls }}">{{ icon }}</span>{% if t == 'Night' %}<span class="star-sparkle">✦</span>{% endif %}</span>
+            <span>{{ t }}</span>
+          </div>
+          {% endfor %}
+          <div class="theme-picker-foot">
+            <label class="theme-toggle"><input type="checkbox" id="bg-auto-cb" {% if bg_auto %}checked{% endif %} onchange="toggleBgAuto(this)"> Auto (by time of day)</label>
+            <label class="theme-toggle"><input type="checkbox" id="bg-animate-cb" {% if bg_animate %}checked{% endif %} onchange="toggleBgAnimate(this)"> Animation</label>
+          </div>
+        </div>
+      </div>
+      <select id="topbar-theme" style="display:none">
+        {% for t, icon, cls in _themes %}
+        <option value="{{ t }}" {% if t == bg_theme %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}
+          <div class="alert alert-{{ 'success' if cat == 'success' else ('error' if cat == 'error' else ('warning' if cat == 'warning' else 'info')) }}" data-auto>
+            {{ msg }}
+          </div>
+        {% endfor %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/background.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script>
+  initBackground({ animate: {{ 'true' if bg_animate else 'false' }}, autoTheme: {{ 'true' if bg_auto else 'false' }}, theme: '{{ bg_theme }}' });
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,105 @@
+{% extends "ecmd_base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>RDC-ECMD — Energy & DG Ratio</h1>
+  <p>Plant energy consumption tracking · Mixer DG ratio reporting</p>
+</div>
+
+<!-- KPI cards -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">Plant Reference Rows</div>
+    <div class="kpi-value">{{ counts.tp_plant_data | format_int }}</div>
+    <div class="kpi-sub">Plants shared from RDC-TP</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Readings Entered</div>
+    <div class="kpi-value">{{ counts.ecmd_readings | format_int }}</div>
+    <div class="kpi-sub">Energy &amp; DG readings in store</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Saved Results</div>
+    <div class="kpi-value">{{ counts.ecmd_results | format_int }}</div>
+    <div class="kpi-sub">Calculated plant rows</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Oracle</div>
+    <div class="kpi-value" style="font-size:22px">{% if ora_ready %}⚙️{% else %}❌{% endif %}</div>
+    <div class="kpi-sub">{% if ora_ready %}Configured — volume pulled from TP data{% else %}Not configured{% endif %}</div>
+  </div>
+</div>
+
+<!-- Data status -->
+<div class="card">
+  <div class="section-title">📋 Data Status</div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Source</th><th>Details</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Plant Reference Data</td>
+          <td>{{ counts.tp_plant_data | format_int }} rows (shared with RDC-TP)</td>
+        </tr>
+        <tr>
+          <td>Energy &amp; DG Readings</td>
+          <td>
+            {% if counts.ecmd_readings > 0 %}
+              <strong>{{ counts.ecmd_readings | format_int }}</strong> readings stored
+              {% if ecmd_months %}
+                — latest: <strong>{{ ecmd_months[0][0] }}/{{ ecmd_months[0][1] }}</strong>
+              {% endif %}
+            {% else %}
+              <span style="color:var(--text-faint)">No readings entered yet</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td>Oracle Volume Data</td>
+          <td>
+            {% if ora_ready %}
+              Configured — total production volume fetched live per plant from TP Oracle table
+            {% else %}
+              <span style="color:var(--text-faint)">Oracle not configured — volume from saved TP data if available</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td>Calculated Results</td>
+          <td>{{ counts.ecmd_results | format_int }} plant rows saved</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Months with readings -->
+{% if ecmd_months %}
+<div class="card">
+  <div class="section-title">📅 Months with Readings</div>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0">
+    {% for m, y in ecmd_months %}
+    <a href="{{ url_for('ecmd_data_entry', month=m, year=y) }}"
+       class="btn btn-secondary btn-sm">{{ m }}/{{ y }}</a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Quick start -->
+<div class="card">
+  <div class="section-title">🚀 Quick Start</div>
+  <ol style="color:var(--text-muted);line-height:2;margin:0;padding-left:20px">
+    <li>Go to <a href="{{ url_for('ecmd_data_entry') }}">Data Entry</a> — select month/year, then enter EB meter, DG and Mixer readings for each plant.</li>
+    <li>Go to <a href="{{ url_for('ecmd_calculate') }}">Calculate</a> — select the date range and run to compute energy consumption and DG ratios.</li>
+    <li>Go to <a href="{{ url_for('ecmd_reports') }}">View Reports</a> — see plant-wise &amp; location-wise tables, download Excel or email.</li>
+  </ol>
+  <div class="alert alert-info" style="margin-top:14px">
+    💡 <strong>Plant names &amp; locations</strong> are pulled from RDC-TP plant data.
+    If plants are missing, go to <a href="{{ url_for('tp_data_uploader') }}">RDC-TP → Data Uploader</a> to sync them first.
+    <strong>Total Volume (MT)</strong> is fetched from the Oracle TP data table by plant code.
+  </div>
+</div>
+
+{% endblock %}

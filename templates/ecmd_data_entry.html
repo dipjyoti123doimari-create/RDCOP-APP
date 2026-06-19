@@ -1,0 +1,222 @@
+{% extends "ecmd_base.html" %}
+{% block title %}Data Entry{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Data Entry</h1>
+  <p>Enter EB meter, DG and Mixer readings for each plant</p>
+</div>
+
+<!-- Month / Year selector -->
+<div class="card">
+  <div class="section-title">📅 Select Period</div>
+  <form method="GET" action="{{ url_for('ecmd_data_entry') }}" class="form-grid" style="align-items:flex-end">
+    <div class="form-group">
+      <label>Month</label>
+      <select name="month">
+        {% for m, mname in months_list %}
+        <option value="{{ m }}" {% if m == sel_month %}selected{% endif %}>{{ mname }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Year</label>
+      <select name="year">
+        {% for y in years_list %}
+        <option value="{{ y }}" {% if y == sel_year %}selected{% endif %}>{{ y }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>&nbsp;</label>
+      <button type="submit" class="btn btn-primary">Load Plants</button>
+    </div>
+  </form>
+</div>
+
+{% if plant_rows %}
+<!-- Legend -->
+<div class="legend" style="margin-bottom:10px">
+  <span class="legend-item legend-green">Readings saved</span>
+  <span class="legend-item" style="background:var(--glass-bg)">No readings yet</span>
+</div>
+
+<!-- One card per plant -->
+{% for plant in plant_rows %}
+{% set r = readings_map.get(plant.plant_code, {}) %}
+{% set has_reading = r|length > 0 %}
+
+<div class="card" id="plant-card-{{ plant.plant_code }}"
+     style="{% if has_reading %}border-left:3px solid var(--color-green){% endif %}">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+    <div>
+      <span class="section-title" style="margin-bottom:0">
+        🏭 {{ plant.plant_name }} <span style="font-weight:400;font-size:13px;color:var(--text-faint)">({{ plant.plant_code }})</span>
+      </span>
+      <div style="font-size:12px;color:var(--text-muted);margin-top:2px">
+        {{ plant.exco_location }} · {{ plant.business_head }}
+        {% if has_reading %}
+          · <span style="color:var(--color-green)">✅ Saved {{ sel_month }}/{{ sel_year }}</span>
+        {% endif %}
+      </div>
+    </div>
+    {% if has_reading %}
+    <form method="POST" action="{{ url_for('ecmd_delete_reading') }}"
+          onsubmit="return confirm('Delete readings for {{ plant.plant_name }}?')">
+      <input type="hidden" name="plant_code" value="{{ plant.plant_code }}">
+      <input type="hidden" name="month" value="{{ sel_month }}">
+      <input type="hidden" name="year"  value="{{ sel_year }}">
+      <button type="submit" class="btn btn-danger btn-sm">🗑 Delete</button>
+    </form>
+    {% endif %}
+  </div>
+
+  <form method="POST" action="{{ url_for('ecmd_save_reading') }}">
+    <input type="hidden" name="plant_code" value="{{ plant.plant_code }}">
+    <input type="hidden" name="month"      value="{{ sel_month }}">
+    <input type="hidden" name="year"       value="{{ sel_year }}">
+
+    <!-- EB Meter Section -->
+    <div style="margin-bottom:10px">
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">
+        ⚡ EB Meter Readings
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>EB KWh Opening</label>
+          <input type="number" step="any" name="eb_kwh_open"
+                 value="{{ r.eb_kwh_open if has_reading else '' }}"
+                 placeholder="Opening reading (KWh)">
+        </div>
+        <div class="form-group">
+          <label>EB KWh Closing</label>
+          <input type="number" step="any" name="eb_kwh_close"
+                 value="{{ r.eb_kwh_close if has_reading else '' }}"
+                 placeholder="Closing reading (KWh)">
+        </div>
+        <div class="form-group">
+          <label>EB KVAh Opening</label>
+          <input type="number" step="any" name="eb_kvah_open"
+                 value="{{ r.eb_kvah_open if has_reading else '' }}"
+                 placeholder="Opening reading (KVAh)">
+        </div>
+        <div class="form-group">
+          <label>EB KVAh Closing</label>
+          <input type="number" step="any" name="eb_kvah_close"
+                 value="{{ r.eb_kvah_close if has_reading else '' }}"
+                 placeholder="Closing reading (KVAh)">
+        </div>
+        <div class="form-group">
+          <label>Multiplying Factor (MF)</label>
+          <input type="number" step="any" name="mf"
+                 value="{{ r.mf if has_reading else '' }}"
+                 placeholder="e.g. 1, 2, 5 …">
+          <span style="font-size:11px;color:var(--text-faint)">EB KWh = (Close − Open) × MF</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- DG Section -->
+    <div style="margin-bottom:10px">
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">
+        🔋 DG Readings
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>DG Running Hrs Opening</label>
+          <input type="number" step="any" name="dg_hr_open"
+                 value="{{ r.dg_hr_open if has_reading else '' }}"
+                 placeholder="Opening (hrs)">
+        </div>
+        <div class="form-group">
+          <label>DG Running Hrs Closing</label>
+          <input type="number" step="any" name="dg_hr_close"
+                 value="{{ r.dg_hr_close if has_reading else '' }}"
+                 placeholder="Closing (hrs)">
+        </div>
+        <div class="form-group">
+          <label>DG KWh Opening <span style="color:var(--text-faint)">(optional)</span></label>
+          <input type="number" step="any" name="dg_kwh_open"
+                 value="{{ r.dg_kwh_open if has_reading and r.dg_kwh_open is not none else '' }}"
+                 placeholder="Opening KWh (leave blank → hrs × 20)">
+        </div>
+        <div class="form-group">
+          <label>DG KWh Closing <span style="color:var(--text-faint)">(optional)</span></label>
+          <input type="number" step="any" name="dg_kwh_close"
+                 value="{{ r.dg_kwh_close if has_reading and r.dg_kwh_close is not none else '' }}"
+                 placeholder="Closing KWh (leave blank → hrs × 20)">
+        </div>
+      </div>
+      <div class="alert alert-info" style="padding:6px 10px;font-size:12px;margin-top:4px">
+        If DG KWh readings are blank, DG KWh = DG Running Hrs × 20
+      </div>
+    </div>
+
+    <!-- Mixer DG Section -->
+    <div style="margin-bottom:10px">
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">
+        🔄 Mixer DG Hours
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Mixer Running on DG — Opening</label>
+          <input type="number" step="any" name="mixer_dg_hr_open"
+                 value="{{ r.mixer_dg_hr_open if has_reading else '' }}"
+                 placeholder="Opening (hrs)">
+        </div>
+        <div class="form-group">
+          <label>Mixer Running on DG — Closing</label>
+          <input type="number" step="any" name="mixer_dg_hr_close"
+                 value="{{ r.mixer_dg_hr_close if has_reading else '' }}"
+                 placeholder="Closing (hrs)">
+        </div>
+      </div>
+      <div class="alert alert-info" style="padding:6px 10px;font-size:12px;margin-top:4px">
+        Mixer DG % = (Mixer DG Hrs / Total DG Run Hrs) × 100
+      </div>
+    </div>
+
+    <!-- Diesel & Volume Section -->
+    <div style="margin-bottom:14px">
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">
+        ⛽ Diesel &amp; Production Volume
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Diesel Issued to DG (Litres)</label>
+          <input type="number" step="any" name="diesel_issued_ltrs"
+                 value="{{ r.diesel_issued_ltrs if has_reading else '' }}"
+                 placeholder="Litres">
+          <span style="font-size:11px;color:var(--text-faint)">L/Hr = Diesel / DG Run Hrs</span>
+        </div>
+        <div class="form-group">
+          <label>Volume Done on DG (MT)</label>
+          <input type="number" step="any" name="volume_on_dg"
+                 value="{{ r.volume_on_dg if has_reading else '' }}"
+                 placeholder="MT produced while DG was running">
+        </div>
+      </div>
+      <div class="alert alert-info" style="padding:6px 10px;font-size:12px;margin-top:4px">
+        Total Volume (MT) is fetched automatically from Oracle by plant code. Energy/MT = Total KWh / Total Volume.
+      </div>
+    </div>
+
+    <div class="btn-group">
+      <button type="submit" class="btn btn-primary">💾 Save Readings</button>
+    </div>
+  </form>
+</div>
+{% endfor %}
+
+{% else %}
+<div class="glass-card" style="text-align:center;padding:40px">
+  <div style="font-size:40px;margin-bottom:12px">🏭</div>
+  <div style="font-size:16px;font-weight:600;margin-bottom:8px">No plants found</div>
+  <div style="color:var(--text-muted);margin-bottom:16px">
+    Plant data must be synced from RDC-TP before entering readings.
+  </div>
+  <a href="{{ url_for('tp_data_uploader') }}" class="btn btn-primary">Go to RDC-TP Data Uploader</a>
+</div>
+{% endif %}
+
+{% endblock %}

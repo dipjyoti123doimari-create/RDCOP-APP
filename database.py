@@ -270,6 +270,61 @@ TABLE_SCHEMAS = {
         )
     """,
 
+    # ── RDC-ECMD tables ─────────────────────────────────────────────────────
+
+    # Plant energy & DG readings entered by plant persons each month
+    # One row per plant per month. UNIQUE on (plant_code, month, year).
+    "ecmd_readings": """
+        CREATE TABLE IF NOT EXISTS ecmd_readings (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            plant_code            TEXT NOT NULL,
+            month                 INTEGER NOT NULL,
+            year                  INTEGER NOT NULL,
+            eb_kwh_open           REAL,
+            eb_kwh_close          REAL,
+            eb_kvah_open          REAL,
+            eb_kvah_close         REAL,
+            mf                    REAL DEFAULT 1.0,
+            dg_hr_open            REAL,
+            dg_hr_close           REAL,
+            dg_kwh_open           REAL,
+            dg_kwh_close          REAL,
+            mixer_dg_hr_open      REAL,
+            mixer_dg_hr_close     REAL,
+            diesel_issued_ltrs    REAL,
+            volume_on_dg          REAL,
+            entered_by            TEXT DEFAULT 'Admin',
+            entered_at            TEXT,
+            UNIQUE(plant_code, month, year)
+        )
+    """,
+
+    # Calculated ECMD results — one row per plant per month
+    "ecmd_results": """
+        CREATE TABLE IF NOT EXISTS ecmd_results (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            month                 INTEGER,
+            year                  INTEGER,
+            plant_code            TEXT,
+            plant_name            TEXT,
+            exco_location         TEXT,
+            business_head         TEXT,
+            plant_manager         TEXT,
+            eb_kwh                REAL,
+            dg_kwh                REAL,
+            total_kwh             REAL,
+            total_volume          REAL,
+            energy_per_mt         REAL,
+            dg_run_hrs            REAL,
+            mixer_dg_hrs          REAL,
+            mixer_dg_ratio        REAL,
+            diesel_issued_ltrs    REAL,
+            ltr_per_hr            REAL,
+            volume_on_dg          REAL,
+            generated_at          TEXT
+        )
+    """,
+
     # ── RDC-BTRTP tables ────────────────────────────────────────────────────
 
     # Raw Oracle rows with batcher (CREATED_BY) column
@@ -1009,3 +1064,171 @@ def get_waiver_lookup(month: int, year: int) -> dict:
             text = f"Waived: {r['reason']}"
         result[str(r["employee_code"]).strip()] = text
     return result
+
+
+# ---------------------------------------------------------------------------
+# RDC-ECMD helpers
+# ---------------------------------------------------------------------------
+
+def get_ecmd_reading(plant_code: str, month: int, year: int) -> dict | None:
+    """Return the readings row for a plant/month/year, or None."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM ecmd_readings WHERE plant_code=? AND month=? AND year=?",
+            (str(plant_code).strip(), month, year)
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
+    finally:
+        conn.close()
+
+
+def get_ecmd_readings_for_month(month: int, year: int) -> list:
+    """Return all readings rows for a given month/year as list of dicts."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM ecmd_readings WHERE month=? AND year=? ORDER BY plant_code",
+            (month, year)
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_ecmd_all_readings() -> list:
+    """Return all readings rows (all months) newest-first."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM ecmd_readings ORDER BY year DESC, month DESC, plant_code"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def upsert_ecmd_reading(plant_code: str, month: int, year: int, data: dict,
+                        entered_by: str = "Admin") -> None:
+    """Insert or update a reading row (UPSERT on plant_code+month+year)."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO ecmd_readings
+               (plant_code, month, year,
+                eb_kwh_open, eb_kwh_close, eb_kvah_open, eb_kvah_close, mf,
+                dg_hr_open, dg_hr_close, dg_kwh_open, dg_kwh_close,
+                mixer_dg_hr_open, mixer_dg_hr_close,
+                diesel_issued_ltrs, volume_on_dg,
+                entered_by, entered_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               ON CONFLICT(plant_code, month, year) DO UPDATE SET
+                eb_kwh_open=excluded.eb_kwh_open, eb_kwh_close=excluded.eb_kwh_close,
+                eb_kvah_open=excluded.eb_kvah_open, eb_kvah_close=excluded.eb_kvah_close,
+                mf=excluded.mf,
+                dg_hr_open=excluded.dg_hr_open, dg_hr_close=excluded.dg_hr_close,
+                dg_kwh_open=excluded.dg_kwh_open, dg_kwh_close=excluded.dg_kwh_close,
+                mixer_dg_hr_open=excluded.mixer_dg_hr_open,
+                mixer_dg_hr_close=excluded.mixer_dg_hr_close,
+                diesel_issued_ltrs=excluded.diesel_issued_ltrs,
+                volume_on_dg=excluded.volume_on_dg,
+                entered_by=excluded.entered_by, entered_at=excluded.entered_at
+            """,
+            (
+                str(plant_code).strip(), month, year,
+                data.get("eb_kwh_open"), data.get("eb_kwh_close"),
+                data.get("eb_kvah_open"), data.get("eb_kvah_close"),
+                data.get("mf", 1.0),
+                data.get("dg_hr_open"), data.get("dg_hr_close"),
+                data.get("dg_kwh_open"), data.get("dg_kwh_close"),
+                data.get("mixer_dg_hr_open"), data.get("mixer_dg_hr_close"),
+                data.get("diesel_issued_ltrs"), data.get("volume_on_dg"),
+                entered_by, _now(),
+            )
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_ecmd_reading(plant_code: str, month: int, year: int) -> int:
+    """Delete one reading row. Returns rows deleted."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM ecmd_readings WHERE plant_code=? AND month=? AND year=?",
+            (str(plant_code).strip(), month, year)
+        )
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
+def get_ecmd_results_for_month(month: int, year: int) -> list:
+    """Return calculated ECMD result rows for a month/year."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM ecmd_results WHERE month=? AND year=? ORDER BY plant_code",
+            (month, year)
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def save_ecmd_results(rows: list, month: int, year: int) -> None:
+    """Replace all ecmd_results for the given month/year with new rows."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            "DELETE FROM ecmd_results WHERE month=? AND year=?", (month, year)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    if rows:
+        insert_rows("ecmd_results", rows)
+
+
+def get_ecmd_months() -> list:
+    """Return list of (month, year) tuples that have readings, newest-first."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT DISTINCT month, year FROM ecmd_readings "
+            "ORDER BY year DESC, month DESC"
+        )
+        return [(r[0], r[1]) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_ecmd_mf(plant_code: str) -> float:
+    """Return the most recently entered MF for a plant (default 1.0)."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT mf FROM ecmd_readings WHERE plant_code=? "
+            "ORDER BY year DESC, month DESC LIMIT 1",
+            (str(plant_code).strip(),)
+        )
+        row = cur.fetchone()
+        return float(row[0]) if row and row[0] else 1.0
+    finally:
+        conn.close()

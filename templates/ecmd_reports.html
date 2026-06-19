@@ -1,0 +1,333 @@
+{% extends "ecmd_base.html" %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Reports</h1>
+  <p>Energy consumption &amp; Mixer DG ratio — plant-wise and location-wise</p>
+</div>
+
+<!-- Date range + filter -->
+<div class="card">
+  <div class="section-title">🔎 Filter Report</div>
+  <form method="GET" action="{{ url_for('ecmd_reports') }}">
+    <div class="date-row">
+      <div class="form-group">
+        <label>From Date</label>
+        <input type="date" name="from_date" value="{{ from_date }}" required>
+      </div>
+      <div class="form-group">
+        <label>To Date</label>
+        <input type="date" name="to_date" value="{{ to_date }}" required>
+      </div>
+      <div class="form-group" style="align-self:flex-end">
+        <button type="submit" class="btn btn-primary">🔄 Load Report</button>
+      </div>
+    </div>
+    <div class="form-grid" style="margin-top:8px">
+      <div class="form-group">
+        <label>Exco Location</label>
+        <select name="exco" multiple size="3">
+          {% for e in unique_excos %}
+          <option value="{{ e }}" {% if e in excos %}selected{% endif %}>{{ e }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Business Head</label>
+        <select name="bhead" multiple size="3">
+          {% for b in unique_bheads %}
+          <option value="{{ b }}" {% if b in bheads %}selected{% endif %}>{{ b }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Search Plant</label>
+        <input type="text" name="search" value="{{ search }}" placeholder="Plant code or name…">
+      </div>
+    </div>
+    {% if excos or bheads or search %}
+    <a href="{{ url_for('ecmd_reports', from_date=from_date, to_date=to_date) }}"
+       class="btn btn-secondary btn-sm" style="margin-top:6px">Clear Filters</a>
+    {% endif %}
+  </form>
+</div>
+
+{% if plant_rows %}
+
+<!-- KPI summary -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">Plants Shown</div>
+    <div class="kpi-value">{{ plant_rows | length }} / {{ total_plants }}</div>
+    <div class="kpi-sub">{{ month_label }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Total Energy (KWh)</div>
+    <div class="kpi-value">{{ (plant_rows | sum(attribute='total_kwh')) | round(0) | int | format_int }}</div>
+    <div class="kpi-sub">EB + DG</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Total Volume (MT)</div>
+    <div class="kpi-value">{{ (plant_rows | sum(attribute='total_volume')) | round(1) | format_int }}</div>
+    <div class="kpi-sub">From Oracle</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Avg DG Ratio</div>
+    {% set tot_dg  = plant_rows | sum(attribute='dg_run_hrs') %}
+    {% set tot_mdg = plant_rows | sum(attribute='mixer_dg_hrs') %}
+    <div class="kpi-value">
+      {% if tot_dg > 0 %}{{ ((tot_mdg / tot_dg) * 100) | round(1) }}%{% else %}—{% endif %}
+    </div>
+    <div class="kpi-sub">Mixer DG / Total DG hrs</div>
+  </div>
+</div>
+
+<!-- Download / Email actions -->
+<div class="btn-group" style="margin-bottom:10px">
+  <a href="{{ url_for('ecmd_download_excel') }}" class="btn btn-primary">⬇ Excel</a>
+  <a href="{{ url_for('ecmd_download_csv') }}" class="btn btn-secondary">⬇ CSV</a>
+  {% if email_ready %}
+  <button class="btn btn-secondary" onclick="document.getElementById('email-panel').classList.toggle('active-panel')">
+    📧 Email Report
+  </button>
+  {% endif %}
+</div>
+
+<!-- Email panel -->
+{% if email_ready %}
+<div id="email-panel" style="display:none" class="card">
+  <div class="section-title">📧 Send Report by Email</div>
+  <form method="POST" action="{{ url_for('ecmd_send_email') }}">
+    <div class="form-grid">
+      <div class="form-group">
+        <label>To</label>
+        <input type="text" name="to" value="{{ default_to }}" placeholder="recipient@example.com">
+      </div>
+      <div class="form-group">
+        <label>CC</label>
+        <input type="text" name="cc" value="{{ default_cc }}" placeholder="cc@example.com">
+      </div>
+      <div class="form-group">
+        <label>Subject</label>
+        <input type="text" name="subject" value="{{ default_subject }}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Body</label>
+      <textarea name="body" rows="4">{{ default_body }}</textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">📤 Send</button>
+  </form>
+</div>
+{% endif %}
+
+<!-- Location Summary -->
+{% if loc_rows %}
+<div class="card">
+  <div class="section-title">📍 Location Summary — {{ month_label }}</div>
+  <div class="tabs">
+    <button class="tab-btn active" data-tabset="loc" data-tab="energy">⚡ Energy</button>
+    <button class="tab-btn" data-tabset="loc" data-tab="dg">🔋 DG Ratio</button>
+  </div>
+
+  <div class="tab-panel active" data-tabpanel="loc" data-tab="energy">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Sr.</th><th>Exco Location</th><th>Plants</th>
+            <th>Total KWh</th><th>Total Vol (MT)</th><th>KWh/MT</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set ns = namespace(srno=1) %}
+          {% for r in loc_rows %}
+          <tr class="{% if r.is_pan_india %}row-yellow{% endif %}">
+            <td style="text-align:center">{% if r.is_pan_india %}—{% else %}{{ ns.srno }}{% set ns.srno = ns.srno + 1 %}{% endif %}</td>
+            <td style="font-weight:{% if r.is_pan_india %}700{% else %}400{% endif %}">
+              {% if r.is_pan_india %}🌐 PAN India{% else %}{{ r.exco_location }}{% endif %}
+            </td>
+            <td style="text-align:center">{{ r.plant_count }}</td>
+            <td style="text-align:right;font-weight:600">{{ r.total_kwh | round(2) }}</td>
+            <td style="text-align:right">{{ r.total_volume | round(2) }}</td>
+            <td style="text-align:right;font-weight:600">{{ r.energy_per_mt | round(4) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="tab-panel" data-tabpanel="loc" data-tab="dg">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Sr.</th><th>Exco Location</th><th>Plants</th>
+            <th>DG Run Hrs</th><th>Mixer DG Hrs</th><th>Mixer DG %</th>
+            <th>Diesel (L)</th><th>L/Hr</th><th>Vol on DG (MT)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set ns2 = namespace(srno=1) %}
+          {% for r in loc_rows %}
+          <tr class="{% if r.is_pan_india %}row-yellow{% endif %}">
+            <td style="text-align:center">{% if r.is_pan_india %}—{% else %}{{ ns2.srno }}{% set ns2.srno = ns2.srno + 1 %}{% endif %}</td>
+            <td style="font-weight:{% if r.is_pan_india %}700{% else %}400{% endif %}">
+              {% if r.is_pan_india %}🌐 PAN India{% else %}{{ r.exco_location }}{% endif %}
+            </td>
+            <td style="text-align:center">{{ r.plant_count }}</td>
+            <td style="text-align:right">{{ r.dg_run_hrs | round(2) }}</td>
+            <td style="text-align:right">{{ r.mixer_dg_hrs | round(2) }}</td>
+            <td style="text-align:center;font-weight:600">{{ r.mixer_dg_ratio | round(1) }}%</td>
+            <td style="text-align:right">{{ r.diesel_ltrs | round(2) }}</td>
+            <td style="text-align:right">{{ r.ltr_per_hr | round(3) }}</td>
+            <td style="text-align:right">{{ r.volume_on_dg | round(2) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Plant detail -->
+<div class="card">
+  <div class="section-title">🏭 Plant Detail — {{ month_label }}</div>
+  <div class="tabs">
+    <button class="tab-btn active" data-tabset="plant" data-tab="energy">⚡ Energy Consumption</button>
+    <button class="tab-btn" data-tabset="plant" data-tab="dg">🔋 Mixer DG Ratio</button>
+  </div>
+
+  <!-- Energy tab -->
+  <div class="tab-panel active" data-tabpanel="plant" data-tab="energy">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Sr.</th>
+            <th>Plant Code</th>
+            <th>Plant Name</th>
+            <th>Exco Location</th>
+            <th>Business Head</th>
+            <th>Plant Manager</th>
+            <th>EB KWh</th>
+            <th>DG KWh</th>
+            <th>Total KWh</th>
+            <th>Total Vol (MT)</th>
+            <th>KWh/MT</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in plant_rows %}
+          <tr>
+            <td style="text-align:center">{{ loop.index }}</td>
+            <td>{{ r.plant_code }}</td>
+            <td>{{ r.plant_name }}</td>
+            <td>{{ r.exco_location }}</td>
+            <td>{{ r.business_head }}</td>
+            <td>{{ r.plant_manager }}</td>
+            <td style="text-align:right">{{ r.eb_kwh | round(2) }}</td>
+            <td style="text-align:right">{{ r.dg_kwh | round(2) }}</td>
+            <td style="text-align:right;font-weight:600">{{ r.total_kwh | round(2) }}</td>
+            <td style="text-align:right">{{ r.total_volume | round(2) }}</td>
+            <td style="text-align:right;font-weight:600">{{ r.energy_per_mt | round(4) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- DG tab -->
+  <div class="tab-panel" data-tabpanel="plant" data-tab="dg">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Sr.</th>
+            <th>Plant Code</th>
+            <th>Plant Name</th>
+            <th>Exco Location</th>
+            <th>Business Head</th>
+            <th>DG Run Hrs</th>
+            <th>Mixer DG Hrs</th>
+            <th>Mixer DG %</th>
+            <th>Diesel (L)</th>
+            <th>L/Hr</th>
+            <th>Vol on DG (MT)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in plant_rows %}
+          <tr>
+            <td style="text-align:center">{{ loop.index }}</td>
+            <td>{{ r.plant_code }}</td>
+            <td>{{ r.plant_name }}</td>
+            <td>{{ r.exco_location }}</td>
+            <td>{{ r.business_head }}</td>
+            <td style="text-align:right">{{ r.dg_run_hrs | round(2) }}</td>
+            <td style="text-align:right">{{ r.mixer_dg_hrs | round(2) }}</td>
+            <td style="text-align:center;font-weight:600">{{ r.mixer_dg_ratio | round(1) }}%</td>
+            <td style="text-align:right">{{ r.diesel_issued_ltrs | round(2) }}</td>
+            <td style="text-align:right">{{ r.ltr_per_hr | round(3) }}</td>
+            <td style="text-align:right">{{ r.volume_on_dg | round(2) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Email log -->
+{% if ecmd_email_log %}
+<div class="card">
+  <div class="section-title">📬 Recent Emails</div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>File</th><th>To</th><th>Subject</th><th>Sent At</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for e in ecmd_email_log %}
+        <tr>
+          <td>{{ e.report_file_name }}</td>
+          <td>{{ e.to_emails }}</td>
+          <td>{{ e.subject }}</td>
+          <td>{{ e.sent_at }}</td>
+          <td class="{% if e.status == 'sent' %}row-green{% else %}row-red{% endif %}">{{ e.status }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% else %}
+<div class="glass-card" style="text-align:center;padding:40px">
+  <div style="font-size:40px;margin-bottom:12px">📊</div>
+  <div style="font-size:16px;font-weight:600;margin-bottom:8px">No results for this period</div>
+  <div style="color:var(--text-muted);margin-bottom:16px">
+    Enter readings in <a href="{{ url_for('ecmd_data_entry') }}">Data Entry</a>, then
+    <a href="{{ url_for('ecmd_calculate') }}">Calculate</a> first.
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Toggle email panel visibility
+const emailBtn = document.querySelector('[onclick*="email-panel"]');
+const emailPanel = document.getElementById('email-panel');
+if (emailBtn && emailPanel) {
+  emailBtn.addEventListener('click', function() {
+    emailPanel.style.display = emailPanel.style.display === 'none' ? 'block' : 'none';
+  });
+  emailBtn.removeAttribute('onclick');
+}
+</script>
+{% endblock %}
