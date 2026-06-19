@@ -7,6 +7,12 @@
   <p>Pick a date range, apply filters, then browse and export the report</p>
 </div>
 
+{% if maint_month_label %}
+<div class="alert alert-info" style="margin-bottom:10px">
+  📋 <strong>YTD Maintenance Cost applied:</strong> {{ maint_month_label }}
+</div>
+{% endif %}
+
 {% if not ora_live and no_backend %}
 <div class="glass-card" style="text-align:center;padding:36px">
   <h3>No backend data</h3>

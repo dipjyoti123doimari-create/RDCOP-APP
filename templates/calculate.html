@@ -7,6 +7,16 @@
   <p>Choose a date range and run the full category-wise incentive &amp; deduction calculation</p>
 </div>
 
+{% if maint_month_label %}
+<div class="alert alert-info" style="margin-bottom:10px">
+  📋 <strong>YTD Maintenance Cost applied:</strong> {{ maint_month_label }}
+</div>
+{% else %}
+<div class="alert alert-warning" style="margin-bottom:10px">
+  ⚠️ <strong>No maintenance cost data uploaded.</strong> Calculation will fail — please upload maintenance cost data first.
+</div>
+{% endif %}
+
 {% if not available %}
 <div class="glass-card" style="text-align:center;padding:36px">
   <h3>No backend data</h3>

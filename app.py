@@ -2075,6 +2075,13 @@ def page_calculate():
     total_inc  = sum((r.get("incentive_amount") or 0) for r in results)
     total_ded  = sum((r.get("deduction_amount") or 0) for r in results)
 
+    _maint_months = database.get_maintenance_months()
+    if _maint_months:
+        _mm, _my = _maint_months[0]
+        maint_month_label = f"{_cal.month_name[_mm]} {_my}" if _mm else "Unassigned"
+    else:
+        maint_month_label = None
+
     return render_template("calculate.html",
                            available=available,
                            default_from=default_from, default_to=default_to,
@@ -2085,7 +2092,8 @@ def page_calculate():
                            unmapped=unmapped_rows,
                            result_cols=RESULT_COLS, result_labels=RESULT_LABELS,
                            total_emps=total_emps, elig_count=elig_count,
-                           total_inc=total_inc, total_ded=total_ded)
+                           total_inc=total_inc, total_ded=total_ded,
+                           maint_month_label=maint_month_label)
 
 
 @app.route("/reports")
@@ -2227,6 +2235,13 @@ def page_reports():
     for label, cats in CAT_TABS.items():
         cat_results[label] = [r for r in (results or []) if r.get("category") in cats]
 
+    _maint_months = database.get_maintenance_months()
+    if _maint_months:
+        _mm, _my = _maint_months[0]
+        maint_month_label = f"{_cal.month_name[_mm]} {_my}" if _mm else "Unassigned"
+    else:
+        maint_month_label = None
+
     return render_template("reports.html",
                            from_date=str(from_date), to_date=str(to_date),
                            results=results,
@@ -2245,7 +2260,8 @@ def page_reports():
                            month_label=month_label,
                            email_cfg=email_cfg, email_ready=email_ready,
                            default_subject=default_subj, default_body=default_body,
-                           email_log=email_log)
+                           email_log=email_log,
+                           maint_month_label=maint_month_label)
 
 
 @app.route("/validation")
