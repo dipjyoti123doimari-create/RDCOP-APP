@@ -191,11 +191,7 @@
         <div class="form-group" style="margin:0;flex:1 1 240px;position:relative">
           <label>Employee <span style="color:#8ea0b4;font-size:11px">(search by code or name)</span></label>
           <input type="text" id="waiver-emp-search" autocomplete="off"
-                 placeholder="Type to search…" style="width:100%"
-                 oninput="waiverEmpOpen(this)"
-                 onclick="waiverEmpOpen(this)"
-                 onfocus="waiverEmpOpen(this)"
-                 onblur="setTimeout(function(){document.getElementById('waiver-emp-dd').style.display='none'},200)">
+                 placeholder="Type to search…" style="width:100%">
           <input type="hidden" name="waiver_emp_code" id="waiver-emp-code" required>
         </div>
 
@@ -329,50 +325,61 @@ function toggleCustomReason(sel) {
 }
 
 /* ── Employee search LOV ── */
-/* Position the fixed dropdown under the input element */
-function _waiverDdPosition() {
-  var inp = document.getElementById('waiver-emp-search');
-  var dd  = document.getElementById('waiver-emp-dd');
-  var r   = inp.getBoundingClientRect();
-  dd.style.top   = (r.bottom + 4) + 'px';
-  dd.style.left  = r.left + 'px';
-  dd.style.width = r.width + 'px';
-}
-
-function waiverEmpOpen(input) {
-  _waiverDdPosition();
-  waiverEmpFilter(input);
-}
-
-function waiverEmpFilter(input) {
-  var dd   = document.getElementById('waiver-emp-dd');
-  var q    = input.value.trim().toLowerCase();
-  var opts = dd.querySelectorAll('.waiver-emp-opt');
-  var any  = false;
-  opts.forEach(function(opt) {
-    var match = opt.dataset.label.toLowerCase().indexOf(q) >= 0;
-    opt.style.display = match ? '' : 'none';
-    if (match) any = true;
-  });
-  dd.style.display = (opts.length > 0) ? 'block' : 'none';
-}
-
-function waiverEmpSelect(opt) {
-  document.getElementById('waiver-emp-search').value = opt.dataset.label;
-  document.getElementById('waiver-emp-code').value   = opt.dataset.code;
-  document.getElementById('waiver-emp-dd').style.display = 'none';
-}
-
-/* Hover highlight + reposition on scroll/resize */
 document.addEventListener('DOMContentLoaded', function() {
-  document.querySelectorAll('.waiver-emp-opt').forEach(function(opt) {
+  var searchInp = document.getElementById('waiver-emp-search');
+  var codeInp   = document.getElementById('waiver-emp-code');
+  var dd        = document.getElementById('waiver-emp-dd');
+  var opts      = dd.querySelectorAll('.waiver-emp-opt');
+
+  function ddPosition() {
+    var r = searchInp.getBoundingClientRect();
+    dd.style.top   = (r.bottom + 4) + 'px';
+    dd.style.left  = r.left + 'px';
+    dd.style.width = r.width + 'px';
+  }
+
+  function ddShow() {
+    ddPosition();
+    dd.style.display = 'block';
+  }
+
+  function ddHide() {
+    dd.style.display = 'none';
+  }
+
+  function ddFilter() {
+    var q = searchInp.value.trim().toLowerCase();
+    opts.forEach(function(opt) {
+      opt.style.display = opt.dataset.label.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+    });
+  }
+
+  /* show on focus and typing */
+  searchInp.addEventListener('focus', function() { ddFilter(); ddShow(); });
+  searchInp.addEventListener('input', function() { codeInp.value = ''; ddFilter(); ddShow(); });
+
+  /* select an option */
+  opts.forEach(function(opt) {
     opt.addEventListener('mouseenter', function() { this.style.background = 'rgba(255,255,255,0.08)'; });
     opt.addEventListener('mouseleave', function() { this.style.background = ''; });
+    opt.addEventListener('mousedown', function(e) {
+      e.preventDefault(); /* prevent blur firing before click */
+      searchInp.value = this.dataset.label;
+      codeInp.value   = this.dataset.code;
+      ddHide();
+    });
   });
-  /* keep dropdown aligned if modal scrolls */
+
+  /* close when clicking anywhere outside */
+  document.addEventListener('mousedown', function(e) {
+    if (e.target !== searchInp && !dd.contains(e.target)) ddHide();
+  });
+
+  /* reposition if modal scrolls */
   document.getElementById('waiver-modal').addEventListener('scroll', function() {
-    if (document.getElementById('waiver-emp-dd').style.display !== 'none') _waiverDdPosition();
+    if (dd.style.display !== 'none') ddPosition();
   }, true);
+
   {% if request.args.get('anchor') == 'waivers' %}
   openWaiverModal();
   {% endif %}
