@@ -2477,6 +2477,8 @@ def run_calculation():
             flash(f"Calculation failed: {result['error']}", "error")
         else:
             flash(f"Calculation complete — {result['mapped']:,} employees, {result['unmapped']} unmapped.", "success")
+            for w in result.get("calc_warnings", []):
+                flash(w, "warning")
         _ss("calc_ran", True)
     except Exception as exc:
         flash(f"Calculation error: {exc}", "error")

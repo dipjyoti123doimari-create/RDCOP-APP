@@ -172,11 +172,11 @@
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Total Incentive</div>
-    <div class="kpi-value" style="font-size:22px">₹{{ total_inc | int | format_int }}</div>
+    <div class="kpi-value" style="font-size:22px">₹{{ total_inc | round(0) | int | format_int }}</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Total Deduction</div>
-    <div class="kpi-value" style="font-size:22px">₹{{ total_ded | int | format_int }}</div>
+    <div class="kpi-value" style="font-size:22px">₹{{ total_ded | round(0) | int | format_int }}</div>
   </div>
 </div>
 
@@ -264,11 +264,11 @@
     </div>
     <div class="kpi-card" style="padding:14px 16px">
       <div class="kpi-label">Incentive</div>
-      <div class="kpi-value" style="font-size:18px">₹{{ grp | sum(attribute='incentive_amount') | int | format_int }}</div>
+      <div class="kpi-value" style="font-size:18px">₹{{ grp | sum(attribute='incentive_amount') | round(0) | int | format_int }}</div>
     </div>
     <div class="kpi-card" style="padding:14px 16px">
       <div class="kpi-label">Deduction</div>
-      <div class="kpi-value" style="font-size:18px">₹{{ grp | sum(attribute='deduction_amount') | int | format_int }}</div>
+      <div class="kpi-value" style="font-size:18px">₹{{ grp | sum(attribute='deduction_amount') | round(0) | int | format_int }}</div>
     </div>
   </div>
 

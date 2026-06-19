@@ -91,10 +91,10 @@
       <div class="kpi-label">Eligible</div><div class="kpi-value" style="font-size:22px">{{ grp | selectattr('incentive_eligible','eq','Yes') | list | length | format_int }}</div>
     </div>
     <div class="kpi-card" style="padding:14px 16px">
-      <div class="kpi-label">Incentive</div><div class="kpi-value" style="font-size:18px">₹{{ grp | sum(attribute='incentive_amount') | int | format_int }}</div>
+      <div class="kpi-label">Incentive</div><div class="kpi-value" style="font-size:18px">₹{{ grp | sum(attribute='incentive_amount') | round(0) | int | format_int }}</div>
     </div>
     <div class="kpi-card" style="padding:14px 16px">
-      <div class="kpi-label">Deduction</div><div class="kpi-value" style="font-size:18px">₹{{ grp | sum(attribute='deduction_amount') | int | format_int }}</div>
+      <div class="kpi-label">Deduction</div><div class="kpi-value" style="font-size:18px">₹{{ grp | sum(attribute='deduction_amount') | round(0) | int | format_int }}</div>
     </div>
   </div>
 

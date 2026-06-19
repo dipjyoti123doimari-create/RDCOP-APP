@@ -214,6 +214,8 @@ def run_calculation(month: int, year: int,
                 "error": "No backend data found for the selected period.",
             }
 
+        bad_qty_mask = pd.to_numeric(backend_df["quantity"], errors="coerce").isna()
+        bad_qty_count = int(bad_qty_mask.sum())
         backend_df["quantity"] = pd.to_numeric(backend_df["quantity"], errors="coerce").fillna(0)
         backend_df["created_by"] = backend_df["created_by"].astype(str).str.strip()
 
@@ -313,6 +315,26 @@ def run_calculation(month: int, year: int,
         total_incentive = sum(r["incentive_amount"] for r in results)
         total_deduction = sum(r["deduction_amount"] for r in results)
 
+        # ── Data quality warnings ────────────────────────────────────────────
+        calc_warnings = []
+        if bad_qty_count > 0:
+            calc_warnings.append(
+                f"⚠️ {bad_qty_count} backend row(s) had non-numeric Quantity and were "
+                f"counted as 0. Check your Backend Data file for corrupt entries."
+            )
+        unknown_cat = [r for r in results if r["remarks"]
+                       and "Unknown category" in r["remarks"]]
+        if unknown_cat:
+            names = ", ".join(
+                f"{r['employee_code']} ({r['category']})" for r in unknown_cat[:5]
+            )
+            extra = f" …and {len(unknown_cat) - 5} more" if len(unknown_cat) > 5 else ""
+            calc_warnings.append(
+                f"⚠️ {len(unknown_cat)} employee(s) have an unrecognised category "
+                f"and received ₹0 incentive + ₹0 deduction — fix in Master Data: "
+                f"{names}{extra}"
+            )
+
         # Persist last-run info for the dashboard (only on an official run).
         if persist:
             database.set_setting("last_calc_month",     str(month))
@@ -330,6 +352,7 @@ def run_calculation(month: int, year: int,
             "generated_at":    now,
             "results_rows":    results,
             "unmapped_rows":   unmapped_rows,
+            "calc_warnings":   calc_warnings,
             "error":           None,
         }
 
