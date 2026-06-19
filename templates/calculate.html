@@ -370,6 +370,9 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
+  /* app.js moves .modal-overlay to body — append dd AFTER that so it's last in DOM and renders on top */
+  document.body.appendChild(dd);
+
   /* close when clicking anywhere outside */
   document.addEventListener('mousedown', function(e) {
     if (e.target !== searchInp && !dd.contains(e.target)) ddHide();
