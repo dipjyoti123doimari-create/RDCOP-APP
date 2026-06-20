@@ -199,24 +199,8 @@
 <!-- ── Topbar pills (fixed top-right) ────────────────── -->
 {% set _themes = [('Pre-dawn','🌑','ti-predawn'),('Sunrise','🌅','ti-sunrise'),('Daytime','☀️','ti-daytime'),('Dusk','🌆','ti-dusk'),('Sunset','🌇','ti-sunset'),('Night','🌙','')] %}
 
-<!-- Pill 1: User name + role -->
-{% if current_user %}
+<!-- Pill 1: Oracle · Theme · Logout -->
 <div class="launcher-topbar" style="top:16px;right:20px">
-  <span style="font-size:11px;color:var(--text-muted);white-space:nowrap">
-    {{ current_user.full_name }}
-    <span class="sidebar-module-badge" style="font-size:10px;padding:0 5px;margin-left:3px;
-      {% if current_user.role == 'SUPER_ADMIN' %}background:rgba(255,80,80,.12);color:#FF5050;border-color:rgba(255,80,80,.25)
-      {% elif current_user.role in ['HO_VIEWER','FINANCE_VIEWER'] %}background:rgba(0,180,255,.1);color:#00B4FF;border-color:rgba(0,180,255,.2)
-      {% elif current_user.role == 'REGIONAL_USER' %}background:rgba(255,180,0,.1);color:#FFB400;border-color:rgba(255,180,0,.2)
-      {% else %}background:rgba(0,200,100,.1);color:#00C864;border-color:rgba(0,200,100,.2){% endif %}">
-      {{ current_user.role }}
-    </span>
-  </span>
-</div>
-{% endif %}
-
-<!-- Pill 2: Oracle · Theme · Logout -->
-<div class="launcher-topbar" style="top:{% if current_user %}54px{% else %}16px{% endif %};right:20px">
   <div class="ora-status checking" id="ora-status" title="Checking Oracle…">
     <span class="ora-dot"></span>
     <span class="ora-text" id="ora-status-text">Oracle…</span>
@@ -254,6 +238,22 @@
   </form>
   {% endif %}
 </div>
+
+<!-- Pill 2: User name + role -->
+{% if current_user %}
+<div class="launcher-topbar" style="top:54px;right:20px">
+  <span style="font-size:11px;color:var(--text-muted);white-space:nowrap">
+    {{ current_user.full_name }}
+    <span class="sidebar-module-badge" style="font-size:10px;padding:0 5px;margin-left:3px;
+      {% if current_user.role == 'SUPER_ADMIN' %}background:rgba(255,80,80,.12);color:#FF5050;border-color:rgba(255,80,80,.25)
+      {% elif current_user.role in ['HO_VIEWER','FINANCE_VIEWER'] %}background:rgba(0,180,255,.1);color:#00B4FF;border-color:rgba(0,180,255,.2)
+      {% elif current_user.role == 'REGIONAL_USER' %}background:rgba(255,180,0,.1);color:#FFB400;border-color:rgba(255,180,0,.2)
+      {% else %}background:rgba(0,200,100,.1);color:#00C864;border-color:rgba(0,200,100,.2){% endif %}">
+      {{ current_user.role }}
+    </span>
+  </span>
+</div>
+{% endif %}
 
 <!-- ── Main launcher content ─────────────────────────── -->
 <div class="launcher-wrap">
