@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sign In — RDC-OP</title>
+<title>Sign In — RDC-OPS</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -19,15 +19,19 @@
     display:flex; flex-direction:column; align-items:center; gap:24px;
   }
   .login-brand {
-    display:flex; flex-direction:column; align-items:center; gap:8px;
+    display:flex; flex-direction:column; align-items:center; gap:12px;
+    padding-bottom: 4px;
   }
-  .login-brand img { width:56px; height:56px; border-radius:12px; }
+  .login-brand img {
+    width:88px; height:88px; border-radius:20px;
+    box-shadow: 0 0 0 2px rgba(99,91,255,.35), 0 8px 28px rgba(0,0,0,.5);
+  }
   .login-brand-title {
-    font-size:22px; font-weight:800; color:var(--text);
-    letter-spacing:-.02em;
+    font-size:28px; font-weight:900; color:var(--text);
+    letter-spacing:.04em;
   }
   .login-brand-sub {
-    font-size:13px; color:var(--text-muted);
+    font-size:13px; color:var(--text-muted); margin-top:-4px;
   }
   .login-card {
     width:100%; background:var(--card); border:1px solid var(--border);
@@ -50,8 +54,8 @@
 
 <div class="login-wrap">
   <div class="login-brand">
-    <img src="{{ url_for('static', filename='img/logo.gif') }}" alt="RDC-OP">
-    <div class="login-brand-title">RDC-OP</div>
+    <img src="{{ url_for('static', filename='img/logo.gif') }}" alt="RDC-OPS">
+    <div class="login-brand-title">RDC-OPS</div>
     <div class="login-brand-sub">Operations Management Platform</div>
   </div>
 
@@ -86,7 +90,7 @@
   </div>
 
   <div class="login-footer">
-    RDC-OP &copy; {{ now.year if now else 2026 }} &nbsp;·&nbsp;
+    RDC-OPS &copy; {{ now.year if now else 2026 }} &nbsp;·&nbsp;
     Contact your administrator if you need access.
   </div>
 </div>
