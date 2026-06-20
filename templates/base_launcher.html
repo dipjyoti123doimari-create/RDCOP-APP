@@ -225,7 +225,7 @@
       </div>
     </div>
   </div>
-  <select id="topbar-theme" style="display:none">
+  <select id="topbar-theme" style="display:none;position:absolute">
     {% for t, icon, cls in _themes %}
     <option value="{{ t }}" {% if t == bg_theme %}selected{% endif %}>{{ t }}</option>
     {% endfor %}
