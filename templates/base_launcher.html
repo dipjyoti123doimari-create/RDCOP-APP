@@ -237,16 +237,7 @@
   {% if current_user %}
   <span class="topbar-divider"></span>
   <!-- User icon + name + role badge -->
-  <span style="font-size:11px;color:var(--text-muted);white-space:nowrap">
-    👤 {{ current_user.full_name }}
-    <span class="sidebar-module-badge" style="font-size:10px;padding:0 5px;margin-left:3px;
-      {% if current_user.role == 'SUPER_ADMIN' %}background:rgba(255,80,80,.12);color:#FF5050;border-color:rgba(255,80,80,.25)
-      {% elif current_user.role in ['HO_VIEWER','FINANCE_VIEWER'] %}background:rgba(0,180,255,.1);color:#00B4FF;border-color:rgba(0,180,255,.2)
-      {% elif current_user.role == 'REGIONAL_USER' %}background:rgba(255,180,0,.1);color:#FFB400;border-color:rgba(255,180,0,.2)
-      {% else %}background:rgba(0,200,100,.1);color:#00C864;border-color:rgba(0,200,100,.2){% endif %}">
-      {{ current_user.role }}
-    </span>
-  </span>
+  <span title="{{ current_user.full_name }} · {{ current_user.role }}" style="font-size:16px;cursor:default;line-height:1">👤</span>
   <span class="topbar-divider"></span>
   <!-- Logout icon only -->
   <form method="POST" action="{{ url_for('page_logout') }}" style="margin:0">
