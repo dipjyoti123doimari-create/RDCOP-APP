@@ -753,7 +753,11 @@ def admin_activity_log():
 @app.route("/")
 @auth.login_required
 def page_home():
-    return render_template("home.html")
+    resp = make_response(render_template("home.html"))
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 @app.route("/id")
 def page_id_dashboard():
