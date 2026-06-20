@@ -231,7 +231,6 @@
     {% endfor %}
   </select>
   {% if current_user %}
-  <span class="topbar-divider"></span>
   <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
     <form method="POST" action="{{ url_for('page_logout') }}" style="margin:0">
       <button type="submit" class="btn btn-secondary btn-sm">🚪 Logout</button>
