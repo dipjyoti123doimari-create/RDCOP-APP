@@ -9,8 +9,12 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 <style>
-  body { display:flex; align-items:center; justify-content:center; min-height:100vh; }
+  body {
+    display:flex; align-items:center; justify-content:center;
+    min-height:100vh; margin:0;
+  }
   .login-wrap {
+    position: relative; z-index: 10;
     width:100%; max-width:400px; padding:0 16px;
     display:flex; flex-direction:column; align-items:center; gap:24px;
   }
@@ -19,19 +23,20 @@
   }
   .login-brand img { width:56px; height:56px; border-radius:12px; }
   .login-brand-title {
-    font-size:22px; font-weight:800; color:var(--text-primary);
+    font-size:22px; font-weight:800; color:var(--text);
     letter-spacing:-.02em;
   }
   .login-brand-sub {
     font-size:13px; color:var(--text-muted);
   }
   .login-card {
-    width:100%; background:var(--card-bg); border:1px solid var(--border);
+    width:100%; background:var(--card); border:1px solid var(--border);
     border-radius:16px; padding:28px 28px 24px;
-    box-shadow:0 8px 32px rgba(0,0,0,.18);
+    box-shadow:0 8px 32px rgba(0,0,0,.35);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   }
   .login-card h2 {
-    font-size:16px; font-weight:700; color:var(--text-primary);
+    font-size:16px; font-weight:700; color:var(--text);
     margin:0 0 20px 0;
   }
   .login-footer {
