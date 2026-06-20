@@ -200,7 +200,7 @@
 {% set _themes = [('Pre-dawn','🌑','ti-predawn'),('Sunrise','🌅','ti-sunrise'),('Daytime','☀️','ti-daytime'),('Dusk','🌆','ti-dusk'),('Sunset','🌇','ti-sunset'),('Night','🌙','')] %}
 
 <!-- Pill 1: Oracle · Theme · Logout -->
-<div class="launcher-topbar" style="top:16px;right:20px">
+<div style="position:fixed;top:16px;right:20px;z-index:200;display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.07);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--border);border-radius:12px;padding:8px 14px;">
   <div class="ora-status checking" id="ora-status" title="Checking Oracle…">
     <span class="ora-dot"></span>
     <span class="ora-text" id="ora-status-text">Oracle…</span>
@@ -241,10 +241,7 @@
 
 <!-- Pill 2: User name + role -->
 {% if current_user %}
-<div style="position:fixed;top:62px;right:20px;z-index:200;
-  display:flex;align-items:center;gap:8px;
-  background:rgba(255,255,255,0.07);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
-  border:1px solid var(--border);border-radius:12px;padding:6px 14px;">
+<div style="position:fixed;top:62px;right:20px;z-index:200;display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.07);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--border);border-radius:12px;padding:6px 14px;">
   <span style="font-size:11px;color:var(--text-muted);white-space:nowrap">
     {{ current_user.full_name }}
     <span class="sidebar-module-badge" style="font-size:10px;padding:0 5px;margin-left:3px;
