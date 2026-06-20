@@ -1364,6 +1364,21 @@ def get_user_by_username(username: str) -> dict | None:
         conn.close()
 
 
+def get_user_by_email(email: str) -> dict | None:
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE LOWER(email) = LOWER(?)",
+                    (email.strip(),))
+        row = cur.fetchone()
+        if row is None:
+            return None
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
+    finally:
+        conn.close()
+
+
 def get_all_users() -> list:
     conn = get_connection()
     try:

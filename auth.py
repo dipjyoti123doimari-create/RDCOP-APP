@@ -355,19 +355,19 @@ def login_view():
         return render_template("login.html",
                                next=request.args.get("next", ""))
 
-    username = request.form.get("username", "").strip()
+    email = request.form.get("username", "").strip()
     password = request.form.get("password", "")
     next_url = request.form.get("next", "").strip() or url_for("page_home")
 
-    if not username or not password:
-        flash("Username and password are required.", "error")
+    if not email or not password:
+        flash("Email and password are required.", "error")
         return render_template("login.html", next=next_url), 400
 
-    user = db.get_user_by_username(username)
+    user = db.get_user_by_email(email)
 
     if user is None:
-        log_login(None, "FAILED", f"Unknown username: {username}")
-        flash("Invalid username or password.", "error")
+        log_login(None, "FAILED", f"Unknown email: {email}")
+        flash("Invalid email or password.", "error")
         return render_template("login.html", next=next_url), 401
 
     if not user.get("is_active"):
