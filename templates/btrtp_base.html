@@ -103,7 +103,7 @@
       </select>
       {% if current_user %}
       <span class="topbar-divider"></span>
-      <span style="font-size:11px;color:var(--text-muted);white-space:nowrap">
+      <span class="topbar-reveal" style="font-size:11px;color:var(--text-muted);white-space:nowrap">
           {{ current_user.full_name }}
           <span class="sidebar-module-badge" style="font-size:10px;padding:0 5px;margin-left:3px;
             {% if current_user.role == 'SUPER_ADMIN' %}background:rgba(255,80,80,.12);color:#FF5050;border-color:rgba(255,80,80,.25)
@@ -116,7 +116,7 @@
           · 🏭 {{ allowed_plants | join(', ') }}
           {% endif %}
         </span>
-      <form method="POST" action="{{ url_for('page_logout') }}" style="margin:0">
+      <form class="topbar-reveal" method="POST" action="{{ url_for('page_logout') }}" style="margin:0">
         <button type="submit" class="btn btn-secondary btn-sm">🚪 Logout</button>
       </form>
       {% endif %}
@@ -150,14 +150,18 @@
   }, 420);
 
   document.querySelector(".sidebar-back-btn").addEventListener("click", function(e) {
-    if (!reveals.length) return;
+    if (!reveals.length) { return; }
     e.preventDefault();
     var href = this.href;
+    var last = reveals[reveals.length - 1];
+    last.addEventListener("animationend", function() {
+      window.location.href = href;
+    }, { once: true });
     reveals.forEach(function(el) {
       el.classList.remove("show");
       el.classList.add("hide");
     });
-    setTimeout(function() { window.location.href = href; }, 450);
+    setTimeout(function() { window.location.href = href; }, 600);
   });
 })();
 </script>
