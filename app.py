@@ -33,7 +33,7 @@ except ImportError:
 import pandas as pd
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from flask import (Flask, flash, g, jsonify, redirect, render_template,
+from flask import (Flask, flash, g, jsonify, make_response, redirect, render_template,
                    request, send_file, url_for)
 
 import auth
