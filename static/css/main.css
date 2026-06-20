@@ -510,17 +510,21 @@ tbody tr.row-yellow  td { background: rgba(251,191,36,0.10) !important; }
   opacity: 0; max-width: 0;
 }
 .topbar-reveal.show {
-  animation: slideInFromLeft 0.5s cubic-bezier(0.25,1,0.5,1) forwards;
+  animation: slideInFromLeft 0.75s cubic-bezier(0.25,1,0.5,1) forwards;
 }
 .topbar-reveal.show:nth-child(1) { animation-delay: 0.0s; }
-.topbar-reveal.show:nth-child(2) { animation-delay: 0.08s; }
-.topbar-reveal.show:nth-child(3) { animation-delay: 0.16s; }
+.topbar-reveal.show:nth-child(2) { animation-delay: 0.12s; }
+.topbar-reveal.show:nth-child(3) { animation-delay: 0.24s; }
+.topbar-reveal.show:nth-child(4) { animation-delay: 0.36s; }
+.topbar-reveal.show:nth-child(5) { animation-delay: 0.48s; }
 .topbar-reveal.hide {
-  animation: slideOutToRight 0.35s cubic-bezier(0.5,0,0.75,0) forwards;
+  animation: slideOutToRight 0.55s cubic-bezier(0.5,0,0.75,0) forwards;
 }
-.topbar-reveal.hide:nth-child(1) { animation-delay: 0.10s; }
-.topbar-reveal.hide:nth-child(2) { animation-delay: 0.05s; }
+.topbar-reveal.hide:nth-child(1) { animation-delay: 0.16s; }
+.topbar-reveal.hide:nth-child(2) { animation-delay: 0.08s; }
 .topbar-reveal.hide:nth-child(3) { animation-delay: 0s; }
+.topbar-reveal.hide:nth-child(4) { animation-delay: 0s; }
+.topbar-reveal.hide:nth-child(5) { animation-delay: 0s; }
 
 /* ---- Divider ---- */
 .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
