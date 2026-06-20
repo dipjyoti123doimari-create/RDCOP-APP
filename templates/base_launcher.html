@@ -199,18 +199,17 @@
 <!-- ── Topbar pills (fixed top-right) ────────────────── -->
 {% set _themes = [('Pre-dawn','🌑','ti-predawn'),('Sunrise','🌅','ti-sunrise'),('Daytime','☀️','ti-daytime'),('Dusk','🌆','ti-dusk'),('Sunset','🌇','ti-sunset'),('Night','🌙','')] %}
 
-<!-- Pill 1: Oracle · Theme · Logout -->
-<div style="position:fixed;top:16px;right:20px;z-index:200;display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.07);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--border);border-radius:12px;padding:8px 14px;">
-  <div class="ora-status checking" id="ora-status" title="Checking Oracle…">
+<!-- Launcher topbar: single compact icon-only pill -->
+<div style="position:fixed;top:16px;right:20px;z-index:200;display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.07);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--border);border-radius:12px;padding:6px 10px;">
+  <!-- Oracle dot only -->
+  <div class="ora-status checking" id="ora-status" title="Oracle connection status">
     <span class="ora-dot"></span>
-    <span class="ora-text" id="ora-status-text">Oracle…</span>
   </div>
   <span class="topbar-divider"></span>
-  <span class="topbar-label">Theme</span>
-  <div class="theme-picker" id="theme-picker">
-    <div class="theme-picker-btn" id="theme-picker-btn" onclick="toggleThemePicker()">
+  <!-- Theme icon only (no label, no text) -->
+  <div class="theme-picker" id="theme-picker" title="Change theme">
+    <div class="theme-picker-btn" id="theme-picker-btn" onclick="toggleThemePicker()" style="gap:4px">
       <span id="theme-icon-display">{% for t,i,cls in _themes %}{% if t == bg_theme %}<span class="{{ cls }}">{{ i }}</span>{% if t == 'Night' %}<span class="star-sparkle">✦</span>{% endif %}{% endif %}{% endfor %}</span>
-      <span id="theme-label-display">{{ bg_theme }}</span>
       <span class="ms-arrow">▾</span>
     </div>
     <div class="theme-picker-panel" id="theme-picker-panel" style="display:none">
@@ -233,17 +232,9 @@
   </select>
   {% if current_user %}
   <span class="topbar-divider"></span>
-  <form method="POST" action="{{ url_for('page_logout') }}" style="margin:0">
-    <button type="submit" class="btn btn-secondary btn-sm">🚪 Logout</button>
-  </form>
-  {% endif %}
-</div>
-
-<!-- Pill 2: User name + role -->
-{% if current_user %}
-<div style="position:fixed;top:62px;right:20px;z-index:200;display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.07);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--border);border-radius:12px;padding:6px 14px;">
+  <!-- User icon + name + role badge -->
   <span style="font-size:11px;color:var(--text-muted);white-space:nowrap">
-    {{ current_user.full_name }}
+    👤 {{ current_user.full_name }}
     <span class="sidebar-module-badge" style="font-size:10px;padding:0 5px;margin-left:3px;
       {% if current_user.role == 'SUPER_ADMIN' %}background:rgba(255,80,80,.12);color:#FF5050;border-color:rgba(255,80,80,.25)
       {% elif current_user.role in ['HO_VIEWER','FINANCE_VIEWER'] %}background:rgba(0,180,255,.1);color:#00B4FF;border-color:rgba(0,180,255,.2)
@@ -252,8 +243,13 @@
       {{ current_user.role }}
     </span>
   </span>
+  <span class="topbar-divider"></span>
+  <!-- Logout icon only -->
+  <form method="POST" action="{{ url_for('page_logout') }}" style="margin:0">
+    <button type="submit" title="Logout" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;line-height:1;color:var(--text-muted)">🚪</button>
+  </form>
+  {% endif %}
 </div>
-{% endif %}
 
 <!-- ── Main launcher content ─────────────────────────── -->
 <div class="launcher-wrap">
