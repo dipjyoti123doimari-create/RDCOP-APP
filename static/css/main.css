@@ -496,10 +496,14 @@ tbody tr.row-yellow  td { background: rgba(251,191,36,0.10) !important; }
 @keyframes oraPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 .topbar-divider { width: 1px; height: 18px; background: var(--border); }
 
-/* ---- Module topbar text-reveal animation ---- */
+/* ---- Module topbar text-reveal / hide animation ---- */
 @keyframes slideInFromLeft {
   from { opacity: 0; max-width: 0; transform: translateX(-8px); }
   to   { opacity: 1; max-width: 120px; transform: translateX(0); }
+}
+@keyframes slideOutToRight {
+  from { opacity: 1; max-width: 120px; transform: translateX(0); }
+  to   { opacity: 0; max-width: 0; transform: translateX(8px); }
 }
 .topbar-reveal {
   display: inline-block; overflow: hidden; white-space: nowrap;
@@ -508,6 +512,12 @@ tbody tr.row-yellow  td { background: rgba(251,191,36,0.10) !important; }
 .topbar-reveal:nth-child(1) { animation-delay: 0.05s; }
 .topbar-reveal:nth-child(2) { animation-delay: 0.15s; }
 .topbar-reveal:nth-child(3) { animation-delay: 0.25s; }
+.topbar-reveal.hide {
+  animation: slideOutToRight 0.3s cubic-bezier(0.22,1,0.36,1) both;
+}
+.topbar-reveal.hide:nth-child(1) { animation-delay: 0.1s; }
+.topbar-reveal.hide:nth-child(2) { animation-delay: 0.05s; }
+.topbar-reveal.hide:nth-child(3) { animation-delay: 0s; }
 
 /* ---- Divider ---- */
 .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }

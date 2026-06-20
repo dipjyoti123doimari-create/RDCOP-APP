@@ -144,5 +144,15 @@
   initBackground({ animate: {{ 'true' if bg_animate else 'false' }}, autoTheme: {{ 'true' if bg_auto else 'false' }}, theme: '{{ bg_theme }}' });
 </script>
 {% block scripts %}{% endblock %}
+<script>
+document.querySelector(".sidebar-back-btn").addEventListener("click", function(e) {
+  var reveals = document.querySelectorAll(".topbar-reveal");
+  if (!reveals.length) return;
+  e.preventDefault();
+  var href = this.href;
+  reveals.forEach(function(el) { el.classList.add("hide"); });
+  setTimeout(function() { window.location.href = href; }, 420);
+});
+</script>
 </body>
 </html>
