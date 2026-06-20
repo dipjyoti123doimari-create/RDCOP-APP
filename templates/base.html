@@ -72,16 +72,16 @@
     <div class="topbar">
       <div class="ora-status checking" id="ora-status" title="Checking Oracle…">
         <span class="ora-dot"></span>
-        <span class="ora-text" id="ora-status-text">Oracle…</span>
+        <span class="ora-text topbar-reveal" id="ora-status-text">Oracle…</span>
       </div>
       <span class="topbar-divider"></span>
-      <span class="topbar-label">Theme</span>
+      <span class="topbar-label topbar-reveal">Theme</span>
       {% set _themes = [('Pre-dawn','🌑','ti-predawn'),('Sunrise','🌅','ti-sunrise'),('Daytime','☀️','ti-daytime'),('Dusk','🌆','ti-dusk'),('Sunset','🌇','ti-sunset'),('Night','🌙','')] %}
       <!-- Custom theme picker with per-theme icon animations -->
       <div class="theme-picker" id="theme-picker">
         <div class="theme-picker-btn" id="theme-picker-btn" onclick="toggleThemePicker()">
           <span id="theme-icon-display">{% for t,i,cls in _themes %}{% if t == bg_theme %}<span class="{{ cls }}">{{ i }}</span>{% if t == 'Night' %}<span class="star-sparkle">✦</span>{% endif %}{% endif %}{% endfor %}</span>
-          <span id="theme-label-display">{{ bg_theme }}</span>
+          <span id="theme-label-display" class="topbar-reveal">{{ bg_theme }}</span>
           <span class="ms-arrow">▾</span>
         </div>
         <div class="theme-picker-panel" id="theme-picker-panel" style="display:none">
