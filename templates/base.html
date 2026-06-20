@@ -105,19 +105,24 @@
       </select>
       {% if current_user %}
       <span class="topbar-divider"></span>
-      <span style="font-size:12px;color:var(--text-muted)">
-        👤 {{ current_user.full_name }}
-        <span class="sidebar-module-badge" style="font-size:10px;padding:0 6px;margin-left:4px;
-          {% if current_user.role == 'SUPER_ADMIN' %}background:rgba(255,80,80,.12);color:#FF5050;border-color:rgba(255,80,80,.25)
-          {% elif current_user.role in ['HO_VIEWER','FINANCE_VIEWER'] %}background:rgba(0,180,255,.1);color:#00B4FF;border-color:rgba(0,180,255,.2)
-          {% elif current_user.role == 'REGIONAL_USER' %}background:rgba(255,180,0,.1);color:#FFB400;border-color:rgba(255,180,0,.2)
-          {% else %}background:rgba(0,200,100,.1);color:#00C864;border-color:rgba(0,200,100,.2){% endif %}">
-          {{ current_user.role }}
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+        <form method="POST" action="{{ url_for('page_logout') }}" style="margin:0">
+          <button type="submit" class="btn btn-secondary btn-sm">🚪 Logout</button>
+        </form>
+        <span style="font-size:11px;color:var(--text-muted);white-space:nowrap">
+          {{ current_user.full_name }}
+          <span class="sidebar-module-badge" style="font-size:10px;padding:0 5px;margin-left:3px;
+            {% if current_user.role == 'SUPER_ADMIN' %}background:rgba(255,80,80,.12);color:#FF5050;border-color:rgba(255,80,80,.25)
+            {% elif current_user.role in ['HO_VIEWER','FINANCE_VIEWER'] %}background:rgba(0,180,255,.1);color:#00B4FF;border-color:rgba(0,180,255,.2)
+            {% elif current_user.role == 'REGIONAL_USER' %}background:rgba(255,180,0,.1);color:#FFB400;border-color:rgba(255,180,0,.2)
+            {% else %}background:rgba(0,200,100,.1);color:#00C864;border-color:rgba(0,200,100,.2){% endif %}">
+            {{ current_user.role }}
+          </span>
+          {% if current_user.role in RESTRICTED_ROLES and allowed_plants %}
+          · 🏭 {{ allowed_plants | join(', ') }}
+          {% endif %}
         </span>
-      </span>
-      <form method="POST" action="{{ url_for('page_logout') }}" style="display:inline;margin-left:8px">
-        <button type="submit" class="btn btn-secondary btn-sm">🚪 Logout</button>
-      </form>
+      </div>
       {% endif %}
     </div>
 
