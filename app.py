@@ -973,6 +973,7 @@ def page_home():
         tp_last=tp_last, tp_last_rows=tp_last_rows, tp_cur=tp_cur,
         bt_last=bt_last, bt_last_rows=bt_last_rows, bt_cur=bt_cur,
         ec_last=ec_last, ec_last_rows=ec_last_rows, ec_cur=ec_cur,
+        cur_month_name=_mn(now.month), cur_year=now.year,
         entry_open=entry_open,
         entry_month_name=_mn(entry_month) if entry_open else "",
         entry_year=entry_year,

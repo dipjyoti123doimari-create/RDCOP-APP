@@ -215,8 +215,11 @@
       <div class="ud-card {% if not id_last %}no-click{% endif %}" onclick="{% if id_last %}openModal('modal-id'){% endif %}">
         <div class="ud-card-head">
           <span class="ud-mod-badge id">RDC-I&amp;D</span>
-          <span class="ud-card-tag last">Last Calculated</span>
-          <span class="ud-card-period">{% if id_last %}{{ id_last.month_name }} {{ id_last.year }}{% else %}—{% endif %}</span>
+          {% if id_last %}
+          <span class="ud-card-tag last">{{ id_last.month_name }} {{ id_last.year }}</span>
+          {% else %}
+          <span class="ud-card-tag last">No Data</span>
+          {% endif %}
         </div>
         {% if id_last %}
         <div class="ud-kpi-main">
@@ -248,9 +251,13 @@
         <div class="ud-card-head">
           <span class="ud-mod-badge id">RDC-I&amp;D</span>
           <span class="ud-card-tag current">● Current</span>
-          <span class="ud-card-period">{% if id_cur %}{{ id_cur.month_name }} {{ id_cur.year }}{% else %}—{% endif %}</span>
+          <span class="ud-card-period">{{ cur_month_name }} {{ cur_year }}</span>
         </div>
-        {% if id_cur %}
+        {% if current_user.role in ['PLANT_USER', 'REGIONAL_USER'] %}
+        <div class="ud-nodata" style="padding:20px 0">
+          Current month data will reflect after<br>this month's calculation is run.
+        </div>
+        {% elif id_cur %}
         <div class="ud-kpi-main">
           <div class="ud-kpi-val c-muted">{{ id_cur.emp_count }} <span style="font-size:14px;font-weight:600">employees</span></div>
           <div class="ud-kpi-lbl">Data Loaded</div>
@@ -278,8 +285,11 @@
       <div class="ud-card {% if not tp_last %}no-click{% endif %}" onclick="{% if tp_last %}openModal('modal-tp'){% endif %}">
         <div class="ud-card-head">
           <span class="ud-mod-badge tp">RDC-TP</span>
-          <span class="ud-card-tag last">Last Calculated</span>
-          <span class="ud-card-period">{% if tp_last %}{{ tp_last.month_name }} {{ tp_last.year }}{% else %}—{% endif %}</span>
+          {% if tp_last %}
+          <span class="ud-card-tag last">{{ tp_last.month_name }} {{ tp_last.year }}</span>
+          {% else %}
+          <span class="ud-card-tag last">No Data</span>
+          {% endif %}
         </div>
         {% if tp_last %}
         <div class="ud-kpi-main">
@@ -310,7 +320,7 @@
         <div class="ud-card-head">
           <span class="ud-mod-badge tp">RDC-TP</span>
           <span class="ud-card-tag current">● Current</span>
-          <span class="ud-card-period">{% if tp_cur %}{{ tp_cur.month_name }} {{ tp_cur.year }}{% else %}—{% endif %}</span>
+          <span class="ud-card-period">{{ cur_month_name }} {{ cur_year }}</span>
         </div>
         {% if tp_cur %}
         <div class="ud-kpi-main">
@@ -340,8 +350,11 @@
       <div class="ud-card {% if not bt_last %}no-click{% endif %}" onclick="{% if bt_last %}openModal('modal-bt'){% endif %}">
         <div class="ud-card-head">
           <span class="ud-mod-badge bt">RDC-BTRTP</span>
-          <span class="ud-card-tag last">Last Calculated</span>
-          <span class="ud-card-period">{% if bt_last %}{{ bt_last.month_name }} {{ bt_last.year }}{% else %}—{% endif %}</span>
+          {% if bt_last %}
+          <span class="ud-card-tag last">{{ bt_last.month_name }} {{ bt_last.year }}</span>
+          {% else %}
+          <span class="ud-card-tag last">No Data</span>
+          {% endif %}
         </div>
         {% if bt_last %}
         <div class="ud-kpi-main">
@@ -372,7 +385,7 @@
         <div class="ud-card-head">
           <span class="ud-mod-badge bt">RDC-BTRTP</span>
           <span class="ud-card-tag current">● Current</span>
-          <span class="ud-card-period">{% if bt_cur %}{{ bt_cur.month_name }} {{ bt_cur.year }}{% else %}—{% endif %}</span>
+          <span class="ud-card-period">{{ cur_month_name }} {{ cur_year }}</span>
         </div>
         {% if bt_cur %}
         <div class="ud-kpi-main">
@@ -396,8 +409,11 @@
       <div class="ud-card {% if not ec_last %}no-click{% endif %}" onclick="{% if ec_last %}openModal('modal-ec'){% endif %}">
         <div class="ud-card-head">
           <span class="ud-mod-badge ec">RDC-ECMD</span>
-          <span class="ud-card-tag last">Last Calculated</span>
-          <span class="ud-card-period">{% if ec_last %}{{ ec_last.month_name }} {{ ec_last.year }}{% else %}—{% endif %}</span>
+          {% if ec_last %}
+          <span class="ud-card-tag last">{{ ec_last.month_name }} {{ ec_last.year }}</span>
+          {% else %}
+          <span class="ud-card-tag last">No Data</span>
+          {% endif %}
         </div>
         {% if ec_last %}
         <div class="ud-kpi-main">
@@ -424,7 +440,7 @@
         <div class="ud-card-head">
           <span class="ud-mod-badge ec">RDC-ECMD</span>
           <span class="ud-card-tag current">● Current</span>
-          <span class="ud-card-period">{% if ec_cur %}{{ ec_cur.month_name }} {{ ec_cur.year }}{% else %}—{% endif %}</span>
+          <span class="ud-card-period">{{ cur_month_name }} {{ cur_year }}</span>
         </div>
         {% if ec_cur and ec_cur.plants > 0 %}
         <div class="ud-kpi-main">
