@@ -245,56 +245,66 @@ def _shared_oracle_fetch_job():
 
 
 
-def _auto_calculate_current_month():
-    """
-    Runs daily at 00:30 — after Oracle data has been fetched (00:10).
-    Calculates I&D, TP, and BTRTP for the current month automatically.
-
-    I&D: uses current-month maintenance cost if set; falls back to the latest
-    available maintenance cost data (calculator already does this internally).
-    Skipped only when no maintenance cost rows exist at all.
-    """
-    today  = _date.today()
-    month  = today.month
-    year   = today.year
-    fd     = str(today.replace(day=1))
-    td     = str(today)
+def _auto_calc_one_period(month, year, fd, td, label):
+    """Calculate all 3 modules for a single period. Called for both prev and current month."""
+    import calendar as _cal2
     try:
-        # I&D auto-calculation — uses current-month maintenance cost if set,
-        # falls back to latest available month's data, or ₹0 if none uploaded.
-        result = calculator.run_calculation(
-            month, year, start_date=fd, end_date=td, persist=True)
+        result = calculator.run_calculation(month, year, start_date=fd, end_date=td, persist=True)
         if result.get("error"):
-            print(f"[auto-calc] I&D skipped — {result['error']}")
+            print(f"[auto-calc] I&D {label} skipped — {result['error']}")
         elif result["total_employees"] == 0:
-            print(f"[auto-calc] I&D skipped — no production data for {year}-{month:02d}")
+            print(f"[auto-calc] I&D {label} skipped — no production data")
         else:
-            print(f"[auto-calc] I&D done — {result['total_employees']} employees "
-                  f"for {year}-{month:02d}")
+            print(f"[auto-calc] I&D {label} done — {result['total_employees']} employees")
     except Exception as exc:
-        print(f"[auto-calc] I&D error: {exc}")
+        print(f"[auto-calc] I&D {label} error: {exc}")
     try:
-        # TP auto-calculation
         plant_rows, loc_rows, warns = tp_calculator.run_tp_calculation(
             month, year, from_date=fd, to_date=td)
         if plant_rows:
             tp_calculator.save_tp_results(plant_rows, month, year)
-            print(f"[auto-calc] TP done — {len(plant_rows)} plants for {year}-{month:02d}")
+            print(f"[auto-calc] TP {label} done — {len(plant_rows)} plants")
         else:
-            print(f"[auto-calc] TP skipped — no data ({'; '.join(warns[:2])})")
+            print(f"[auto-calc] TP {label} skipped — {'; '.join(warns[:2])}")
     except Exception as exc:
-        print(f"[auto-calc] TP error: {exc}")
+        print(f"[auto-calc] TP {label} error: {exc}")
     try:
-        # BTRTP auto-calculation
         batcher_rows, warns = btrtp_calculator.run_btrtp_calculation(
             month, year, from_date=fd, to_date=td)
         if batcher_rows:
             btrtp_calculator.save_btrtp_results(batcher_rows, month, year)
-            print(f"[auto-calc] BTRTP done — {len(batcher_rows)} batcher rows for {year}-{month:02d}")
+            print(f"[auto-calc] BTRTP {label} done — {len(batcher_rows)} batcher rows")
         else:
-            print(f"[auto-calc] BTRTP skipped — no data ({'; '.join(warns[:2])})")
+            print(f"[auto-calc] BTRTP {label} skipped — {'; '.join(warns[:2])}")
     except Exception as exc:
-        print(f"[auto-calc] BTRTP error: {exc}")
+        print(f"[auto-calc] BTRTP {label} error: {exc}")
+
+
+def _auto_calculate_current_month():
+    """
+    Runs daily at 00:30 — after Oracle data has been fetched (00:10).
+    Calculates I&D, TP, and BTRTP for both previous month (full) and current month.
+    Previous month is always recalculated with complete data.
+    Current month uses data up to today.
+    """
+    import calendar as _cal2
+    today = _date.today()
+
+    # Previous month — full range
+    if today.month == 1:
+        prev_m, prev_y = 12, today.year - 1
+    else:
+        prev_m, prev_y = today.month - 1, today.year
+    prev_fd = str(_date(prev_y, prev_m, 1))
+    prev_td = str(_date(prev_y, prev_m, _cal2.monthrange(prev_y, prev_m)[1]))
+    _auto_calc_one_period(prev_m, prev_y, prev_fd, prev_td,
+                          f"{prev_y}-{prev_m:02d}(prev)")
+
+    # Current month — 1st → today
+    cur_fd = str(today.replace(day=1))
+    cur_td = str(today)
+    _auto_calc_one_period(today.month, today.year, cur_fd, cur_td,
+                          f"{today.year}-{today.month:02d}(cur)")
 
 
 def _startup_oracle_fetch():
