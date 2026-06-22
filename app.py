@@ -763,52 +763,134 @@ def page_home():
         return resp
 
     # All other roles get the unified user dashboard
-    import calendar
+    from datetime import date as _today
     MONTHS = ["January","February","March","April","May","June",
               "July","August","September","October","November","December"]
+    def _mn(m): return MONTHS[m-1] if m else "—"
 
-    def _month_name(m): return MONTHS[m-1] if m else "—"
+    now       = _today.today()
+    cur_ym    = f"{now.year}-{now.month:02d}"
+    # previous calendar month
+    if now.month == 1:
+        prev_m, prev_y = 12, now.year - 1
+    else:
+        prev_m, prev_y = now.month - 1, now.year
+    prev_ym = f"{prev_y}-{prev_m:02d}"
 
-    # I&D latest KPI
     conn = database.get_connection()
     try:
         cur = conn.cursor()
+
+        # ── I&D last calculated ──────────────────────────────
         cur.execute("""SELECT month, year,
             COUNT(*) as total_emp,
-            SUM(CASE WHEN incentive_eligible='Yes' THEN 1 ELSE 0 END) as eligible,
-            ROUND(SUM(COALESCE(incentive_amount,0)),0) as total_incentive,
-            ROUND(SUM(COALESCE(deduction_amount,0)),0) as total_deduction
+            SUM(CASE WHEN incentive_eligible='Yes' THEN 1 ELSE 0 END) as inc_emp,
+            SUM(CASE WHEN deduction_amount > 0   THEN 1 ELSE 0 END) as ded_emp,
+            ROUND(SUM(COALESCE(incentive_amount,0)),0) as total_inc,
+            ROUND(SUM(COALESCE(deduction_amount,0)),0) as total_ded
             FROM calculation_results GROUP BY year,month
             ORDER BY year DESC, month DESC LIMIT 1""")
         row = cur.fetchone()
-        id_kpi = dict(row) if row else None
-        if id_kpi:
-            id_kpi["month_name"] = _month_name(id_kpi["month"])
+        id_last = dict(row) if row else None
+        if id_last:
+            id_last["month_name"] = _mn(id_last["month"])
 
-        # TP latest KPI
+        # I&D last calculated — full detail rows for drill-down
+        id_last_rows = []
+        if id_last:
+            cur.execute("""SELECT employee_code, employee_name, designation, plant,
+                total_quantity, incentive_eligible, incentive_amount, deduction_amount, remarks
+                FROM calculation_results WHERE month=? AND year=?
+                ORDER BY plant, employee_name""",
+                (id_last["month"], id_last["year"]))
+            cols = [d[0] for d in cur.description]
+            id_last_rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+
+        # I&D current month raw (backend_data)
+        cur.execute("""SELECT COUNT(DISTINCT created_by) as emp_count,
+            ROUND(SUM(quantity),0) as total_qty
+            FROM backend_data WHERE substr(date,1,7)=?""", (cur_ym,))
+        row = cur.fetchone()
+        id_cur = dict(row) if (row and row[0]) else None
+        if id_cur:
+            id_cur["month_name"] = _mn(now.month)
+            id_cur["month"] = now.month
+            id_cur["year"]  = now.year
+
+        # ── TP last calculated ───────────────────────────────
         cur.execute("""SELECT month, year,
             COUNT(DISTINCT lookup_code) as plants,
             ROUND(AVG(throughput_pct),1) as avg_tp,
+            SUM(CASE WHEN throughput_pct >= 75 THEN 1 ELSE 0 END) as above_target,
+            SUM(CASE WHEN throughput_pct <  75 THEN 1 ELSE 0 END) as below_target,
             ROUND(SUM(total_quantity),0) as total_qty
             FROM tp_results GROUP BY year,month
             ORDER BY year DESC, month DESC LIMIT 1""")
         row = cur.fetchone()
-        tp_kpi = dict(row) if row else None
-        if tp_kpi:
-            tp_kpi["month_name"] = _month_name(tp_kpi["month"])
+        tp_last = dict(row) if row else None
+        if tp_last:
+            tp_last["month_name"] = _mn(tp_last["month"])
 
-        # BTRTP latest KPI
+        # TP last — full detail rows
+        tp_last_rows = []
+        if tp_last:
+            cur.execute("""SELECT plant_name, exco_location, business_head,
+                plant_manager, total_quantity, throughput_pct, batch_count
+                FROM tp_results WHERE month=? AND year=?
+                ORDER BY throughput_pct DESC""",
+                (tp_last["month"], tp_last["year"]))
+            cols = [d[0] for d in cur.description]
+            tp_last_rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+
+        # TP current month raw (tp_oracle_data)
+        cur.execute("""SELECT COUNT(DISTINCT lookup_code) as plants,
+            ROUND(SUM(quantity),0) as total_qty
+            FROM tp_oracle_data WHERE substr(production_date,1,7)=?""", (cur_ym,))
+        row = cur.fetchone()
+        tp_cur = dict(row) if (row and row[0]) else None
+        if tp_cur:
+            tp_cur["month_name"] = _mn(now.month)
+            tp_cur["month"] = now.month
+            tp_cur["year"]  = now.year
+
+        # ── BTRTP last calculated ────────────────────────────
         cur.execute("""SELECT month, year,
             COUNT(*) as batchers,
-            ROUND(AVG(throughput_pct),1) as avg_tp
+            ROUND(AVG(throughput_pct),1) as avg_tp,
+            SUM(CASE WHEN throughput_pct >= 75 THEN 1 ELSE 0 END) as above_target,
+            SUM(CASE WHEN throughput_pct <  75 THEN 1 ELSE 0 END) as below_target
             FROM btrtp_results GROUP BY year,month
             ORDER BY year DESC, month DESC LIMIT 1""")
         row = cur.fetchone()
-        bt_kpi = dict(row) if row else None
-        if bt_kpi:
-            bt_kpi["month_name"] = _month_name(bt_kpi["month"])
+        bt_last = dict(row) if row else None
+        if bt_last:
+            bt_last["month_name"] = _mn(bt_last["month"])
 
-        # ECMD latest KPI
+        # BTRTP last — full detail rows
+        bt_last_rows = []
+        if bt_last:
+            cur.execute("""SELECT batcher_name, batcher_id, plant_name, exco_location,
+                total_quantity, throughput_pct, batch_count
+                FROM btrtp_results WHERE month=? AND year=?
+                ORDER BY throughput_pct DESC""",
+                (bt_last["month"], bt_last["year"]))
+            cols = [d[0] for d in cur.description]
+            bt_last_rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+
+        # BTRTP current (btrtp_oracle_data may not exist yet — guard it)
+        try:
+            cur.execute("""SELECT COUNT(DISTINCT lookup_code) as batchers
+                FROM btrtp_oracle_data WHERE substr(production_date,1,7)=?""", (cur_ym,))
+            row = cur.fetchone()
+            bt_cur = dict(row) if (row and row[0]) else None
+        except Exception:
+            bt_cur = None
+        if bt_cur:
+            bt_cur["month_name"] = _mn(now.month)
+            bt_cur["month"] = now.month
+            bt_cur["year"]  = now.year
+
+        # ── ECMD last calculated ─────────────────────────────
         cur.execute("""SELECT month, year,
             COUNT(*) as plants,
             ROUND(AVG(energy_per_mt),2) as avg_energy,
@@ -816,21 +898,44 @@ def page_home():
             FROM ecmd_results GROUP BY year,month
             ORDER BY year DESC, month DESC LIMIT 1""")
         row = cur.fetchone()
-        ec_kpi = dict(row) if row else None
-        if ec_kpi:
-            ec_kpi["month_name"] = _month_name(ec_kpi["month"])
+        ec_last = dict(row) if row else None
+        if ec_last:
+            ec_last["month_name"] = _mn(ec_last["month"])
+
+        # ECMD last — full detail rows
+        ec_last_rows = []
+        if ec_last:
+            cur.execute("""SELECT plant_name, exco_location, plant_manager,
+                eb_kwh, dg_kwh, total_kwh, total_volume, energy_per_mt,
+                mixer_dg_ratio, diesel_issued_ltrs
+                FROM ecmd_results WHERE month=? AND year=?
+                ORDER BY plant_name""",
+                (ec_last["month"], ec_last["year"]))
+            cols = [d[0] for d in cur.description]
+            ec_last_rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+
+        # ECMD current — readings submitted this month
+        cur.execute("""SELECT COUNT(*) as plants FROM ecmd_readings
+            WHERE month=? AND year=?""", (now.month, now.year))
+        row = cur.fetchone()
+        ec_cur = {"plants": row[0], "month_name": _mn(now.month),
+                  "month": now.month, "year": now.year} if row else None
+
     finally:
         conn.close()
 
-    # ECMD entry window — controlled by SUPER_ADMIN via settings
+    # ECMD entry window
     entry_month = int(database.get_setting("ecmd_entry_open_month", 0) or 0)
     entry_year  = int(database.get_setting("ecmd_entry_open_year",  0) or 0)
     entry_open  = bool(entry_month and entry_year)
 
     resp = make_response(render_template("user_dashboard.html",
-        id_kpi=id_kpi, tp_kpi=tp_kpi, bt_kpi=bt_kpi, ec_kpi=ec_kpi,
+        id_last=id_last, id_last_rows=id_last_rows, id_cur=id_cur,
+        tp_last=tp_last, tp_last_rows=tp_last_rows, tp_cur=tp_cur,
+        bt_last=bt_last, bt_last_rows=bt_last_rows, bt_cur=bt_cur,
+        ec_last=ec_last, ec_last_rows=ec_last_rows, ec_cur=ec_cur,
         entry_open=entry_open,
-        entry_month_name=_month_name(entry_month) if entry_open else "",
+        entry_month_name=_mn(entry_month) if entry_open else "",
         entry_year=entry_year,
         bg_auto=bg_auto(), bg_animate=bg_animate(), bg_theme=bg_theme(),
     ))

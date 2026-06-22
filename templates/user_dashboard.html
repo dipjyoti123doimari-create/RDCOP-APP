@@ -4,27 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
 <title>RDC-OPS — Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Meie+Script&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 <style>
-/* ── User Dashboard ─────────────────────────────────── */
+/* ── Layout ──────────────────────────────────────────── */
 .ud-wrap {
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 80px 24px 48px;
-  gap: 32px;
-  position: relative;
-  z-index: 10;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 80px 24px 60px; gap: 28px;
+  position: relative; z-index: 10;
 }
-
-/* Topbar pill */
 .ud-topbar {
   position: fixed; top: 16px; right: 20px; z-index: 200;
   display: flex; align-items: center; gap: 8px;
@@ -32,104 +24,124 @@
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border); border-radius: 12px; padding: 6px 10px;
 }
-
-/* Header */
 .ud-header {
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
-  text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center;
 }
-.ud-header img {
-  width: 72px; height: 72px; border-radius: 16px;
-  box-shadow: 0 0 0 2px rgba(99,91,255,.3), 0 8px 24px rgba(0,0,0,.4);
-}
-.ud-brand { font-size: 26px; font-weight: 900; letter-spacing: .06em; color: var(--text); }
-.ud-welcome {
-  font-size: 13px; color: var(--text-muted);
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
-}
-.ud-role-badge {
-  display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 7px;
-  border-radius: 20px; border: 1px solid; letter-spacing: .04em;
-}
+.ud-header img { width: 68px; height: 68px; border-radius: 16px;
+  box-shadow: 0 0 0 2px rgba(99,91,255,.3), 0 8px 24px rgba(0,0,0,.4); }
+.ud-brand { font-size: 24px; font-weight: 900; letter-spacing: .06em; }
+.ud-welcome { font-size: 13px; color: var(--text-muted);
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.ud-role-badge { display: inline-block; font-size: 10px; font-weight: 700;
+  padding: 2px 8px; border-radius: 20px; border: 1px solid; letter-spacing: .04em; }
 
-/* Section label */
-.ud-section-label {
-  font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
-  color: var(--text-faint); align-self: flex-start; max-width: 1100px; width: 100%;
-}
+/* ── Section ─────────────────────────────────────────── */
+.ud-section { width: 100%; max-width: 1180px; display: flex; flex-direction: column; gap: 12px; }
+.ud-section-label { font-size: 11px; font-weight: 600; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text-faint); }
 
-/* KPI grid — 4 columns */
-.ud-kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  width: 100%; max-width: 1100px;
-}
-@media (max-width: 900px) { .ud-kpi-grid { grid-template-columns: repeat(2,1fr); } }
-@media (max-width: 520px)  { .ud-kpi-grid { grid-template-columns: 1fr; } }
+/* ── Module row: label + 2 cards side by side ────────── */
+.ud-module-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media(max-width:640px){ .ud-module-row { grid-template-columns: 1fr; } }
 
-/* KPI card */
-.ud-kpi-card {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 16px; padding: 20px 20px 18px;
-  display: flex; flex-direction: column; gap: 14px;
-  transition: border-color .2s, transform .2s;
+/* ── KPI card ────────────────────────────────────────── */
+.ud-card {
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 14px; padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 12px;
+  cursor: pointer; transition: border-color .2s, transform .18s, box-shadow .18s;
 }
-.ud-kpi-card:hover { border-color: var(--border-hover); transform: translateY(-2px); }
+.ud-card:hover { border-color: var(--border-hover); transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+.ud-card.no-click { cursor: default; }
+.ud-card.no-click:hover { transform: none; box-shadow: none; border-color: var(--border); }
 
-.ud-kpi-header {
-  display: flex; align-items: center; justify-content: space-between;
-}
-.ud-kpi-module {
-  font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-  padding: 3px 9px; border-radius: 20px; border: 1px solid;
-}
-.ud-kpi-module.id   { color: #635BFF; border-color: rgba(99,91,255,.3); background: rgba(99,91,255,.1); }
-.ud-kpi-module.tp   { color: #00D4FF; border-color: rgba(0,212,255,.3); background: rgba(0,212,255,.1); }
-.ud-kpi-module.bt   { color: #FFB400; border-color: rgba(255,180,0,.3); background: rgba(255,180,0,.1); }
-.ud-kpi-module.ec   { color: #00C864; border-color: rgba(0,200,100,.3); background: rgba(0,200,100,.1); }
+.ud-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ud-mod-badge { font-size: 10px; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; padding: 3px 9px; border-radius: 20px; border: 1px solid; }
+.ud-mod-badge.id { color:#635BFF; border-color:rgba(99,91,255,.3); background:rgba(99,91,255,.1); }
+.ud-mod-badge.tp { color:#00D4FF; border-color:rgba(0,212,255,.3); background:rgba(0,212,255,.1); }
+.ud-mod-badge.bt { color:#FFB400; border-color:rgba(255,180,0,.3); background:rgba(255,180,0,.1); }
+.ud-mod-badge.ec { color:#00C864; border-color:rgba(0,200,100,.3); background:rgba(0,200,100,.1); }
 
-.ud-kpi-period {
-  font-size: 11px; color: var(--text-faint);
-}
+.ud-card-tag { font-size: 10px; font-weight: 600; padding: 2px 8px;
+  border-radius: 20px; border: 1px solid; }
+.ud-card-tag.last    { color:var(--text-faint); border-color:var(--border); background:transparent; }
+.ud-card-tag.current { color:#FFB400; border-color:rgba(255,180,0,.3); background:rgba(255,180,0,.08); }
 
-.ud-kpi-nodata {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  font-size: 12px; color: var(--text-faint); padding: 16px 0;
-  text-align: center; line-height: 1.6;
-}
+.ud-card-period { font-size: 11px; color: var(--text-faint); }
 
-.ud-kpi-rows { display: flex; flex-direction: column; gap: 10px; }
-.ud-kpi-row  { display: flex; flex-direction: column; gap: 2px; }
-.ud-kpi-val  { font-size: 22px; font-weight: 800; color: var(--text); line-height: 1; }
+.ud-nodata { font-size: 12px; color: var(--text-faint); text-align: center;
+  padding: 18px 0; line-height: 1.6; }
+
+.ud-kpi-main { display: flex; flex-direction: column; gap: 2px; }
+.ud-kpi-val  { font-size: 26px; font-weight: 800; line-height: 1; }
 .ud-kpi-lbl  { font-size: 11px; color: var(--text-faint); }
 
-.ud-kpi-divider { border: none; border-top: 1px solid var(--border); margin: 0; }
+.ud-kpi-sub  { display: flex; gap: 20px; flex-wrap: wrap; padding-top: 4px;
+  border-top: 1px solid var(--border); }
+.ud-sub-item { display: flex; flex-direction: column; gap: 2px; }
+.ud-sub-val  { font-size: 15px; font-weight: 700; }
+.ud-sub-lbl  { font-size: 10px; color: var(--text-faint); }
 
-.ud-kpi-sub { display: flex; gap: 16px; flex-wrap: wrap; }
-.ud-kpi-sub-item { display: flex; flex-direction: column; gap: 2px; }
-.ud-kpi-sub-val  { font-size: 14px; font-weight: 700; color: var(--text-muted); }
-.ud-kpi-sub-lbl  { font-size: 10px; color: var(--text-faint); }
+.ud-hint { font-size: 10px; color: var(--text-faint); text-align: right; margin-top: -4px; }
 
-/* EB & DG update card */
+/* colors */
+.c-inc { color: #00C864; }
+.c-ded { color: #FF5050; }
+.c-tp  { color: #00D4FF; }
+.c-muted { color: var(--text-muted); }
+
+/* ── Action card ─────────────────────────────────────── */
 .ud-action-card {
-  width: 100%; max-width: 1100px;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 16px; padding: 22px 24px;
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  flex-wrap: wrap;
+  width: 100%; max-width: 1180px;
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 14px; padding: 20px 22px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
 }
-.ud-action-info { display: flex; flex-direction: column; gap: 4px; }
-.ud-action-title { font-size: 15px; font-weight: 700; color: var(--text); }
-.ud-action-sub   { font-size: 12px; color: var(--text-faint); }
-.ud-action-closed { font-size: 12px; color: var(--text-faint); font-style: italic; }
+.ud-action-title { font-size: 15px; font-weight: 700; }
+.ud-action-sub   { font-size: 12px; color: var(--text-faint); margin-top: 3px; }
 
-/* amount colors */
-.c-inc  { color: #00C864; }
-.c-ded  { color: #FF5050; }
-.c-neu  { color: var(--text-muted); }
+/* ── Drill-down modal ────────────────────────────────── */
+.ud-modal-overlay {
+  display: none; position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,.6); backdrop-filter: blur(4px);
+  align-items: flex-start; justify-content: center; padding: 40px 16px;
+  overflow-y: auto;
+}
+.ud-modal-overlay.active { display: flex; }
+.ud-modal {
+  background: var(--bg, #0D1B2E); border: 1px solid var(--border);
+  border-radius: 18px; width: 100%; max-width: 1000px;
+  display: flex; flex-direction: column; max-height: 82vh;
+}
+.ud-modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 22px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.ud-modal-head h3 { font-size: 15px; font-weight: 700; margin: 0; }
+.ud-modal-close {
+  background: none; border: none; color: var(--text-muted); font-size: 20px;
+  cursor: pointer; line-height: 1; padding: 0;
+}
+.ud-modal-close:hover { color: var(--text); }
+.ud-modal-body { overflow-y: auto; padding: 18px 22px; flex: 1; }
+
+/* drill table */
+.ud-dt { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ud-dt th {
+  text-align: left; padding: 8px 10px; font-size: 10px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint);
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.ud-dt td { padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,.04);
+  white-space: nowrap; }
+.ud-dt tr:hover td { background: rgba(255,255,255,.03); }
+.ud-dt td.r { text-align: right; }
+.row-inc { color: #00C864; }
+.row-ded { color: #FF5050; }
+.row-neu { color: var(--text-muted); }
+.tp-bar { display: inline-block; height: 6px; border-radius: 3px; vertical-align: middle; margin-right: 6px; }
 </style>
 </head>
 <body>
@@ -137,7 +149,7 @@
 <div id="cursor-glow" aria-hidden="true"></div>
 <div id="toast-container"></div>
 
-<!-- Compact topbar pill -->
+<!-- Topbar pill -->
 {% set _themes = [('Pre-dawn','🌑','ti-predawn'),('Sunrise','🌅','ti-sunrise'),('Daytime','☀️','ti-daytime'),('Dusk','🌆','ti-dusk'),('Sunset','🌇','ti-sunset'),('Night','🌙','')] %}
 <div class="ud-topbar">
   <div class="ora-status checking" id="ora-status" title="Oracle connection status">
@@ -163,9 +175,7 @@
     </div>
   </div>
   <select id="topbar-theme" style="display:none;position:absolute">
-    {% for t, icon, cls in _themes %}
-    <option value="{{ t }}" {% if t == bg_theme %}selected{% endif %}>{{ t }}</option>
-    {% endfor %}
+    {% for t, icon, cls in _themes %}<option value="{{ t }}" {% if t == bg_theme %}selected{% endif %}>{{ t }}</option>{% endfor %}
   </select>
   {% if current_user %}
   <span class="topbar-divider"></span>
@@ -177,7 +187,7 @@
   {% endif %}
 </div>
 
-<!-- Main content -->
+<!-- Main -->
 <div class="ud-wrap">
 
   <!-- Header -->
@@ -196,165 +206,461 @@
     </div>
   </div>
 
-  <!-- KPI section -->
-  <div class="ud-section-label">Last Calculated Performance</div>
+  <!-- ═══ RDC-I&D ══════════════════════════════════════════════ -->
+  <div class="ud-section">
+    <div class="ud-section-label">RDC-I&amp;D — Batching Incentive &amp; Deduction</div>
+    <div class="ud-module-row">
 
-  <div class="ud-kpi-grid">
-
-    <!-- I&D KPI -->
-    <div class="ud-kpi-card">
-      <div class="ud-kpi-header">
-        <span class="ud-kpi-module id">RDC-I&amp;D</span>
-        <span class="ud-kpi-period">
-          {% if id_kpi %}{{ id_kpi.month_name }} {{ id_kpi.year }}{% else %}No data{% endif %}
-        </span>
-      </div>
-      {% if id_kpi %}
-      <div class="ud-kpi-rows">
-        <div class="ud-kpi-row">
-          <div class="ud-kpi-val c-inc">₹ {{ "{:,.0f}".format(id_kpi.total_incentive) }}</div>
-          <div class="ud-kpi-lbl">Total Incentive</div>
+      <!-- Last calculated -->
+      <div class="ud-card {% if not id_last %}no-click{% endif %}" onclick="{% if id_last %}openModal('modal-id'){% endif %}">
+        <div class="ud-card-head">
+          <span class="ud-mod-badge id">RDC-I&amp;D</span>
+          <span class="ud-card-tag last">Last Calculated</span>
+          <span class="ud-card-period">{% if id_last %}{{ id_last.month_name }} {{ id_last.year }}{% else %}—{% endif %}</span>
         </div>
-        <hr class="ud-kpi-divider">
+        {% if id_last %}
+        <div class="ud-kpi-main">
+          <div class="ud-kpi-val c-inc">{{ id_last.inc_emp }} <span style="font-size:14px;font-weight:600">employees</span></div>
+          <div class="ud-kpi-lbl">Earned Incentive</div>
+        </div>
         <div class="ud-kpi-sub">
-          <div class="ud-kpi-sub-item">
-            <div class="ud-kpi-sub-val c-ded">₹ {{ "{:,.0f}".format(id_kpi.total_deduction) }}</div>
-            <div class="ud-kpi-sub-lbl">Total Deduction</div>
+          <div class="ud-sub-item">
+            <div class="ud-sub-val c-ded">{{ id_last.ded_emp }}</div>
+            <div class="ud-sub-lbl">Got Deduction</div>
           </div>
-          <div class="ud-kpi-sub-item">
-            <div class="ud-kpi-sub-val">{{ id_kpi.eligible }} / {{ id_kpi.total_emp }}</div>
-            <div class="ud-kpi-sub-lbl">Eligible Employees</div>
+          <div class="ud-sub-item">
+            <div class="ud-sub-val c-muted">{{ id_last.total_emp }}</div>
+            <div class="ud-sub-lbl">Total Employees</div>
+          </div>
+          <div class="ud-sub-item">
+            <div class="ud-sub-val c-inc">₹ {{ "{:,.0f}".format(id_last.total_inc) }}</div>
+            <div class="ud-sub-lbl">Total Incentive</div>
           </div>
         </div>
+        <div class="ud-hint">Click to view full details →</div>
+        {% else %}
+        <div class="ud-nodata">No calculation run yet</div>
+        {% endif %}
       </div>
-      {% else %}
-      <div class="ud-kpi-nodata">No calculation run yet</div>
-      {% endif %}
-    </div>
 
-    <!-- TP KPI -->
-    <div class="ud-kpi-card">
-      <div class="ud-kpi-header">
-        <span class="ud-kpi-module tp">RDC-TP</span>
-        <span class="ud-kpi-period">
-          {% if tp_kpi %}{{ tp_kpi.month_name }} {{ tp_kpi.year }}{% else %}No data{% endif %}
-        </span>
-      </div>
-      {% if tp_kpi %}
-      <div class="ud-kpi-rows">
-        <div class="ud-kpi-row">
-          <div class="ud-kpi-val c-neu">{{ tp_kpi.avg_tp }}%</div>
-          <div class="ud-kpi-lbl">Avg Plant Throughput</div>
+      <!-- Current ongoing -->
+      <div class="ud-card no-click">
+        <div class="ud-card-head">
+          <span class="ud-mod-badge id">RDC-I&amp;D</span>
+          <span class="ud-card-tag current">● Current</span>
+          <span class="ud-card-period">{% if id_cur %}{{ id_cur.month_name }} {{ id_cur.year }}{% else %}—{% endif %}</span>
         </div>
-        <hr class="ud-kpi-divider">
+        {% if id_cur %}
+        <div class="ud-kpi-main">
+          <div class="ud-kpi-val c-muted">{{ id_cur.emp_count }} <span style="font-size:14px;font-weight:600">employees</span></div>
+          <div class="ud-kpi-lbl">Data Loaded</div>
+        </div>
         <div class="ud-kpi-sub">
-          <div class="ud-kpi-sub-item">
-            <div class="ud-kpi-sub-val">{{ "{:,.0f}".format(tp_kpi.total_qty) }} m³</div>
-            <div class="ud-kpi-sub-lbl">Total Production</div>
-          </div>
-          <div class="ud-kpi-sub-item">
-            <div class="ud-kpi-sub-val">{{ tp_kpi.plants }}</div>
-            <div class="ud-kpi-sub-lbl">Plants</div>
+          <div class="ud-sub-item">
+            <div class="ud-sub-val c-muted">{{ "{:,.0f}".format(id_cur.total_qty or 0) }} m³</div>
+            <div class="ud-sub-lbl">Total Quantity</div>
           </div>
         </div>
+        <div class="ud-hint" style="color:#FFB400">Calculation pending for this month</div>
+        {% else %}
+        <div class="ud-nodata">No data uploaded yet for current month</div>
+        {% endif %}
       </div>
-      {% else %}
-      <div class="ud-kpi-nodata">No calculation run yet</div>
-      {% endif %}
-    </div>
 
-    <!-- BTRTP KPI -->
-    <div class="ud-kpi-card">
-      <div class="ud-kpi-header">
-        <span class="ud-kpi-module bt">RDC-BTRTP</span>
-        <span class="ud-kpi-period">
-          {% if bt_kpi %}{{ bt_kpi.month_name }} {{ bt_kpi.year }}{% else %}No data{% endif %}
-        </span>
-      </div>
-      {% if bt_kpi %}
-      <div class="ud-kpi-rows">
-        <div class="ud-kpi-row">
-          <div class="ud-kpi-val c-neu">{{ bt_kpi.avg_tp }}%</div>
-          <div class="ud-kpi-lbl">Avg Batcher Throughput</div>
-        </div>
-        <hr class="ud-kpi-divider">
-        <div class="ud-kpi-sub">
-          <div class="ud-kpi-sub-item">
-            <div class="ud-kpi-sub-val">{{ bt_kpi.batchers }}</div>
-            <div class="ud-kpi-sub-lbl">Batchers Tracked</div>
-          </div>
-        </div>
-      </div>
-      {% else %}
-      <div class="ud-kpi-nodata">No calculation run yet</div>
-      {% endif %}
     </div>
-
-    <!-- ECMD KPI -->
-    <div class="ud-kpi-card">
-      <div class="ud-kpi-header">
-        <span class="ud-kpi-module ec">RDC-ECMD</span>
-        <span class="ud-kpi-period">
-          {% if ec_kpi %}{{ ec_kpi.month_name }} {{ ec_kpi.year }}{% else %}No data{% endif %}
-        </span>
-      </div>
-      {% if ec_kpi %}
-      <div class="ud-kpi-rows">
-        <div class="ud-kpi-row">
-          <div class="ud-kpi-val c-neu">{{ ec_kpi.avg_energy }} kWh/m³</div>
-          <div class="ud-kpi-lbl">Avg Energy per m³</div>
-        </div>
-        <hr class="ud-kpi-divider">
-        <div class="ud-kpi-sub">
-          <div class="ud-kpi-sub-item">
-            <div class="ud-kpi-sub-val">{{ ec_kpi.avg_dg }}%</div>
-            <div class="ud-kpi-sub-lbl">Avg DG Ratio</div>
-          </div>
-          <div class="ud-kpi-sub-item">
-            <div class="ud-kpi-sub-val">{{ ec_kpi.plants }}</div>
-            <div class="ud-kpi-sub-lbl">Plants</div>
-          </div>
-        </div>
-      </div>
-      {% else %}
-      <div class="ud-kpi-nodata">No calculation run yet</div>
-      {% endif %}
-    </div>
-
   </div>
 
-  <!-- EB & DG Update -->
-  {% if current_user.role == 'PLANT_USER' %}
-  <div class="ud-section-label">Data Entry</div>
-  <div class="ud-action-card">
-    <div class="ud-action-info">
-      <div class="ud-action-title">⚡ Update EB & DG Data</div>
-      {% if entry_open %}
-      <div class="ud-action-sub">
-        Entry open for <strong>{{ entry_month_name }} {{ entry_year }}</strong> — submit your plant's EB consumption and DG ratio data.
+  <!-- ═══ RDC-TP ═══════════════════════════════════════════════ -->
+  <div class="ud-section">
+    <div class="ud-section-label">RDC-TP — Plant Throughput</div>
+    <div class="ud-module-row">
+
+      <div class="ud-card {% if not tp_last %}no-click{% endif %}" onclick="{% if tp_last %}openModal('modal-tp'){% endif %}">
+        <div class="ud-card-head">
+          <span class="ud-mod-badge tp">RDC-TP</span>
+          <span class="ud-card-tag last">Last Calculated</span>
+          <span class="ud-card-period">{% if tp_last %}{{ tp_last.month_name }} {{ tp_last.year }}{% else %}—{% endif %}</span>
+        </div>
+        {% if tp_last %}
+        <div class="ud-kpi-main">
+          <div class="ud-kpi-val c-tp">{{ tp_last.avg_tp }}%</div>
+          <div class="ud-kpi-lbl">Avg Plant Throughput</div>
+        </div>
+        <div class="ud-kpi-sub">
+          <div class="ud-sub-item">
+            <div class="ud-sub-val c-inc">{{ tp_last.above_target }}</div>
+            <div class="ud-sub-lbl">Above Target (≥75%)</div>
+          </div>
+          <div class="ud-sub-item">
+            <div class="ud-sub-val c-ded">{{ tp_last.below_target }}</div>
+            <div class="ud-sub-lbl">Below Target</div>
+          </div>
+          <div class="ud-sub-item">
+            <div class="ud-sub-val c-muted">{{ tp_last.plants }}</div>
+            <div class="ud-sub-lbl">Total Plants</div>
+          </div>
+        </div>
+        <div class="ud-hint">Click to view full plant list →</div>
+        {% else %}
+        <div class="ud-nodata">No calculation run yet</div>
+        {% endif %}
       </div>
+
+      <div class="ud-card no-click">
+        <div class="ud-card-head">
+          <span class="ud-mod-badge tp">RDC-TP</span>
+          <span class="ud-card-tag current">● Current</span>
+          <span class="ud-card-period">{% if tp_cur %}{{ tp_cur.month_name }} {{ tp_cur.year }}{% else %}—{% endif %}</span>
+        </div>
+        {% if tp_cur %}
+        <div class="ud-kpi-main">
+          <div class="ud-kpi-val c-muted">{{ tp_cur.plants }} <span style="font-size:14px;font-weight:600">plants</span></div>
+          <div class="ud-kpi-lbl">Data Available</div>
+        </div>
+        <div class="ud-kpi-sub">
+          <div class="ud-sub-item">
+            <div class="ud-sub-val c-muted">{{ "{:,.0f}".format(tp_cur.total_qty or 0) }} m³</div>
+            <div class="ud-sub-lbl">Quantity So Far</div>
+          </div>
+        </div>
+        <div class="ud-hint" style="color:#FFB400">Calculation pending for this month</div>
+        {% else %}
+        <div class="ud-nodata">No data fetched yet for current month</div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══ RDC-BTRTP ════════════════════════════════════════════ -->
+  <div class="ud-section">
+    <div class="ud-section-label">RDC-BTRTP — Batcher Throughput</div>
+    <div class="ud-module-row">
+
+      <div class="ud-card {% if not bt_last %}no-click{% endif %}" onclick="{% if bt_last %}openModal('modal-bt'){% endif %}">
+        <div class="ud-card-head">
+          <span class="ud-mod-badge bt">RDC-BTRTP</span>
+          <span class="ud-card-tag last">Last Calculated</span>
+          <span class="ud-card-period">{% if bt_last %}{{ bt_last.month_name }} {{ bt_last.year }}{% else %}—{% endif %}</span>
+        </div>
+        {% if bt_last %}
+        <div class="ud-kpi-main">
+          <div class="ud-kpi-val" style="color:#FFB400">{{ bt_last.avg_tp }}%</div>
+          <div class="ud-kpi-lbl">Avg Batcher Throughput</div>
+        </div>
+        <div class="ud-kpi-sub">
+          <div class="ud-sub-item">
+            <div class="ud-sub-val c-inc">{{ bt_last.above_target }}</div>
+            <div class="ud-sub-lbl">Above Target (≥75%)</div>
+          </div>
+          <div class="ud-sub-item">
+            <div class="ud-sub-val c-ded">{{ bt_last.below_target }}</div>
+            <div class="ud-sub-lbl">Below Target</div>
+          </div>
+          <div class="ud-sub-item">
+            <div class="ud-sub-val c-muted">{{ bt_last.batchers }}</div>
+            <div class="ud-sub-lbl">Total Batchers</div>
+          </div>
+        </div>
+        <div class="ud-hint">Click to view full batcher list →</div>
+        {% else %}
+        <div class="ud-nodata">No calculation run yet</div>
+        {% endif %}
+      </div>
+
+      <div class="ud-card no-click">
+        <div class="ud-card-head">
+          <span class="ud-mod-badge bt">RDC-BTRTP</span>
+          <span class="ud-card-tag current">● Current</span>
+          <span class="ud-card-period">{% if bt_cur %}{{ bt_cur.month_name }} {{ bt_cur.year }}{% else %}—{% endif %}</span>
+        </div>
+        {% if bt_cur %}
+        <div class="ud-kpi-main">
+          <div class="ud-kpi-val c-muted">{{ bt_cur.batchers }} <span style="font-size:14px;font-weight:600">batchers</span></div>
+          <div class="ud-kpi-lbl">Data Available</div>
+        </div>
+        <div class="ud-hint" style="color:#FFB400">Calculation pending for this month</div>
+        {% else %}
+        <div class="ud-nodata">No data fetched yet for current month</div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══ RDC-ECMD ═════════════════════════════════════════════ -->
+  <div class="ud-section">
+    <div class="ud-section-label">RDC-ECMD — Energy &amp; DG Ratio</div>
+    <div class="ud-module-row">
+
+      <div class="ud-card {% if not ec_last %}no-click{% endif %}" onclick="{% if ec_last %}openModal('modal-ec'){% endif %}">
+        <div class="ud-card-head">
+          <span class="ud-mod-badge ec">RDC-ECMD</span>
+          <span class="ud-card-tag last">Last Calculated</span>
+          <span class="ud-card-period">{% if ec_last %}{{ ec_last.month_name }} {{ ec_last.year }}{% else %}—{% endif %}</span>
+        </div>
+        {% if ec_last %}
+        <div class="ud-kpi-main">
+          <div class="ud-kpi-val c-inc">{{ ec_last.avg_energy }} <span style="font-size:14px;font-weight:600">kWh/m³</span></div>
+          <div class="ud-kpi-lbl">Avg Energy Consumption</div>
+        </div>
+        <div class="ud-kpi-sub">
+          <div class="ud-sub-item">
+            <div class="ud-sub-val c-muted">{{ ec_last.avg_dg }}%</div>
+            <div class="ud-sub-lbl">Avg DG Ratio</div>
+          </div>
+          <div class="ud-sub-item">
+            <div class="ud-sub-val c-muted">{{ ec_last.plants }}</div>
+            <div class="ud-sub-lbl">Plants</div>
+          </div>
+        </div>
+        <div class="ud-hint">Click to view full plant list →</div>
+        {% else %}
+        <div class="ud-nodata">No calculation run yet</div>
+        {% endif %}
+      </div>
+
+      <div class="ud-card no-click">
+        <div class="ud-card-head">
+          <span class="ud-mod-badge ec">RDC-ECMD</span>
+          <span class="ud-card-tag current">● Current</span>
+          <span class="ud-card-period">{% if ec_cur %}{{ ec_cur.month_name }} {{ ec_cur.year }}{% else %}—{% endif %}</span>
+        </div>
+        {% if ec_cur and ec_cur.plants > 0 %}
+        <div class="ud-kpi-main">
+          <div class="ud-kpi-val c-muted">{{ ec_cur.plants }} <span style="font-size:14px;font-weight:600">plants</span></div>
+          <div class="ud-kpi-lbl">Readings Submitted</div>
+        </div>
+        {% if entry_open %}
+        <div class="ud-hint" style="color:#FFB400">Entry open — awaiting more submissions</div>
+        {% else %}
+        <div class="ud-hint" style="color:var(--text-faint)">Entry window closed</div>
+        {% endif %}
+        {% else %}
+        <div class="ud-nodata">
+          {% if entry_open %}Entry open — no readings submitted yet{% else %}Entry window closed{% endif %}
+        </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+
+  <!-- EB & DG Update button (PLANT_USER only) -->
+  {% if current_user.role == 'PLANT_USER' %}
+  <div class="ud-section">
+    <div class="ud-section-label">Data Entry</div>
+    <div class="ud-action-card">
+      <div>
+        <div class="ud-action-title">⚡ Update EB &amp; DG Data</div>
+        {% if entry_open %}
+        <div class="ud-action-sub">Entry open for <strong>{{ entry_month_name }} {{ entry_year }}</strong> — submit your plant's EB &amp; DG data.</div>
+        {% else %}
+        <div class="ud-action-sub" style="font-style:italic">Entry window is currently closed. Contact your Super Admin.</div>
+        {% endif %}
+      </div>
+      {% if entry_open %}
+      <a href="{{ url_for('ecmd_data_entry') }}" class="btn btn-primary" style="padding:10px 22px;white-space:nowrap">Enter Data →</a>
       {% else %}
-      <div class="ud-action-closed">Entry window is currently closed. Contact your Super Admin to open it.</div>
+      <button class="btn btn-secondary" disabled style="padding:10px 22px;opacity:.4;cursor:not-allowed">Entry Closed</button>
       {% endif %}
     </div>
-    {% if entry_open %}
-    <a href="{{ url_for('ecmd_data_entry') }}" class="btn btn-primary" style="white-space:nowrap;padding:10px 22px">
-      Enter Data →
-    </a>
-    {% else %}
-    <button class="btn btn-secondary" disabled style="white-space:nowrap;padding:10px 22px;opacity:.4;cursor:not-allowed">
-      Entry Closed
-    </button>
-    {% endif %}
   </div>
   {% endif %}
 
+</div><!-- /ud-wrap -->
+
+<!-- ═══════════════════ DRILL-DOWN MODALS ═══════════════════════ -->
+
+<!-- I&D Modal -->
+<div class="ud-modal-overlay" id="modal-id">
+  <div class="ud-modal">
+    <div class="ud-modal-head">
+      <h3>RDC-I&amp;D — {% if id_last %}{{ id_last.month_name }} {{ id_last.year }}{% endif %} — Employee Detail</h3>
+      <button class="ud-modal-close" onclick="closeModal('modal-id')">✕</button>
+    </div>
+    <div class="ud-modal-body">
+      {% if id_last_rows %}
+      <table class="ud-dt">
+        <thead>
+          <tr>
+            <th>Employee</th><th>Code</th><th>Designation</th><th>Plant</th>
+            <th class="r">Quantity (m³)</th><th class="r">Incentive (₹)</th><th class="r">Deduction (₹)</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in id_last_rows %}
+          {% set is_inc = r.incentive_amount and r.incentive_amount > 0 %}
+          {% set is_ded = r.deduction_amount and r.deduction_amount > 0 %}
+          <tr class="{% if is_inc %}row-inc{% elif is_ded %}row-ded{% else %}row-neu{% endif %}">
+            <td>{{ r.employee_name }}</td>
+            <td>{{ r.employee_code }}</td>
+            <td>{{ r.designation }}</td>
+            <td>{{ r.plant }}</td>
+            <td class="r">{{ "{:,.1f}".format(r.total_quantity or 0) }}</td>
+            <td class="r">{% if is_inc %}₹ {{ "{:,.0f}".format(r.incentive_amount) }}{% else %}—{% endif %}</td>
+            <td class="r">{% if is_ded %}₹ {{ "{:,.0f}".format(r.deduction_amount) }}{% else %}—{% endif %}</td>
+            <td>{% if is_inc %}✅ Incentive{% elif is_ded %}🔴 Deduction{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="ud-nodata">No data available</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- TP Modal -->
+<div class="ud-modal-overlay" id="modal-tp">
+  <div class="ud-modal">
+    <div class="ud-modal-head">
+      <h3>RDC-TP — {% if tp_last %}{{ tp_last.month_name }} {{ tp_last.year }}{% endif %} — Plant Throughput</h3>
+      <button class="ud-modal-close" onclick="closeModal('modal-tp')">✕</button>
+    </div>
+    <div class="ud-modal-body">
+      {% if tp_last_rows %}
+      <table class="ud-dt">
+        <thead>
+          <tr>
+            <th>Plant</th><th>Location</th><th>Business Head</th><th>Plant Manager</th>
+            <th class="r">Quantity (m³)</th><th class="r">Throughput %</th><th class="r">Batches</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in tp_last_rows %}
+          {% set above = r.throughput_pct >= 75 %}
+          <tr class="{% if above %}row-inc{% else %}row-ded{% endif %}">
+            <td>{{ r.plant_name }}</td>
+            <td>{{ r.exco_location }}</td>
+            <td>{{ r.business_head }}</td>
+            <td>{{ r.plant_manager }}</td>
+            <td class="r">{{ "{:,.0f}".format(r.total_quantity or 0) }}</td>
+            <td class="r">
+              <span class="tp-bar" style="width:{{ [r.throughput_pct,100]|min }}px;background:{% if above %}#00C864{% else %}#FF5050{% endif %}"></span>
+              {{ r.throughput_pct }}%
+            </td>
+            <td class="r">{{ r.batch_count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="ud-nodata">No data available</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- BTRTP Modal -->
+<div class="ud-modal-overlay" id="modal-bt">
+  <div class="ud-modal">
+    <div class="ud-modal-head">
+      <h3>RDC-BTRTP — {% if bt_last %}{{ bt_last.month_name }} {{ bt_last.year }}{% endif %} — Batcher Throughput</h3>
+      <button class="ud-modal-close" onclick="closeModal('modal-bt')">✕</button>
+    </div>
+    <div class="ud-modal-body">
+      {% if bt_last_rows %}
+      <table class="ud-dt">
+        <thead>
+          <tr>
+            <th>Batcher</th><th>ID</th><th>Plant</th><th>Location</th>
+            <th class="r">Quantity (m³)</th><th class="r">Throughput %</th><th class="r">Batches</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in bt_last_rows %}
+          {% set above = r.throughput_pct >= 75 %}
+          <tr class="{% if above %}row-inc{% else %}row-ded{% endif %}">
+            <td>{{ r.batcher_name }}</td>
+            <td>{{ r.batcher_id }}</td>
+            <td>{{ r.plant_name }}</td>
+            <td>{{ r.exco_location }}</td>
+            <td class="r">{{ "{:,.0f}".format(r.total_quantity or 0) }}</td>
+            <td class="r">
+              <span class="tp-bar" style="width:{{ [r.throughput_pct,100]|min }}px;background:{% if above %}#00C864{% else %}#FF5050{% endif %}"></span>
+              {{ r.throughput_pct }}%
+            </td>
+            <td class="r">{{ r.batch_count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="ud-nodata">No data available</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- ECMD Modal -->
+<div class="ud-modal-overlay" id="modal-ec">
+  <div class="ud-modal">
+    <div class="ud-modal-head">
+      <h3>RDC-ECMD — {% if ec_last %}{{ ec_last.month_name }} {{ ec_last.year }}{% endif %} — Plant Energy &amp; DG</h3>
+      <button class="ud-modal-close" onclick="closeModal('modal-ec')">✕</button>
+    </div>
+    <div class="ud-modal-body">
+      {% if ec_last_rows %}
+      <table class="ud-dt">
+        <thead>
+          <tr>
+            <th>Plant</th><th>Location</th><th>Plant Manager</th>
+            <th class="r">EB kWh</th><th class="r">DG kWh</th><th class="r">Total kWh</th>
+            <th class="r">Volume (m³)</th><th class="r">Energy/m³</th><th class="r">DG Ratio %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in ec_last_rows %}
+          <tr>
+            <td>{{ r.plant_name }}</td>
+            <td>{{ r.exco_location }}</td>
+            <td>{{ r.plant_manager }}</td>
+            <td class="r">{{ "{:,.0f}".format(r.eb_kwh or 0) }}</td>
+            <td class="r">{{ "{:,.0f}".format(r.dg_kwh or 0) }}</td>
+            <td class="r">{{ "{:,.0f}".format(r.total_kwh or 0) }}</td>
+            <td class="r">{{ "{:,.0f}".format(r.total_volume or 0) }}</td>
+            <td class="r">{{ r.energy_per_mt }}</td>
+            <td class="r">{{ r.mixer_dg_ratio }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="ud-nodata">No data available</div>
+      {% endif %}
+    </div>
+  </div>
 </div>
 
 <script src="{{ url_for('static', filename='js/background.js') }}"></script>
 <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 <script>
   initBackground({ animate: {{ 'true' if bg_animate else 'false' }}, autoTheme: {{ 'true' if bg_auto else 'false' }}, theme: '{{ bg_theme }}' });
+
+  function openModal(id) {
+    document.getElementById(id).classList.add('active');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeModal(id) {
+    document.getElementById(id).classList.remove('active');
+    document.body.style.overflow = '';
+  }
+  // Close on backdrop click
+  document.querySelectorAll('.ud-modal-overlay').forEach(function(el) {
+    el.addEventListener('click', function(e) {
+      if (e.target === el) closeModal(el.id);
+    });
+  });
+  // Close on Escape
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.ud-modal-overlay.active').forEach(function(el) {
+        closeModal(el.id);
+      });
+    }
+  });
 </script>
 </body>
 </html>
