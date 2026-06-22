@@ -244,6 +244,85 @@ def _tp_daily_oracle_fetch_job():
         print(f"[tp-daily-fetch] error: {exc}")
 
 
+def _id_daily_oracle_fetch_job():
+    """
+    Runs every day at 00:15.
+    Fetches I&D Oracle backend_data for previous month (full) + current month
+    (1st → today). Keeps local store always at 2-month rolling window.
+    """
+    if not oracle_connector.is_configured():
+        return
+    import calendar as _cal
+    today    = _date.today()
+    cur_from = str(today.replace(day=1))
+    cur_to   = str(today)
+    if today.month == 1:
+        prev_from = _date(today.year - 1, 12, 1)
+        prev_to   = _date(today.year - 1, 12, _cal.monthrange(today.year - 1, 12)[1])
+    else:
+        prev_from = _date(today.year, today.month - 1, 1)
+        prev_to   = _date(today.year, today.month - 1,
+                          _cal.monthrange(today.year, today.month - 1)[1])
+    try:
+        for fd, td in [(str(prev_from), str(prev_to)), (cur_from, cur_to)]:
+            df_ora, _ = oracle_connector.fetch_backend_data(fd, td)
+            if not df_ora.empty:
+                oracle_connector.save_oracle_backend_data(df_ora, fd, td, replace=True)
+        database.purge_old_oracle_data()
+        print(f"[id-daily-fetch] done — prev: {prev_from}→{prev_to}, cur: {cur_from}→{cur_to}")
+    except Exception as exc:
+        print(f"[id-daily-fetch] error: {exc}")
+
+
+def _btrtp_daily_oracle_fetch_job():
+    """
+    Runs every day at 00:20.
+    Fetches BTRTP Oracle data for previous month (full) + current month (1st → today).
+    """
+    if not oracle_connector.is_configured():
+        return
+    import calendar as _cal
+    today    = _date.today()
+    cur_from = str(today.replace(day=1))
+    cur_to   = str(today)
+    if today.month == 1:
+        prev_from = _date(today.year - 1, 12, 1)
+        prev_to   = _date(today.year - 1, 12, _cal.monthrange(today.year - 1, 12)[1])
+    else:
+        prev_from = _date(today.year, today.month - 1, 1)
+        prev_to   = _date(today.year, today.month - 1,
+                          _cal.monthrange(today.year, today.month - 1)[1])
+    try:
+        for fd, td in [(str(prev_from), str(prev_to)), (cur_from, cur_to)]:
+            raw_df, _ = oracle_connector.fetch_btrtp_data(fd, td)
+            if not raw_df.empty:
+                parsed, _ = btrtp_calculator.parse_btrtp_oracle_df(raw_df)
+                oracle_connector.save_btrtp_oracle_data(parsed, replace=True)
+        database.purge_old_oracle_data()
+        print(f"[btrtp-daily-fetch] done — prev: {prev_from}→{prev_to}, cur: {cur_from}→{cur_to}")
+    except Exception as exc:
+        print(f"[btrtp-daily-fetch] error: {exc}")
+
+
+def _startup_oracle_fetch():
+    """
+    Runs once 45 seconds after startup in a background thread.
+    Seeds local Oracle cache for all modules if Oracle is reachable.
+    This ensures data is fresh even when the midnight cron was missed
+    (e.g. server was off, VPN wasn't connected at midnight).
+    """
+    import time as _time
+    _time.sleep(45)
+    if not oracle_connector.is_configured() or not oracle_connector.is_reachable():
+        print("[startup-fetch] Oracle not reachable — skipping startup seed")
+        return
+    print("[startup-fetch] Oracle reachable — seeding all modules")
+    _tp_daily_oracle_fetch_job()
+    _id_daily_oracle_fetch_job()
+    _btrtp_daily_oracle_fetch_job()
+    print("[startup-fetch] done")
+
+
 def _tp_scheduled_email_job():
     """Fires on 1st of each month — emails the previous month's TP report."""
     if database.get_module_setting("tp", "email_schedule_enabled", "false") != "true":
@@ -309,10 +388,22 @@ def _start_scheduler():
     _scheduler.add_job(_tp_daily_oracle_fetch_job,
                        CronTrigger(hour=0, minute=10),
                        id="tp_daily_oracle_fetch", replace_existing=True)
+    # RDC-I&D daily Oracle fetch
+    _scheduler.add_job(_id_daily_oracle_fetch_job,
+                       CronTrigger(hour=0, minute=15),
+                       id="id_daily_oracle_fetch", replace_existing=True)
+    # RDC-BTRTP daily Oracle fetch
+    _scheduler.add_job(_btrtp_daily_oracle_fetch_job,
+                       CronTrigger(hour=0, minute=20),
+                       id="btrtp_daily_oracle_fetch", replace_existing=True)
     _scheduler.start()
 
 
 _start_scheduler()
+
+# Seed Oracle cache on startup (45s delay — waits for network/VPN to settle)
+import threading as _threading
+_threading.Thread(target=_startup_oracle_fetch, daemon=True).start()
 
 # ── Jinja filters / globals ───────────────────────────────────────────────────
 
