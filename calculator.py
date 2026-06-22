@@ -305,10 +305,7 @@ def run_calculation(month: int, year: int,
             }
             for _, row in unmapped_agg.iterrows()
         ]
-        if persist:
-            database.clear_table("unmapped_employees")
-            if unmapped_rows:
-                database.insert_rows("unmapped_employees", unmapped_rows)
+        # unmapped rows saved in Step 6 together with calculation_results
 
         # ── Step 5: Calculate incentive & deduction for mapped employees ─────
         merged = mapped_agg.merge(master_df, on="employee_code", how="left")
@@ -376,9 +373,22 @@ def run_calculation(month: int, year: int,
 
         # ── Step 6: Save results (only when persisting) ──────────────────────
         if persist:
-            database.clear_table("calculation_results")
+            # Delete only this month/year — keeps other months intact
+            conn_d = database.get_connection()
+            try:
+                conn_d.execute(
+                    "DELETE FROM calculation_results WHERE month = ? AND year = ?",
+                    (month, year))
+                conn_d.execute(
+                    "DELETE FROM unmapped_employees WHERE month = ? AND year = ?",
+                    (month, year))
+                conn_d.commit()
+            finally:
+                conn_d.close()
             if results:
                 database.insert_rows("calculation_results", results)
+            if unmapped_rows:
+                database.insert_rows("unmapped_employees", unmapped_rows)
 
         total_incentive = sum(r["incentive_amount"] for r in results)
         total_deduction = sum(r["deduction_amount"] for r in results)
