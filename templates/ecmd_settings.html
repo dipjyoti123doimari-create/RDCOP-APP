@@ -56,6 +56,53 @@
     <a href="{{ url_for('page_settings') }}" class="btn btn-secondary btn-sm" style="margin-top:8px">Configure in I&amp;D Settings</a>
   </div>
 
+  <!-- EB & DG Entry Window -->
+  <div class="settings-tile" onclick="document.getElementById('modal-entry-period').classList.add('active')">
+    <div class="settings-tile-icon">📅</div>
+    <div class="settings-tile-title">EB &amp; DG Entry Window</div>
+    <div class="settings-tile-desc">
+      {% if entry_open_month and entry_open_year %}
+        Open for {{ entry_open_month_name }} {{ entry_open_year }}
+      {% else %}
+        Closed — click to open an entry period
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+<!-- Modal: Entry Period -->
+<div class="modal-overlay" id="modal-entry-period">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <span>EB &amp; DG Entry Window</span>
+      <button class="modal-close" onclick="document.getElementById('modal-entry-period').classList.remove('active')">✕</button>
+    </div>
+    <form method="POST" action="{{ url_for('ecmd_set_entry_period') }}">
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:16px">
+        <p style="font-size:13px;color:var(--text-muted);margin:0">
+          Set which month PLANT_USER can submit EB &amp; DG data. Leave blank to close the entry window.
+        </p>
+        <div class="form-group">
+          <label>Month</label>
+          <select name="entry_month">
+            <option value="">— Closed —</option>
+            {% for m, mn in [('1','January'),('2','February'),('3','March'),('4','April'),('5','May'),('6','June'),('7','July'),('8','August'),('9','September'),('10','October'),('11','November'),('12','December')] %}
+            <option value="{{ m }}" {% if entry_open_month == m|int %}selected{% endif %}>{{ mn }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Year</label>
+          <input type="number" name="entry_year" value="{{ entry_open_year or now.year }}" min="2024" max="2099">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="document.getElementById('modal-entry-period').classList.remove('active')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
 </div>
 
 

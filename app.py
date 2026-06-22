@@ -753,7 +753,87 @@ def admin_activity_log():
 @app.route("/")
 @auth.login_required
 def page_home():
-    resp = make_response(render_template("home.html"))
+    user = auth.get_current_user()
+    # SUPER_ADMIN gets the module launcher as before
+    if user and user.get("role") == "SUPER_ADMIN":
+        resp = make_response(render_template("home.html"))
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
+
+    # All other roles get the unified user dashboard
+    import calendar
+    MONTHS = ["January","February","March","April","May","June",
+              "July","August","September","October","November","December"]
+
+    def _month_name(m): return MONTHS[m-1] if m else "—"
+
+    # I&D latest KPI
+    conn = database.get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("""SELECT month, year,
+            COUNT(*) as total_emp,
+            SUM(CASE WHEN incentive_eligible='Yes' THEN 1 ELSE 0 END) as eligible,
+            ROUND(SUM(COALESCE(incentive_amount,0)),0) as total_incentive,
+            ROUND(SUM(COALESCE(deduction_amount,0)),0) as total_deduction
+            FROM calculation_results GROUP BY year,month
+            ORDER BY year DESC, month DESC LIMIT 1""")
+        row = cur.fetchone()
+        id_kpi = dict(row) if row else None
+        if id_kpi:
+            id_kpi["month_name"] = _month_name(id_kpi["month"])
+
+        # TP latest KPI
+        cur.execute("""SELECT month, year,
+            COUNT(DISTINCT lookup_code) as plants,
+            ROUND(AVG(throughput_pct),1) as avg_tp,
+            ROUND(SUM(total_quantity),0) as total_qty
+            FROM tp_results GROUP BY year,month
+            ORDER BY year DESC, month DESC LIMIT 1""")
+        row = cur.fetchone()
+        tp_kpi = dict(row) if row else None
+        if tp_kpi:
+            tp_kpi["month_name"] = _month_name(tp_kpi["month"])
+
+        # BTRTP latest KPI
+        cur.execute("""SELECT month, year,
+            COUNT(*) as batchers,
+            ROUND(AVG(throughput_pct),1) as avg_tp
+            FROM btrtp_results GROUP BY year,month
+            ORDER BY year DESC, month DESC LIMIT 1""")
+        row = cur.fetchone()
+        bt_kpi = dict(row) if row else None
+        if bt_kpi:
+            bt_kpi["month_name"] = _month_name(bt_kpi["month"])
+
+        # ECMD latest KPI
+        cur.execute("""SELECT month, year,
+            COUNT(*) as plants,
+            ROUND(AVG(energy_per_mt),2) as avg_energy,
+            ROUND(AVG(mixer_dg_ratio),1) as avg_dg
+            FROM ecmd_results GROUP BY year,month
+            ORDER BY year DESC, month DESC LIMIT 1""")
+        row = cur.fetchone()
+        ec_kpi = dict(row) if row else None
+        if ec_kpi:
+            ec_kpi["month_name"] = _month_name(ec_kpi["month"])
+    finally:
+        conn.close()
+
+    # ECMD entry window — controlled by SUPER_ADMIN via settings
+    entry_month = int(database.get_setting("ecmd_entry_open_month", 0) or 0)
+    entry_year  = int(database.get_setting("ecmd_entry_open_year",  0) or 0)
+    entry_open  = bool(entry_month and entry_year)
+
+    resp = make_response(render_template("user_dashboard.html",
+        id_kpi=id_kpi, tp_kpi=tp_kpi, bt_kpi=bt_kpi, ec_kpi=ec_kpi,
+        entry_open=entry_open,
+        entry_month_name=_month_name(entry_month) if entry_open else "",
+        entry_year=entry_year,
+        bg_auto=bg_auto(), bg_animate=bg_animate(), bg_theme=bg_theme(),
+    ))
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     resp.headers["Pragma"] = "no-cache"
     resp.headers["Expires"] = "0"
@@ -4003,6 +4083,11 @@ def ecmd_settings():
     ecmd_email_cc      = database.get_module_setting("ecmd", "email_default_cc", "")
     ecmd_email_subject = database.get_module_setting("ecmd", "email_default_subject", "")
     ecmd_email_body    = database.get_module_setting("ecmd", "email_default_body", "")
+    entry_open_month = int(database.get_setting("ecmd_entry_open_month", 0) or 0)
+    entry_open_year  = int(database.get_setting("ecmd_entry_open_year",  0) or 0)
+    _MN = ["","January","February","March","April","May","June",
+           "July","August","September","October","November","December"]
+    entry_open_month_name = _MN[entry_open_month] if entry_open_month else ""
     ctx = _ecmd_ctx()
     ctx["active_page"] = "settings"
     return render_template("ecmd_settings.html",
@@ -4013,7 +4098,25 @@ def ecmd_settings():
                            sched_last_status=sched_last_status,
                            ecmd_email_to=ecmd_email_to, ecmd_email_cc=ecmd_email_cc,
                            ecmd_email_subject=ecmd_email_subject,
-                           ecmd_email_body=ecmd_email_body, **ctx)
+                           ecmd_email_body=ecmd_email_body,
+                           entry_open_month=entry_open_month,
+                           entry_open_year=entry_open_year,
+                           entry_open_month_name=entry_open_month_name,
+                           **ctx)
+
+
+@app.route("/ecmd/settings/set-entry-period", methods=["POST"])
+@auth.admin_required
+def ecmd_set_entry_period():
+    month = request.form.get("entry_month", "").strip()
+    year  = request.form.get("entry_year",  "").strip()
+    database.set_setting("ecmd_entry_open_month", month if month else "0")
+    database.set_setting("ecmd_entry_open_year",  year  if month else "0")
+    if month and year:
+        flash(f"Entry window opened for month {month}/{year}.", "success")
+    else:
+        flash("Entry window closed.", "success")
+    return redirect(url_for("ecmd_settings"))
 
 
 @app.route("/ecmd/settings/save-schedule", methods=["POST"])

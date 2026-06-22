@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>RDC-OPS — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Meie+Script&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+<style>
+/* ── User Dashboard ─────────────────────────────────── */
+.ud-wrap {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 80px 24px 48px;
+  gap: 32px;
+  position: relative;
+  z-index: 10;
+}
+
+/* Topbar pill */
+.ud-topbar {
+  position: fixed; top: 16px; right: 20px; z-index: 200;
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,0.07);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border); border-radius: 12px; padding: 6px 10px;
+}
+
+/* Header */
+.ud-header {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  text-align: center;
+}
+.ud-header img {
+  width: 72px; height: 72px; border-radius: 16px;
+  box-shadow: 0 0 0 2px rgba(99,91,255,.3), 0 8px 24px rgba(0,0,0,.4);
+}
+.ud-brand { font-size: 26px; font-weight: 900; letter-spacing: .06em; color: var(--text); }
+.ud-welcome {
+  font-size: 13px; color: var(--text-muted);
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
+}
+.ud-role-badge {
+  display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 7px;
+  border-radius: 20px; border: 1px solid; letter-spacing: .04em;
+}
+
+/* Section label */
+.ud-section-label {
+  font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text-faint); align-self: flex-start; max-width: 1100px; width: 100%;
+}
+
+/* KPI grid — 4 columns */
+.ud-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  width: 100%; max-width: 1100px;
+}
+@media (max-width: 900px) { .ud-kpi-grid { grid-template-columns: repeat(2,1fr); } }
+@media (max-width: 520px)  { .ud-kpi-grid { grid-template-columns: 1fr; } }
+
+/* KPI card */
+.ud-kpi-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px; padding: 20px 20px 18px;
+  display: flex; flex-direction: column; gap: 14px;
+  transition: border-color .2s, transform .2s;
+}
+.ud-kpi-card:hover { border-color: var(--border-hover); transform: translateY(-2px); }
+
+.ud-kpi-header {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.ud-kpi-module {
+  font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  padding: 3px 9px; border-radius: 20px; border: 1px solid;
+}
+.ud-kpi-module.id   { color: #635BFF; border-color: rgba(99,91,255,.3); background: rgba(99,91,255,.1); }
+.ud-kpi-module.tp   { color: #00D4FF; border-color: rgba(0,212,255,.3); background: rgba(0,212,255,.1); }
+.ud-kpi-module.bt   { color: #FFB400; border-color: rgba(255,180,0,.3); background: rgba(255,180,0,.1); }
+.ud-kpi-module.ec   { color: #00C864; border-color: rgba(0,200,100,.3); background: rgba(0,200,100,.1); }
+
+.ud-kpi-period {
+  font-size: 11px; color: var(--text-faint);
+}
+
+.ud-kpi-nodata {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; color: var(--text-faint); padding: 16px 0;
+  text-align: center; line-height: 1.6;
+}
+
+.ud-kpi-rows { display: flex; flex-direction: column; gap: 10px; }
+.ud-kpi-row  { display: flex; flex-direction: column; gap: 2px; }
+.ud-kpi-val  { font-size: 22px; font-weight: 800; color: var(--text); line-height: 1; }
+.ud-kpi-lbl  { font-size: 11px; color: var(--text-faint); }
+
+.ud-kpi-divider { border: none; border-top: 1px solid var(--border); margin: 0; }
+
+.ud-kpi-sub { display: flex; gap: 16px; flex-wrap: wrap; }
+.ud-kpi-sub-item { display: flex; flex-direction: column; gap: 2px; }
+.ud-kpi-sub-val  { font-size: 14px; font-weight: 700; color: var(--text-muted); }
+.ud-kpi-sub-lbl  { font-size: 10px; color: var(--text-faint); }
+
+/* EB & DG update card */
+.ud-action-card {
+  width: 100%; max-width: 1100px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px; padding: 22px 24px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  flex-wrap: wrap;
+}
+.ud-action-info { display: flex; flex-direction: column; gap: 4px; }
+.ud-action-title { font-size: 15px; font-weight: 700; color: var(--text); }
+.ud-action-sub   { font-size: 12px; color: var(--text-faint); }
+.ud-action-closed { font-size: 12px; color: var(--text-faint); font-style: italic; }
+
+/* amount colors */
+.c-inc  { color: #00C864; }
+.c-ded  { color: #FF5050; }
+.c-neu  { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<canvas id="bg-canvas"></canvas>
+<div id="cursor-glow" aria-hidden="true"></div>
+<div id="toast-container"></div>
+
+<!-- Compact topbar pill -->
+{% set _themes = [('Pre-dawn','🌑','ti-predawn'),('Sunrise','🌅','ti-sunrise'),('Daytime','☀️','ti-daytime'),('Dusk','🌆','ti-dusk'),('Sunset','🌇','ti-sunset'),('Night','🌙','')] %}
+<div class="ud-topbar">
+  <div class="ora-status checking" id="ora-status" title="Oracle connection status">
+    <span class="ora-dot"></span>
+  </div>
+  <span class="topbar-divider"></span>
+  <div class="theme-picker" id="theme-picker" title="Change theme">
+    <div class="theme-picker-btn" id="theme-picker-btn" onclick="toggleThemePicker()" style="gap:4px">
+      <span id="theme-icon-display">{% for t,i,cls in _themes %}{% if t == bg_theme %}<span class="{{ cls }}">{{ i }}</span>{% if t == 'Night' %}<span class="star-sparkle">✦</span>{% endif %}{% endif %}{% endfor %}</span>
+      <span class="ms-arrow">▾</span>
+    </div>
+    <div class="theme-picker-panel" id="theme-picker-panel" style="display:none">
+      {% for t, icon, cls in _themes %}
+      <div class="theme-picker-opt {% if t == bg_theme %}active{% endif %}" onclick="selectTheme('{{ t }}')">
+        <span><span class="{{ cls }}">{{ icon }}</span>{% if t == 'Night' %}<span class="star-sparkle">✦</span>{% endif %}</span>
+        <span>{{ t }}</span>
+      </div>
+      {% endfor %}
+      <div class="theme-picker-foot">
+        <label class="theme-toggle"><input type="checkbox" id="bg-auto-cb" {% if bg_auto %}checked{% endif %} onchange="toggleBgAuto(this)"> Auto (by time of day)</label>
+        <label class="theme-toggle"><input type="checkbox" id="bg-animate-cb" {% if bg_animate %}checked{% endif %} onchange="toggleBgAnimate(this)"> Animation</label>
+      </div>
+    </div>
+  </div>
+  <select id="topbar-theme" style="display:none;position:absolute">
+    {% for t, icon, cls in _themes %}
+    <option value="{{ t }}" {% if t == bg_theme %}selected{% endif %}>{{ t }}</option>
+    {% endfor %}
+  </select>
+  {% if current_user %}
+  <span class="topbar-divider"></span>
+  <span title="{{ current_user.full_name }} · {{ current_user.role }}" style="font-size:16px;cursor:default;line-height:1">👤</span>
+  <span class="topbar-divider"></span>
+  <form method="POST" action="{{ url_for('page_logout') }}" style="margin:0">
+    <button type="submit" title="Logout" style="background:none;border:none;cursor:pointer;font-size:16px;padding:0;line-height:1;color:var(--text-muted)">🚪</button>
+  </form>
+  {% endif %}
+</div>
+
+<!-- Main content -->
+<div class="ud-wrap">
+
+  <!-- Header -->
+  <div class="ud-header">
+    <img src="{{ url_for('static', filename='img/logo.gif') }}" alt="RDC-OPS">
+    <div class="ud-brand">RDC-OPS</div>
+    <div class="ud-welcome">
+      Welcome, <strong>{{ current_user.full_name }}</strong>
+      <span class="ud-role-badge" style="
+        {% if current_user.role == 'PLANT_USER' %}background:rgba(0,200,100,.1);color:#00C864;border-color:rgba(0,200,100,.25)
+        {% elif current_user.role in ['HO_VIEWER','FINANCE_VIEWER'] %}background:rgba(0,180,255,.1);color:#00B4FF;border-color:rgba(0,180,255,.25)
+        {% elif current_user.role == 'REGIONAL_USER' %}background:rgba(255,180,0,.1);color:#FFB400;border-color:rgba(255,180,0,.25)
+        {% else %}background:rgba(99,91,255,.1);color:#635BFF;border-color:rgba(99,91,255,.25){% endif %}">
+        {{ current_user.role }}
+      </span>
+    </div>
+  </div>
+
+  <!-- KPI section -->
+  <div class="ud-section-label">Last Calculated Performance</div>
+
+  <div class="ud-kpi-grid">
+
+    <!-- I&D KPI -->
+    <div class="ud-kpi-card">
+      <div class="ud-kpi-header">
+        <span class="ud-kpi-module id">RDC-I&amp;D</span>
+        <span class="ud-kpi-period">
+          {% if id_kpi %}{{ id_kpi.month_name }} {{ id_kpi.year }}{% else %}No data{% endif %}
+        </span>
+      </div>
+      {% if id_kpi %}
+      <div class="ud-kpi-rows">
+        <div class="ud-kpi-row">
+          <div class="ud-kpi-val c-inc">₹ {{ "{:,.0f}".format(id_kpi.total_incentive) }}</div>
+          <div class="ud-kpi-lbl">Total Incentive</div>
+        </div>
+        <hr class="ud-kpi-divider">
+        <div class="ud-kpi-sub">
+          <div class="ud-kpi-sub-item">
+            <div class="ud-kpi-sub-val c-ded">₹ {{ "{:,.0f}".format(id_kpi.total_deduction) }}</div>
+            <div class="ud-kpi-sub-lbl">Total Deduction</div>
+          </div>
+          <div class="ud-kpi-sub-item">
+            <div class="ud-kpi-sub-val">{{ id_kpi.eligible }} / {{ id_kpi.total_emp }}</div>
+            <div class="ud-kpi-sub-lbl">Eligible Employees</div>
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <div class="ud-kpi-nodata">No calculation run yet</div>
+      {% endif %}
+    </div>
+
+    <!-- TP KPI -->
+    <div class="ud-kpi-card">
+      <div class="ud-kpi-header">
+        <span class="ud-kpi-module tp">RDC-TP</span>
+        <span class="ud-kpi-period">
+          {% if tp_kpi %}{{ tp_kpi.month_name }} {{ tp_kpi.year }}{% else %}No data{% endif %}
+        </span>
+      </div>
+      {% if tp_kpi %}
+      <div class="ud-kpi-rows">
+        <div class="ud-kpi-row">
+          <div class="ud-kpi-val c-neu">{{ tp_kpi.avg_tp }}%</div>
+          <div class="ud-kpi-lbl">Avg Plant Throughput</div>
+        </div>
+        <hr class="ud-kpi-divider">
+        <div class="ud-kpi-sub">
+          <div class="ud-kpi-sub-item">
+            <div class="ud-kpi-sub-val">{{ "{:,.0f}".format(tp_kpi.total_qty) }} m³</div>
+            <div class="ud-kpi-sub-lbl">Total Production</div>
+          </div>
+          <div class="ud-kpi-sub-item">
+            <div class="ud-kpi-sub-val">{{ tp_kpi.plants }}</div>
+            <div class="ud-kpi-sub-lbl">Plants</div>
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <div class="ud-kpi-nodata">No calculation run yet</div>
+      {% endif %}
+    </div>
+
+    <!-- BTRTP KPI -->
+    <div class="ud-kpi-card">
+      <div class="ud-kpi-header">
+        <span class="ud-kpi-module bt">RDC-BTRTP</span>
+        <span class="ud-kpi-period">
+          {% if bt_kpi %}{{ bt_kpi.month_name }} {{ bt_kpi.year }}{% else %}No data{% endif %}
+        </span>
+      </div>
+      {% if bt_kpi %}
+      <div class="ud-kpi-rows">
+        <div class="ud-kpi-row">
+          <div class="ud-kpi-val c-neu">{{ bt_kpi.avg_tp }}%</div>
+          <div class="ud-kpi-lbl">Avg Batcher Throughput</div>
+        </div>
+        <hr class="ud-kpi-divider">
+        <div class="ud-kpi-sub">
+          <div class="ud-kpi-sub-item">
+            <div class="ud-kpi-sub-val">{{ bt_kpi.batchers }}</div>
+            <div class="ud-kpi-sub-lbl">Batchers Tracked</div>
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <div class="ud-kpi-nodata">No calculation run yet</div>
+      {% endif %}
+    </div>
+
+    <!-- ECMD KPI -->
+    <div class="ud-kpi-card">
+      <div class="ud-kpi-header">
+        <span class="ud-kpi-module ec">RDC-ECMD</span>
+        <span class="ud-kpi-period">
+          {% if ec_kpi %}{{ ec_kpi.month_name }} {{ ec_kpi.year }}{% else %}No data{% endif %}
+        </span>
+      </div>
+      {% if ec_kpi %}
+      <div class="ud-kpi-rows">
+        <div class="ud-kpi-row">
+          <div class="ud-kpi-val c-neu">{{ ec_kpi.avg_energy }} kWh/m³</div>
+          <div class="ud-kpi-lbl">Avg Energy per m³</div>
+        </div>
+        <hr class="ud-kpi-divider">
+        <div class="ud-kpi-sub">
+          <div class="ud-kpi-sub-item">
+            <div class="ud-kpi-sub-val">{{ ec_kpi.avg_dg }}%</div>
+            <div class="ud-kpi-sub-lbl">Avg DG Ratio</div>
+          </div>
+          <div class="ud-kpi-sub-item">
+            <div class="ud-kpi-sub-val">{{ ec_kpi.plants }}</div>
+            <div class="ud-kpi-sub-lbl">Plants</div>
+          </div>
+        </div>
+      </div>
+      {% else %}
+      <div class="ud-kpi-nodata">No calculation run yet</div>
+      {% endif %}
+    </div>
+
+  </div>
+
+  <!-- EB & DG Update -->
+  {% if current_user.role == 'PLANT_USER' %}
+  <div class="ud-section-label">Data Entry</div>
+  <div class="ud-action-card">
+    <div class="ud-action-info">
+      <div class="ud-action-title">⚡ Update EB & DG Data</div>
+      {% if entry_open %}
+      <div class="ud-action-sub">
+        Entry open for <strong>{{ entry_month_name }} {{ entry_year }}</strong> — submit your plant's EB consumption and DG ratio data.
+      </div>
+      {% else %}
+      <div class="ud-action-closed">Entry window is currently closed. Contact your Super Admin to open it.</div>
+      {% endif %}
+    </div>
+    {% if entry_open %}
+    <a href="{{ url_for('ecmd_data_entry') }}" class="btn btn-primary" style="white-space:nowrap;padding:10px 22px">
+      Enter Data →
+    </a>
+    {% else %}
+    <button class="btn btn-secondary" disabled style="white-space:nowrap;padding:10px 22px;opacity:.4;cursor:not-allowed">
+      Entry Closed
+    </button>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+
+<script src="{{ url_for('static', filename='js/background.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script>
+  initBackground({ animate: {{ 'true' if bg_animate else 'false' }}, autoTheme: {{ 'true' if bg_auto else 'false' }}, theme: '{{ bg_theme }}' });
+</script>
+</body>
+</html>
