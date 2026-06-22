@@ -869,20 +869,6 @@ def page_home():
     try:
         cur = conn.cursor()
 
-        # ── I&D last calculated ──────────────────────────────
-        cur.execute("""SELECT month, year,
-            COUNT(*) as total_emp,
-            SUM(CASE WHEN incentive_eligible='Yes' THEN 1 ELSE 0 END) as inc_emp,
-            SUM(CASE WHEN deduction_amount > 0   THEN 1 ELSE 0 END) as ded_emp,
-            ROUND(SUM(COALESCE(incentive_amount,0)),0) as total_inc,
-            ROUND(SUM(COALESCE(deduction_amount,0)),0) as total_ded
-            FROM calculation_results GROUP BY year,month
-            ORDER BY year DESC, month DESC LIMIT 1""")
-        row = cur.fetchone()
-        id_last = dict(row) if row else None
-        if id_last:
-            id_last["month_name"] = _mn(id_last["month"])
-
         # Allowed plants for this user (empty list = all plants for global roles)
         allowed_plants  = auth.get_user_allowed_plants(user)
         user_plant_rows = database.get_user_plant_access(user["id"]) if allowed_plants else []
@@ -894,23 +880,38 @@ def page_home():
             al = [p.lower() for p in allowed_plants]
             return [r for r in rows if str(r.get(col, "")).lower() in al]
 
-        # I&D last calculated — full detail rows for drill-down
-        id_last_rows = []
-        if id_last:
+        # ── I&D — fetch up to 2 calculated months ────────────
+        cur.execute("""SELECT month, year,
+            COUNT(*) as total_emp,
+            SUM(CASE WHEN incentive_eligible='Yes' THEN 1 ELSE 0 END) as inc_emp,
+            SUM(CASE WHEN deduction_amount > 0   THEN 1 ELSE 0 END) as ded_emp,
+            ROUND(SUM(COALESCE(incentive_amount,0)),0) as total_inc,
+            ROUND(SUM(COALESCE(deduction_amount,0)),0) as total_ded
+            FROM calculation_results GROUP BY year,month
+            ORDER BY year DESC, month DESC LIMIT 2""")
+        id_months = []
+        for row in cur.fetchall():
+            d = dict(row); d["month_name"] = _mn(d["month"])
+            id_months.append(d)
+        id_last = id_months[0] if id_months else None
+
+        # Detail rows for each I&D month
+        id_months_rows = []
+        for m in id_months:
             cur.execute("""SELECT employee_code, employee_name, designation, plant,
                 total_quantity, incentive_eligible, incentive_amount, deduction_amount, remarks
                 FROM calculation_results WHERE month=? AND year=?
                 ORDER BY plant, employee_name""",
-                (id_last["month"], id_last["year"]))
+                (m["month"], m["year"]))
             cols = [d[0] for d in cur.description]
-            id_last_rows = _plant_filter(
-                [dict(zip(cols, r)) for r in cur.fetchall()], col="plant")
-            # Recompute summary counts from filtered rows so the card matches
+            rows_f = _plant_filter([dict(zip(cols, r)) for r in cur.fetchall()], col="plant")
             if is_restricted:
-                id_last["total_emp"] = len(id_last_rows)
-                id_last["inc_emp"]   = sum(1 for r in id_last_rows if r.get("incentive_amount") and r["incentive_amount"] > 0)
-                id_last["ded_emp"]   = sum(1 for r in id_last_rows if r.get("deduction_amount") and r["deduction_amount"] > 0)
-                id_last["total_inc"] = sum(r.get("incentive_amount") or 0 for r in id_last_rows)
+                m["total_emp"] = len(rows_f)
+                m["inc_emp"]   = sum(1 for r in rows_f if r.get("incentive_amount") and r["incentive_amount"] > 0)
+                m["ded_emp"]   = sum(1 for r in rows_f if r.get("deduction_amount") and r["deduction_amount"] > 0)
+                m["total_inc"] = sum(r.get("incentive_amount") or 0 for r in rows_f)
+            id_months_rows.append(rows_f)
+        id_last_rows = id_months_rows[0] if id_months_rows else []
 
         # I&D current month — oracle_raw_data first, fallback to backend_data
         cur.execute("""SELECT COUNT(DISTINCT created_by) as emp_count,
@@ -930,7 +931,7 @@ def page_home():
             id_cur["month"] = now.month
             id_cur["year"]  = now.year
 
-        # ── TP last calculated ───────────────────────────────
+        # ── TP — fetch up to 2 calculated months ─────────────
         cur.execute("""SELECT month, year,
             COUNT(DISTINCT lookup_code) as plants,
             ROUND(AVG(throughput_pct),1) as avg_tp,
@@ -938,28 +939,29 @@ def page_home():
             SUM(CASE WHEN throughput_pct <  75 THEN 1 ELSE 0 END) as below_target,
             ROUND(SUM(total_quantity),0) as total_qty
             FROM tp_results GROUP BY year,month
-            ORDER BY year DESC, month DESC LIMIT 1""")
-        row = cur.fetchone()
-        tp_last = dict(row) if row else None
-        if tp_last:
-            tp_last["month_name"] = _mn(tp_last["month"])
+            ORDER BY year DESC, month DESC LIMIT 2""")
+        tp_months = []
+        for row in cur.fetchall():
+            d = dict(row); d["month_name"] = _mn(d["month"])
+            tp_months.append(d)
+        tp_last = tp_months[0] if tp_months else None
 
-        # TP last — full detail rows
-        tp_last_rows = []
-        if tp_last:
+        tp_months_rows = []
+        for m in tp_months:
             cur.execute("""SELECT plant_name, exco_location, business_head,
                 plant_manager, total_quantity, throughput_pct, batch_count
                 FROM tp_results WHERE month=? AND year=?
                 ORDER BY throughput_pct DESC""",
-                (tp_last["month"], tp_last["year"]))
+                (m["month"], m["year"]))
             cols = [d[0] for d in cur.description]
-            tp_last_rows = _plant_filter(
-                [dict(zip(cols, r)) for r in cur.fetchall()], col="plant_name")
+            rows_f = _plant_filter([dict(zip(cols, r)) for r in cur.fetchall()], col="plant_name")
             if is_restricted:
-                tp_last["plants"]       = len(tp_last_rows)
-                tp_last["above_target"] = sum(1 for r in tp_last_rows if (r.get("throughput_pct") or 0) >= 75)
-                tp_last["below_target"] = sum(1 for r in tp_last_rows if (r.get("throughput_pct") or 0) < 75)
-                tp_last["avg_tp"]       = round(sum(r.get("throughput_pct") or 0 for r in tp_last_rows) / len(tp_last_rows), 1) if tp_last_rows else 0
+                m["plants"]       = len(rows_f)
+                m["above_target"] = sum(1 for r in rows_f if (r.get("throughput_pct") or 0) >= 75)
+                m["below_target"] = sum(1 for r in rows_f if (r.get("throughput_pct") or 0) < 75)
+                m["avg_tp"]       = round(sum(r.get("throughput_pct") or 0 for r in rows_f) / len(rows_f), 1) if rows_f else 0
+            tp_months_rows.append(rows_f)
+        tp_last_rows = tp_months_rows[0] if tp_months_rows else []
 
         # TP current month — from shared oracle_raw_data (plant_code = lookup proxy)
         cur.execute("""SELECT COUNT(DISTINCT plant_code) as plants,
@@ -980,35 +982,36 @@ def page_home():
         else:
             tp_last_known_sync = None
 
-        # ── BTRTP last calculated ────────────────────────────
+        # ── BTRTP — fetch up to 2 calculated months ──────────
         cur.execute("""SELECT month, year,
             COUNT(*) as batchers,
             ROUND(AVG(throughput_pct),1) as avg_tp,
             SUM(CASE WHEN throughput_pct >= 75 THEN 1 ELSE 0 END) as above_target,
             SUM(CASE WHEN throughput_pct <  75 THEN 1 ELSE 0 END) as below_target
             FROM btrtp_results GROUP BY year,month
-            ORDER BY year DESC, month DESC LIMIT 1""")
-        row = cur.fetchone()
-        bt_last = dict(row) if row else None
-        if bt_last:
-            bt_last["month_name"] = _mn(bt_last["month"])
+            ORDER BY year DESC, month DESC LIMIT 2""")
+        bt_months = []
+        for row in cur.fetchall():
+            d = dict(row); d["month_name"] = _mn(d["month"])
+            bt_months.append(d)
+        bt_last = bt_months[0] if bt_months else None
 
-        # BTRTP last — full detail rows
-        bt_last_rows = []
-        if bt_last:
+        bt_months_rows = []
+        for m in bt_months:
             cur.execute("""SELECT batcher_name, batcher_id, plant_name, exco_location,
                 total_quantity, throughput_pct, batch_count
                 FROM btrtp_results WHERE month=? AND year=?
                 ORDER BY throughput_pct DESC""",
-                (bt_last["month"], bt_last["year"]))
+                (m["month"], m["year"]))
             cols = [d[0] for d in cur.description]
-            bt_last_rows = _plant_filter(
-                [dict(zip(cols, r)) for r in cur.fetchall()], col="plant_name")
+            rows_f = _plant_filter([dict(zip(cols, r)) for r in cur.fetchall()], col="plant_name")
             if is_restricted:
-                bt_last["batchers"]     = len(bt_last_rows)
-                bt_last["above_target"] = sum(1 for r in bt_last_rows if (r.get("throughput_pct") or 0) >= 75)
-                bt_last["below_target"] = sum(1 for r in bt_last_rows if (r.get("throughput_pct") or 0) < 75)
-                bt_last["avg_tp"]       = round(sum(r.get("throughput_pct") or 0 for r in bt_last_rows) / len(bt_last_rows), 1) if bt_last_rows else 0
+                m["batchers"]     = len(rows_f)
+                m["above_target"] = sum(1 for r in rows_f if (r.get("throughput_pct") or 0) >= 75)
+                m["below_target"] = sum(1 for r in rows_f if (r.get("throughput_pct") or 0) < 75)
+                m["avg_tp"]       = round(sum(r.get("throughput_pct") or 0 for r in rows_f) / len(rows_f), 1) if rows_f else 0
+            bt_months_rows.append(rows_f)
+        bt_last_rows = bt_months_rows[0] if bt_months_rows else []
 
         # BTRTP current — from shared oracle_raw_data (created_by = batcher proxy)
         bt_last_known_sync = None
@@ -1030,32 +1033,33 @@ def page_home():
             bt_cur["month"] = now.month
             bt_cur["year"]  = now.year
 
-        # ── ECMD last calculated ─────────────────────────────
+        # ── ECMD — fetch up to 2 calculated months ───────────
         cur.execute("""SELECT month, year,
             COUNT(*) as plants,
             ROUND(AVG(energy_per_mt),2) as avg_energy,
             ROUND(AVG(mixer_dg_ratio),1) as avg_dg
             FROM ecmd_results GROUP BY year,month
-            ORDER BY year DESC, month DESC LIMIT 1""")
-        row = cur.fetchone()
-        ec_last = dict(row) if row else None
-        if ec_last:
-            ec_last["month_name"] = _mn(ec_last["month"])
+            ORDER BY year DESC, month DESC LIMIT 2""")
+        ec_months = []
+        for row in cur.fetchall():
+            d = dict(row); d["month_name"] = _mn(d["month"])
+            ec_months.append(d)
+        ec_last = ec_months[0] if ec_months else None
 
-        # ECMD last — full detail rows
-        ec_last_rows = []
-        if ec_last:
+        ec_months_rows = []
+        for m in ec_months:
             cur.execute("""SELECT plant_name, exco_location, plant_manager,
                 eb_kwh, dg_kwh, total_kwh, total_volume, energy_per_mt,
                 mixer_dg_ratio, diesel_issued_ltrs
                 FROM ecmd_results WHERE month=? AND year=?
                 ORDER BY plant_name""",
-                (ec_last["month"], ec_last["year"]))
+                (m["month"], m["year"]))
             cols = [d[0] for d in cur.description]
-            ec_last_rows = _plant_filter(
-                [dict(zip(cols, r)) for r in cur.fetchall()], col="plant_name")
+            rows_f = _plant_filter([dict(zip(cols, r)) for r in cur.fetchall()], col="plant_name")
             if is_restricted:
-                ec_last["plants"] = len(ec_last_rows)
+                m["plants"] = len(rows_f)
+            ec_months_rows.append(rows_f)
+        ec_last_rows = ec_months_rows[0] if ec_months_rows else []
 
         # ECMD current — readings submitted this month
         cur.execute("""SELECT COUNT(*) as plants FROM ecmd_readings
@@ -1074,9 +1078,13 @@ def page_home():
 
     resp = make_response(render_template("user_dashboard.html",
         id_last=id_last, id_last_rows=id_last_rows, id_cur=id_cur,
+        id_months=id_months, id_months_rows=id_months_rows,
         tp_last=tp_last, tp_last_rows=tp_last_rows, tp_cur=tp_cur,
+        tp_months=tp_months, tp_months_rows=tp_months_rows,
         bt_last=bt_last, bt_last_rows=bt_last_rows, bt_cur=bt_cur,
+        bt_months=bt_months, bt_months_rows=bt_months_rows,
         ec_last=ec_last, ec_last_rows=ec_last_rows, ec_cur=ec_cur,
+        ec_months=ec_months, ec_months_rows=ec_months_rows,
         cur_month_name=_mn(now.month), cur_year=now.year,
         user_plant_rows=user_plant_rows,
         tp_last_known_sync=tp_last_known_sync,

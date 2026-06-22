@@ -87,6 +87,21 @@
 
 .ud-hint { font-size: 10px; color: var(--text-faint); text-align: right; margin-top: -4px; }
 
+/* ── Month tabs on cards / modals ────────────────────── */
+.ud-month-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.ud-mtab {
+  font-size: 10px; font-weight: 600; padding: 3px 10px;
+  border-radius: 20px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-faint);
+  cursor: pointer; transition: all .15s;
+}
+.ud-mtab.active { background: rgba(99,91,255,.15); color: #635BFF; border-color: rgba(99,91,255,.4); }
+.ud-mtab.tp-active { background: rgba(0,212,255,.12); color: #00D4FF; border-color: rgba(0,212,255,.35); }
+.ud-mtab.bt-active { background: rgba(255,180,0,.12); color: #FFB400; border-color: rgba(255,180,0,.35); }
+.ud-mtab.ec-active { background: rgba(0,200,100,.12); color: #00C864; border-color: rgba(0,200,100,.35); }
+.ud-tab-panel { display: none; }
+.ud-tab-panel.active { display: block; }
+
 /* colors */
 .c-inc { color: #00C864; }
 .c-ded { color: #FF5050; }
@@ -231,34 +246,44 @@
     <div class="ud-module-row">
 
       <!-- Last calculated -->
-      <div class="ud-card {% if not id_last %}no-click{% endif %}" onclick="{% if id_last %}openModal('modal-id'){% endif %}">
+      <div class="ud-card {% if not id_last %}no-click{% endif %}" onclick="{% if id_last %}openModal('modal-id',0){% endif %}">
         <div class="ud-card-head">
           <span class="ud-mod-badge id">RDC-I&amp;D</span>
-          {% if id_last %}
+          {% if id_months|length > 1 %}
+          <div class="ud-month-tabs" onclick="event.stopPropagation()">
+            {% for m in id_months %}
+            <button class="ud-mtab {% if loop.index0==0 %}active{% endif %}" onclick="switchCardTab('id',{{ loop.index0 }})">{{ m.month_name[:3] }} {{ m.year }}</button>
+            {% endfor %}
+          </div>
+          {% elif id_last %}
           <span class="ud-card-tag last">{{ id_last.month_name }} {{ id_last.year }}</span>
           {% else %}
           <span class="ud-card-tag last">No Data</span>
           {% endif %}
         </div>
         {% if id_last %}
-        <div class="ud-kpi-main">
-          <div class="ud-kpi-val c-inc">{{ id_last.inc_emp }} <span style="font-size:14px;font-weight:600">employees</span></div>
-          <div class="ud-kpi-lbl">Earned Incentive</div>
+        {% for m in id_months %}
+        <div class="ud-tab-panel {% if loop.index0==0 %}active{% endif %}" id="id-card-tab-{{ loop.index0 }}">
+          <div class="ud-kpi-main">
+            <div class="ud-kpi-val c-inc">{{ m.inc_emp }} <span style="font-size:14px;font-weight:600">employees</span></div>
+            <div class="ud-kpi-lbl">Earned Incentive</div>
+          </div>
+          <div class="ud-kpi-sub">
+            <div class="ud-sub-item">
+              <div class="ud-sub-val c-ded">{{ m.ded_emp }}</div>
+              <div class="ud-sub-lbl">Got Deduction</div>
+            </div>
+            <div class="ud-sub-item">
+              <div class="ud-sub-val c-muted">{{ m.total_emp }}</div>
+              <div class="ud-sub-lbl">Total Employees</div>
+            </div>
+            <div class="ud-sub-item">
+              <div class="ud-sub-val c-inc">₹ {{ "{:,.0f}".format(m.total_inc) }}</div>
+              <div class="ud-sub-lbl">Total Incentive</div>
+            </div>
+          </div>
         </div>
-        <div class="ud-kpi-sub">
-          <div class="ud-sub-item">
-            <div class="ud-sub-val c-ded">{{ id_last.ded_emp }}</div>
-            <div class="ud-sub-lbl">Got Deduction</div>
-          </div>
-          <div class="ud-sub-item">
-            <div class="ud-sub-val c-muted">{{ id_last.total_emp }}</div>
-            <div class="ud-sub-lbl">Total Employees</div>
-          </div>
-          <div class="ud-sub-item">
-            <div class="ud-sub-val c-inc">₹ {{ "{:,.0f}".format(id_last.total_inc) }}</div>
-            <div class="ud-sub-lbl">Total Incentive</div>
-          </div>
-        </div>
+        {% endfor %}
         <div class="ud-hint">Click to view full details →</div>
         {% else %}
         <div class="ud-nodata">No calculation run yet</div>
@@ -301,34 +326,44 @@
     <div class="ud-section-label">RDC-TP — Plant Throughput</div>
     <div class="ud-module-row">
 
-      <div class="ud-card {% if not tp_last %}no-click{% endif %}" onclick="{% if tp_last %}openModal('modal-tp'){% endif %}">
+      <div class="ud-card {% if not tp_last %}no-click{% endif %}" onclick="{% if tp_last %}openModal('modal-tp',0){% endif %}">
         <div class="ud-card-head">
           <span class="ud-mod-badge tp">RDC-TP</span>
-          {% if tp_last %}
+          {% if tp_months|length > 1 %}
+          <div class="ud-month-tabs" onclick="event.stopPropagation()">
+            {% for m in tp_months %}
+            <button class="ud-mtab {% if loop.index0==0 %}tp-active{% endif %}" onclick="switchCardTab('tp',{{ loop.index0 }})">{{ m.month_name[:3] }} {{ m.year }}</button>
+            {% endfor %}
+          </div>
+          {% elif tp_last %}
           <span class="ud-card-tag last">{{ tp_last.month_name }} {{ tp_last.year }}</span>
           {% else %}
           <span class="ud-card-tag last">No Data</span>
           {% endif %}
         </div>
         {% if tp_last %}
-        <div class="ud-kpi-main">
-          <div class="ud-kpi-val c-tp">{{ tp_last.avg_tp }}%</div>
-          <div class="ud-kpi-lbl">Avg Plant Throughput</div>
+        {% for m in tp_months %}
+        <div class="ud-tab-panel {% if loop.index0==0 %}active{% endif %}" id="tp-card-tab-{{ loop.index0 }}">
+          <div class="ud-kpi-main">
+            <div class="ud-kpi-val c-tp">{{ m.avg_tp }}%</div>
+            <div class="ud-kpi-lbl">Avg Plant Throughput</div>
+          </div>
+          <div class="ud-kpi-sub">
+            <div class="ud-sub-item">
+              <div class="ud-sub-val c-inc">{{ m.above_target }}</div>
+              <div class="ud-sub-lbl">Above Target (≥75%)</div>
+            </div>
+            <div class="ud-sub-item">
+              <div class="ud-sub-val c-ded">{{ m.below_target }}</div>
+              <div class="ud-sub-lbl">Below Target</div>
+            </div>
+            <div class="ud-sub-item">
+              <div class="ud-sub-val c-muted">{{ m.plants }}</div>
+              <div class="ud-sub-lbl">Total Plants</div>
+            </div>
+          </div>
         </div>
-        <div class="ud-kpi-sub">
-          <div class="ud-sub-item">
-            <div class="ud-sub-val c-inc">{{ tp_last.above_target }}</div>
-            <div class="ud-sub-lbl">Above Target (≥75%)</div>
-          </div>
-          <div class="ud-sub-item">
-            <div class="ud-sub-val c-ded">{{ tp_last.below_target }}</div>
-            <div class="ud-sub-lbl">Below Target</div>
-          </div>
-          <div class="ud-sub-item">
-            <div class="ud-sub-val c-muted">{{ tp_last.plants }}</div>
-            <div class="ud-sub-lbl">Total Plants</div>
-          </div>
-        </div>
+        {% endfor %}
         <div class="ud-hint">Click to view full plant list →</div>
         {% else %}
         <div class="ud-nodata">No calculation run yet</div>
@@ -369,34 +404,44 @@
     <div class="ud-section-label">RDC-BTRTP — Batcher Throughput</div>
     <div class="ud-module-row">
 
-      <div class="ud-card {% if not bt_last %}no-click{% endif %}" onclick="{% if bt_last %}openModal('modal-bt'){% endif %}">
+      <div class="ud-card {% if not bt_last %}no-click{% endif %}" onclick="{% if bt_last %}openModal('modal-bt',0){% endif %}">
         <div class="ud-card-head">
           <span class="ud-mod-badge bt">RDC-BTRTP</span>
-          {% if bt_last %}
+          {% if bt_months|length > 1 %}
+          <div class="ud-month-tabs" onclick="event.stopPropagation()">
+            {% for m in bt_months %}
+            <button class="ud-mtab {% if loop.index0==0 %}bt-active{% endif %}" onclick="switchCardTab('bt',{{ loop.index0 }})">{{ m.month_name[:3] }} {{ m.year }}</button>
+            {% endfor %}
+          </div>
+          {% elif bt_last %}
           <span class="ud-card-tag last">{{ bt_last.month_name }} {{ bt_last.year }}</span>
           {% else %}
           <span class="ud-card-tag last">No Data</span>
           {% endif %}
         </div>
         {% if bt_last %}
-        <div class="ud-kpi-main">
-          <div class="ud-kpi-val" style="color:#FFB400">{{ bt_last.avg_tp }}%</div>
-          <div class="ud-kpi-lbl">Avg Batcher Throughput</div>
+        {% for m in bt_months %}
+        <div class="ud-tab-panel {% if loop.index0==0 %}active{% endif %}" id="bt-card-tab-{{ loop.index0 }}">
+          <div class="ud-kpi-main">
+            <div class="ud-kpi-val" style="color:#FFB400">{{ m.avg_tp }}%</div>
+            <div class="ud-kpi-lbl">Avg Batcher Throughput</div>
+          </div>
+          <div class="ud-kpi-sub">
+            <div class="ud-sub-item">
+              <div class="ud-sub-val c-inc">{{ m.above_target }}</div>
+              <div class="ud-sub-lbl">Above Target (≥75%)</div>
+            </div>
+            <div class="ud-sub-item">
+              <div class="ud-sub-val c-ded">{{ m.below_target }}</div>
+              <div class="ud-sub-lbl">Below Target</div>
+            </div>
+            <div class="ud-sub-item">
+              <div class="ud-sub-val c-muted">{{ m.batchers }}</div>
+              <div class="ud-sub-lbl">Total Batchers</div>
+            </div>
+          </div>
         </div>
-        <div class="ud-kpi-sub">
-          <div class="ud-sub-item">
-            <div class="ud-sub-val c-inc">{{ bt_last.above_target }}</div>
-            <div class="ud-sub-lbl">Above Target (≥75%)</div>
-          </div>
-          <div class="ud-sub-item">
-            <div class="ud-sub-val c-ded">{{ bt_last.below_target }}</div>
-            <div class="ud-sub-lbl">Below Target</div>
-          </div>
-          <div class="ud-sub-item">
-            <div class="ud-sub-val c-muted">{{ bt_last.batchers }}</div>
-            <div class="ud-sub-lbl">Total Batchers</div>
-          </div>
-        </div>
+        {% endfor %}
         <div class="ud-hint">Click to view full batcher list →</div>
         {% else %}
         <div class="ud-nodata">No calculation run yet</div>
@@ -431,30 +476,40 @@
     <div class="ud-section-label">RDC-ECMD — Energy &amp; DG Ratio</div>
     <div class="ud-module-row">
 
-      <div class="ud-card {% if not ec_last %}no-click{% endif %}" onclick="{% if ec_last %}openModal('modal-ec'){% endif %}">
+      <div class="ud-card {% if not ec_last %}no-click{% endif %}" onclick="{% if ec_last %}openModal('modal-ec',0){% endif %}">
         <div class="ud-card-head">
           <span class="ud-mod-badge ec">RDC-ECMD</span>
-          {% if ec_last %}
+          {% if ec_months|length > 1 %}
+          <div class="ud-month-tabs" onclick="event.stopPropagation()">
+            {% for m in ec_months %}
+            <button class="ud-mtab {% if loop.index0==0 %}ec-active{% endif %}" onclick="switchCardTab('ec',{{ loop.index0 }})">{{ m.month_name[:3] }} {{ m.year }}</button>
+            {% endfor %}
+          </div>
+          {% elif ec_last %}
           <span class="ud-card-tag last">{{ ec_last.month_name }} {{ ec_last.year }}</span>
           {% else %}
           <span class="ud-card-tag last">No Data</span>
           {% endif %}
         </div>
         {% if ec_last %}
-        <div class="ud-kpi-main">
-          <div class="ud-kpi-val c-inc">{{ ec_last.avg_energy }} <span style="font-size:14px;font-weight:600">kWh/m³</span></div>
-          <div class="ud-kpi-lbl">Avg Energy Consumption</div>
-        </div>
-        <div class="ud-kpi-sub">
-          <div class="ud-sub-item">
-            <div class="ud-sub-val c-muted">{{ ec_last.avg_dg }}%</div>
-            <div class="ud-sub-lbl">Avg DG Ratio</div>
+        {% for m in ec_months %}
+        <div class="ud-tab-panel {% if loop.index0==0 %}active{% endif %}" id="ec-card-tab-{{ loop.index0 }}">
+          <div class="ud-kpi-main">
+            <div class="ud-kpi-val c-inc">{{ m.avg_energy }} <span style="font-size:14px;font-weight:600">kWh/m³</span></div>
+            <div class="ud-kpi-lbl">Avg Energy Consumption</div>
           </div>
-          <div class="ud-sub-item">
-            <div class="ud-sub-val c-muted">{{ ec_last.plants }}</div>
-            <div class="ud-sub-lbl">Plants</div>
+          <div class="ud-kpi-sub">
+            <div class="ud-sub-item">
+              <div class="ud-sub-val c-muted">{{ m.avg_dg }}%</div>
+              <div class="ud-sub-lbl">Avg DG Ratio</div>
+            </div>
+            <div class="ud-sub-item">
+              <div class="ud-sub-val c-muted">{{ m.plants }}</div>
+              <div class="ud-sub-lbl">Plants</div>
+            </div>
           </div>
         </div>
+        {% endfor %}
         <div class="ud-hint">Click to view full plant list →</div>
         {% else %}
         <div class="ud-nodata">No calculation run yet</div>
@@ -517,38 +572,50 @@
 <div class="ud-modal-overlay" id="modal-id">
   <div class="ud-modal">
     <div class="ud-modal-head">
-      <h3>RDC-I&amp;D — {% if id_last %}{{ id_last.month_name }} {{ id_last.year }}{% endif %} — Employee Detail</h3>
+      <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0">
+        <h3 style="margin:0;white-space:nowrap">RDC-I&amp;D — Employee Detail</h3>
+        {% if id_months|length > 1 %}
+        <div class="ud-month-tabs">
+          {% for m in id_months %}
+          <button class="ud-mtab {% if loop.index0==0 %}active{% endif %}" id="id-modal-tab-{{ loop.index0 }}" onclick="switchModalTab('id',{{ loop.index0 }})">{{ m.month_name[:3] }} {{ m.year }}</button>
+          {% endfor %}
+        </div>
+        {% elif id_last %}
+        <span style="font-size:12px;color:var(--text-faint)">{{ id_last.month_name }} {{ id_last.year }}</span>
+        {% endif %}
+      </div>
       <button class="ud-modal-close" onclick="closeModal('modal-id')">✕</button>
     </div>
     <div class="ud-modal-body">
-      {% if id_last_rows %}
-      <table class="ud-dt">
-        <thead>
-          <tr>
+      {% for mi in range(id_months|length) %}
+      {% set rows = id_months_rows[mi] if mi < id_months_rows|length else [] %}
+      <div class="ud-tab-panel {% if mi==0 %}active{% endif %}" id="id-modal-panel-{{ mi }}">
+        {% if rows %}
+        <table class="ud-dt">
+          <thead><tr>
             <th>Employee</th><th>Code</th><th>Designation</th><th>Plant</th>
             <th class="r">Quantity (m³)</th><th class="r">Incentive (₹)</th><th class="r">Deduction (₹)</th><th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in id_last_rows %}
-          {% set is_inc = r.incentive_amount and r.incentive_amount > 0 %}
-          {% set is_ded = r.deduction_amount and r.deduction_amount > 0 %}
-          <tr class="{% if is_inc %}row-inc{% elif is_ded %}row-ded{% else %}row-neu{% endif %}">
-            <td>{{ r.employee_name }}</td>
-            <td>{{ r.employee_code }}</td>
-            <td>{{ r.designation }}</td>
-            <td>{{ r.plant }}</td>
-            <td class="r">{{ "{:,.1f}".format(r.total_quantity or 0) }}</td>
-            <td class="r">{% if is_inc %}₹ {{ "{:,.0f}".format(r.incentive_amount) }}{% else %}—{% endif %}</td>
-            <td class="r">{% if is_ded %}₹ {{ "{:,.0f}".format(r.deduction_amount) }}{% else %}—{% endif %}</td>
-            <td>{% if is_inc %}✅ Incentive{% elif is_ded %}🔴 Deduction{% else %}—{% endif %}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <div class="ud-nodata">No data available</div>
-      {% endif %}
+          </tr></thead>
+          <tbody>
+            {% for r in rows %}
+            {% set is_inc = r.incentive_amount and r.incentive_amount > 0 %}
+            {% set is_ded = r.deduction_amount and r.deduction_amount > 0 %}
+            <tr class="{% if is_inc %}row-inc{% elif is_ded %}row-ded{% else %}row-neu{% endif %}">
+              <td>{{ r.employee_name }}</td><td>{{ r.employee_code }}</td>
+              <td>{{ r.designation }}</td><td>{{ r.plant }}</td>
+              <td class="r">{{ "{:,.1f}".format(r.total_quantity or 0) }}</td>
+              <td class="r">{% if is_inc %}₹ {{ "{:,.0f}".format(r.incentive_amount) }}{% else %}—{% endif %}</td>
+              <td class="r">{% if is_ded %}₹ {{ "{:,.0f}".format(r.deduction_amount) }}{% else %}—{% endif %}</td>
+              <td>{% if is_inc %}✅ Incentive{% elif is_ded %}🔴 Deduction{% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="ud-nodata">No data available</div>
+        {% endif %}
+      </div>
+      {% endfor %}
     </div>
   </div>
 </div>
@@ -557,39 +624,51 @@
 <div class="ud-modal-overlay" id="modal-tp">
   <div class="ud-modal">
     <div class="ud-modal-head">
-      <h3>RDC-TP — {% if tp_last %}{{ tp_last.month_name }} {{ tp_last.year }}{% endif %} — Plant Throughput</h3>
+      <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0">
+        <h3 style="margin:0;white-space:nowrap">RDC-TP — Plant Throughput</h3>
+        {% if tp_months|length > 1 %}
+        <div class="ud-month-tabs">
+          {% for m in tp_months %}
+          <button class="ud-mtab {% if loop.index0==0 %}tp-active{% endif %}" id="tp-modal-tab-{{ loop.index0 }}" onclick="switchModalTab('tp',{{ loop.index0 }})">{{ m.month_name[:3] }} {{ m.year }}</button>
+          {% endfor %}
+        </div>
+        {% elif tp_last %}
+        <span style="font-size:12px;color:var(--text-faint)">{{ tp_last.month_name }} {{ tp_last.year }}</span>
+        {% endif %}
+      </div>
       <button class="ud-modal-close" onclick="closeModal('modal-tp')">✕</button>
     </div>
     <div class="ud-modal-body">
-      {% if tp_last_rows %}
-      <table class="ud-dt">
-        <thead>
-          <tr>
+      {% for mi in range(tp_months|length) %}
+      {% set rows = tp_months_rows[mi] if mi < tp_months_rows|length else [] %}
+      <div class="ud-tab-panel {% if mi==0 %}active{% endif %}" id="tp-modal-panel-{{ mi }}">
+        {% if rows %}
+        <table class="ud-dt">
+          <thead><tr>
             <th>Plant</th><th>Location</th><th>Business Head</th><th>Plant Manager</th>
             <th class="r">Quantity (m³)</th><th class="r">Throughput %</th><th class="r">Batches</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in tp_last_rows %}
-          {% set above = r.throughput_pct >= 75 %}
-          <tr class="{% if above %}row-inc{% else %}row-ded{% endif %}">
-            <td>{{ r.plant_name }}</td>
-            <td>{{ r.exco_location }}</td>
-            <td>{{ r.business_head }}</td>
-            <td>{{ r.plant_manager }}</td>
-            <td class="r">{{ "{:,.0f}".format(r.total_quantity or 0) }}</td>
-            <td class="r">
-              <span class="tp-bar" style="width:{{ [r.throughput_pct,100]|min }}px;background:{% if above %}#00C864{% else %}#FF5050{% endif %}"></span>
-              {{ r.throughput_pct }}%
-            </td>
-            <td class="r">{{ r.batch_count }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <div class="ud-nodata">No data available</div>
-      {% endif %}
+          </tr></thead>
+          <tbody>
+            {% for r in rows %}
+            {% set above = r.throughput_pct >= 75 %}
+            <tr class="{% if above %}row-inc{% else %}row-ded{% endif %}">
+              <td>{{ r.plant_name }}</td><td>{{ r.exco_location }}</td>
+              <td>{{ r.business_head }}</td><td>{{ r.plant_manager }}</td>
+              <td class="r">{{ "{:,.0f}".format(r.total_quantity or 0) }}</td>
+              <td class="r">
+                <span class="tp-bar" style="width:{{ [r.throughput_pct,100]|min }}px;background:{% if above %}#00C864{% else %}#FF5050{% endif %}"></span>
+                {{ r.throughput_pct }}%
+              </td>
+              <td class="r">{{ r.batch_count }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="ud-nodata">No data available</div>
+        {% endif %}
+      </div>
+      {% endfor %}
     </div>
   </div>
 </div>
@@ -598,39 +677,51 @@
 <div class="ud-modal-overlay" id="modal-bt">
   <div class="ud-modal">
     <div class="ud-modal-head">
-      <h3>RDC-BTRTP — {% if bt_last %}{{ bt_last.month_name }} {{ bt_last.year }}{% endif %} — Batcher Throughput</h3>
+      <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0">
+        <h3 style="margin:0;white-space:nowrap">RDC-BTRTP — Batcher Throughput</h3>
+        {% if bt_months|length > 1 %}
+        <div class="ud-month-tabs">
+          {% for m in bt_months %}
+          <button class="ud-mtab {% if loop.index0==0 %}bt-active{% endif %}" id="bt-modal-tab-{{ loop.index0 }}" onclick="switchModalTab('bt',{{ loop.index0 }})">{{ m.month_name[:3] }} {{ m.year }}</button>
+          {% endfor %}
+        </div>
+        {% elif bt_last %}
+        <span style="font-size:12px;color:var(--text-faint)">{{ bt_last.month_name }} {{ bt_last.year }}</span>
+        {% endif %}
+      </div>
       <button class="ud-modal-close" onclick="closeModal('modal-bt')">✕</button>
     </div>
     <div class="ud-modal-body">
-      {% if bt_last_rows %}
-      <table class="ud-dt">
-        <thead>
-          <tr>
+      {% for mi in range(bt_months|length) %}
+      {% set rows = bt_months_rows[mi] if mi < bt_months_rows|length else [] %}
+      <div class="ud-tab-panel {% if mi==0 %}active{% endif %}" id="bt-modal-panel-{{ mi }}">
+        {% if rows %}
+        <table class="ud-dt">
+          <thead><tr>
             <th>Batcher</th><th>ID</th><th>Plant</th><th>Location</th>
             <th class="r">Quantity (m³)</th><th class="r">Throughput %</th><th class="r">Batches</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in bt_last_rows %}
-          {% set above = r.throughput_pct >= 75 %}
-          <tr class="{% if above %}row-inc{% else %}row-ded{% endif %}">
-            <td>{{ r.batcher_name }}</td>
-            <td>{{ r.batcher_id }}</td>
-            <td>{{ r.plant_name }}</td>
-            <td>{{ r.exco_location }}</td>
-            <td class="r">{{ "{:,.0f}".format(r.total_quantity or 0) }}</td>
-            <td class="r">
-              <span class="tp-bar" style="width:{{ [r.throughput_pct,100]|min }}px;background:{% if above %}#00C864{% else %}#FF5050{% endif %}"></span>
-              {{ r.throughput_pct }}%
-            </td>
-            <td class="r">{{ r.batch_count }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <div class="ud-nodata">No data available</div>
-      {% endif %}
+          </tr></thead>
+          <tbody>
+            {% for r in rows %}
+            {% set above = r.throughput_pct >= 75 %}
+            <tr class="{% if above %}row-inc{% else %}row-ded{% endif %}">
+              <td>{{ r.batcher_name }}</td><td>{{ r.batcher_id }}</td>
+              <td>{{ r.plant_name }}</td><td>{{ r.exco_location }}</td>
+              <td class="r">{{ "{:,.0f}".format(r.total_quantity or 0) }}</td>
+              <td class="r">
+                <span class="tp-bar" style="width:{{ [r.throughput_pct,100]|min }}px;background:{% if above %}#00C864{% else %}#FF5050{% endif %}"></span>
+                {{ r.throughput_pct }}%
+              </td>
+              <td class="r">{{ r.batch_count }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="ud-nodata">No data available</div>
+        {% endif %}
+      </div>
+      {% endfor %}
     </div>
   </div>
 </div>
@@ -639,38 +730,50 @@
 <div class="ud-modal-overlay" id="modal-ec">
   <div class="ud-modal">
     <div class="ud-modal-head">
-      <h3>RDC-ECMD — {% if ec_last %}{{ ec_last.month_name }} {{ ec_last.year }}{% endif %} — Plant Energy &amp; DG</h3>
+      <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0">
+        <h3 style="margin:0;white-space:nowrap">RDC-ECMD — Plant Energy &amp; DG</h3>
+        {% if ec_months|length > 1 %}
+        <div class="ud-month-tabs">
+          {% for m in ec_months %}
+          <button class="ud-mtab {% if loop.index0==0 %}ec-active{% endif %}" id="ec-modal-tab-{{ loop.index0 }}" onclick="switchModalTab('ec',{{ loop.index0 }})">{{ m.month_name[:3] }} {{ m.year }}</button>
+          {% endfor %}
+        </div>
+        {% elif ec_last %}
+        <span style="font-size:12px;color:var(--text-faint)">{{ ec_last.month_name }} {{ ec_last.year }}</span>
+        {% endif %}
+      </div>
       <button class="ud-modal-close" onclick="closeModal('modal-ec')">✕</button>
     </div>
     <div class="ud-modal-body">
-      {% if ec_last_rows %}
-      <table class="ud-dt">
-        <thead>
-          <tr>
+      {% for mi in range(ec_months|length) %}
+      {% set rows = ec_months_rows[mi] if mi < ec_months_rows|length else [] %}
+      <div class="ud-tab-panel {% if mi==0 %}active{% endif %}" id="ec-modal-panel-{{ mi }}">
+        {% if rows %}
+        <table class="ud-dt">
+          <thead><tr>
             <th>Plant</th><th>Location</th><th>Plant Manager</th>
             <th class="r">EB kWh</th><th class="r">DG kWh</th><th class="r">Total kWh</th>
             <th class="r">Volume (m³)</th><th class="r">Energy/m³</th><th class="r">DG Ratio %</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in ec_last_rows %}
-          <tr>
-            <td>{{ r.plant_name }}</td>
-            <td>{{ r.exco_location }}</td>
-            <td>{{ r.plant_manager }}</td>
-            <td class="r">{{ "{:,.0f}".format(r.eb_kwh or 0) }}</td>
-            <td class="r">{{ "{:,.0f}".format(r.dg_kwh or 0) }}</td>
-            <td class="r">{{ "{:,.0f}".format(r.total_kwh or 0) }}</td>
-            <td class="r">{{ "{:,.0f}".format(r.total_volume or 0) }}</td>
-            <td class="r">{{ r.energy_per_mt }}</td>
-            <td class="r">{{ r.mixer_dg_ratio }}%</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <div class="ud-nodata">No data available</div>
-      {% endif %}
+          </tr></thead>
+          <tbody>
+            {% for r in rows %}
+            <tr>
+              <td>{{ r.plant_name }}</td><td>{{ r.exco_location }}</td><td>{{ r.plant_manager }}</td>
+              <td class="r">{{ "{:,.0f}".format(r.eb_kwh or 0) }}</td>
+              <td class="r">{{ "{:,.0f}".format(r.dg_kwh or 0) }}</td>
+              <td class="r">{{ "{:,.0f}".format(r.total_kwh or 0) }}</td>
+              <td class="r">{{ "{:,.0f}".format(r.total_volume or 0) }}</td>
+              <td class="r">{{ r.energy_per_mt }}</td>
+              <td class="r">{{ r.mixer_dg_ratio }}%</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="ud-nodata">No data available</div>
+        {% endif %}
+      </div>
+      {% endfor %}
     </div>
   </div>
 </div>
@@ -680,7 +783,12 @@
 <script>
   initBackground({ animate: {{ 'true' if bg_animate else 'false' }}, autoTheme: {{ 'true' if bg_auto else 'false' }}, theme: '{{ bg_theme }}' });
 
-  function openModal(id) {
+  // Track active tab per module so card tab click syncs the modal tab
+  var _activeTab = { id: 0, tp: 0, bt: 0, ec: 0 };
+
+  function openModal(id, tabIdx) {
+    var mod = id.replace('modal-', '');
+    if (tabIdx !== undefined) switchModalTab(mod, tabIdx);
     document.getElementById(id).classList.add('active');
     document.body.style.overflow = 'hidden';
   }
@@ -688,6 +796,44 @@
     document.getElementById(id).classList.remove('active');
     document.body.style.overflow = '';
   }
+
+  // Switch card KPI tab (also syncs to modal)
+  function switchCardTab(mod, idx) {
+    _activeTab[mod] = idx;
+    // Hide all panels for this card
+    document.querySelectorAll('[id^="' + mod + '-card-tab-"]').forEach(function(p) { p.classList.remove('active'); });
+    var panel = document.getElementById(mod + '-card-tab-' + idx);
+    if (panel) panel.classList.add('active');
+    // Update card tab button styles
+    var activeClass = mod === 'tp' ? 'tp-active' : mod === 'bt' ? 'bt-active' : mod === 'ec' ? 'ec-active' : 'active';
+    document.querySelectorAll('#' + mod + '-card-tab-' + idx).forEach(function() {}); // noop
+    var cardBtns = document.querySelectorAll('.ud-section .ud-mtab[onclick*="switchCardTab(\'' + mod + '\'"]');
+    // simpler: re-query all tabs in the card area by data
+    document.querySelectorAll('button.ud-mtab').forEach(function(b) {
+      var oc = b.getAttribute('onclick') || '';
+      if (oc.includes("switchCardTab('" + mod + "'")) {
+        b.classList.remove('active','tp-active','bt-active','ec-active');
+        if (oc.includes("switchCardTab('" + mod + "'," + idx + ")")) b.classList.add(activeClass);
+      }
+    });
+    // Sync modal tab too
+    switchModalTab(mod, idx);
+  }
+
+  // Switch modal panel tab
+  function switchModalTab(mod, idx) {
+    _activeTab[mod] = idx;
+    document.querySelectorAll('[id^="' + mod + '-modal-panel-"]').forEach(function(p) { p.classList.remove('active'); });
+    var panel = document.getElementById(mod + '-modal-panel-' + idx);
+    if (panel) panel.classList.add('active');
+    var activeClass = mod === 'tp' ? 'tp-active' : mod === 'bt' ? 'bt-active' : mod === 'ec' ? 'ec-active' : 'active';
+    document.querySelectorAll('[id^="' + mod + '-modal-tab-"]').forEach(function(b) {
+      b.classList.remove('active','tp-active','bt-active','ec-active');
+    });
+    var btn = document.getElementById(mod + '-modal-tab-' + idx);
+    if (btn) btn.classList.add(activeClass);
+  }
+
   // Close on backdrop click
   document.querySelectorAll('.ud-modal-overlay').forEach(function(el) {
     el.addEventListener('click', function(e) {
