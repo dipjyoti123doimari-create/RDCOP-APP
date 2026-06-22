@@ -785,6 +785,8 @@ def page_home():
     prev_ym = f"{prev_y}-{prev_m:02d}"
 
     conn = database.get_connection()
+    # defaults — overwritten below as each section runs
+    tp_last_known_sync = bt_last_known_sync = None
     try:
         cur = conn.cursor()
 
@@ -833,7 +835,8 @@ def page_home():
 
         # I&D current month raw (backend_data) — no plant column, show pan-India total
         cur.execute("""SELECT COUNT(DISTINCT created_by) as emp_count,
-            ROUND(SUM(quantity),0) as total_qty
+            ROUND(SUM(quantity),0) as total_qty,
+            MAX(uploaded_at) as last_sync
             FROM backend_data WHERE substr(date,1,7)=?""", (cur_ym,))
         row = cur.fetchone()
         id_cur = dict(row) if (row and row[0]) else None
@@ -875,14 +878,23 @@ def page_home():
 
         # TP current month raw (tp_oracle_data)
         cur.execute("""SELECT COUNT(DISTINCT lookup_code) as plants,
-            ROUND(SUM(quantity),0) as total_qty
+            ROUND(SUM(quantity),0) as total_qty,
+            MAX(fetched_at) as last_sync
             FROM tp_oracle_data WHERE substr(production_date,1,7)=?""", (cur_ym,))
         row = cur.fetchone()
-        tp_cur = dict(row) if (row and row[0]) else None
+        tp_cur = {"plants": row[0] or 0, "total_qty": row[1] or 0,
+                  "last_sync": row[2]} if row else None
         if tp_cur:
             tp_cur["month_name"] = _mn(now.month)
             tp_cur["month"] = now.month
             tp_cur["year"]  = now.year
+        # If no current-month data yet but there IS older local data, show last known sync
+        if tp_cur is None:
+            cur.execute("SELECT MAX(fetched_at) FROM tp_oracle_data")
+            r = cur.fetchone()
+            tp_last_known_sync = r[0] if r else None
+        else:
+            tp_last_known_sync = None
 
         # ── BTRTP last calculated ────────────────────────────
         cur.execute("""SELECT month, year,
@@ -915,12 +927,18 @@ def page_home():
                 bt_last["avg_tp"]       = round(sum(r.get("throughput_pct") or 0 for r in bt_last_rows) / len(bt_last_rows), 1) if bt_last_rows else 0
 
         # BTRTP current — use a fresh cursor to avoid any state from previous queries
+        bt_last_known_sync = None
         try:
             cur2 = conn.cursor()
-            cur2.execute("""SELECT COUNT(DISTINCT lookup_code) as batchers
+            cur2.execute("""SELECT COUNT(DISTINCT lookup_code) as batchers,
+                MAX(fetched_at) as last_sync
                 FROM btrtp_oracle_data WHERE substr(production_date,1,7)=?""", (cur_ym,))
             row = cur2.fetchone()
-            bt_cur = {"batchers": row[0]} if (row and row[0]) else None
+            bt_cur = {"batchers": row[0], "last_sync": row[1]} if (row and row[0]) else None
+            if bt_cur is None:
+                cur2.execute("SELECT MAX(fetched_at) FROM btrtp_oracle_data")
+                r = cur2.fetchone()
+                bt_last_known_sync = r[0] if r else None
         except Exception:
             bt_cur = None
         if bt_cur:
@@ -977,6 +995,8 @@ def page_home():
         ec_last=ec_last, ec_last_rows=ec_last_rows, ec_cur=ec_cur,
         cur_month_name=_mn(now.month), cur_year=now.year,
         user_plant_rows=user_plant_rows,
+        tp_last_known_sync=tp_last_known_sync,
+        bt_last_known_sync=bt_last_known_sync,
         entry_open=entry_open,
         entry_month_name=_mn(entry_month) if entry_open else "",
         entry_year=entry_year,

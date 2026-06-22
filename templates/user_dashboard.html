@@ -1,3 +1,4 @@
+{% macro sync_label(ts) %}{% if ts %}{% set parts = ts.split('T') %}{% set d = parts[0] %}{% set t = parts[1][:5] if parts|length > 1 else '' %}Synced {{ d }} {{ t }}{% else %}Never synced{% endif %}{% endmacro %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -286,7 +287,7 @@
             <div class="ud-sub-lbl">Total Quantity</div>
           </div>
         </div>
-        <div class="ud-hint" style="color:#FFB400">Calculation pending for this month</div>
+        <div class="ud-hint" style="color:#00C864;font-size:10px">🔄 {{ sync_label(id_cur.last_sync) }}</div>
         {% else %}
         <div class="ud-nodata">No data uploaded yet for current month</div>
         {% endif %}
@@ -340,10 +341,10 @@
           <span class="ud-card-tag current">● Current</span>
           <span class="ud-card-period">{{ cur_month_name }} {{ cur_year }}</span>
         </div>
-        {% if tp_cur %}
+        {% if tp_cur and tp_cur.plants %}
         <div class="ud-kpi-main">
           <div class="ud-kpi-val c-muted">{{ tp_cur.plants }} <span style="font-size:14px;font-weight:600">plants</span></div>
-          <div class="ud-kpi-lbl">Data Available</div>
+          <div class="ud-kpi-lbl">Data Available (local cache)</div>
         </div>
         <div class="ud-kpi-sub">
           <div class="ud-sub-item">
@@ -351,9 +352,12 @@
             <div class="ud-sub-lbl">Quantity So Far</div>
           </div>
         </div>
-        <div class="ud-hint" style="color:#FFB400">Calculation pending for this month</div>
+        <div class="ud-hint" style="color:#00C864;font-size:10px">🔄 {{ sync_label(tp_cur.last_sync) }}</div>
+        {% elif tp_last_known_sync %}
+        <div class="ud-nodata">No new fetch this month</div>
+        <div class="ud-hint" style="color:var(--text-faint);font-size:10px;text-align:left;margin-top:8px">🔄 {{ sync_label(tp_last_known_sync) }} — local data available for calc</div>
         {% else %}
-        <div class="ud-nodata">No data fetched yet for current month</div>
+        <div class="ud-nodata">No Oracle data fetched yet</div>
         {% endif %}
       </div>
 
@@ -408,11 +412,14 @@
         {% if bt_cur %}
         <div class="ud-kpi-main">
           <div class="ud-kpi-val c-muted">{{ bt_cur.batchers }} <span style="font-size:14px;font-weight:600">batchers</span></div>
-          <div class="ud-kpi-lbl">Data Available</div>
+          <div class="ud-kpi-lbl">Data Available (local cache)</div>
         </div>
-        <div class="ud-hint" style="color:#FFB400">Calculation pending for this month</div>
+        <div class="ud-hint" style="color:#00C864;font-size:10px">🔄 {{ sync_label(bt_cur.last_sync) }}</div>
+        {% elif bt_last_known_sync %}
+        <div class="ud-nodata">No new fetch this month</div>
+        <div class="ud-hint" style="color:var(--text-faint);font-size:10px;text-align:left;margin-top:8px">🔄 {{ sync_label(bt_last_known_sync) }} — local data available for calc</div>
         {% else %}
-        <div class="ud-nodata">No data fetched yet for current month</div>
+        <div class="ud-nodata">No Oracle data fetched yet</div>
         {% endif %}
       </div>
 
