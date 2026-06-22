@@ -914,12 +914,13 @@ def page_home():
                 bt_last["below_target"] = sum(1 for r in bt_last_rows if (r.get("throughput_pct") or 0) < 75)
                 bt_last["avg_tp"]       = round(sum(r.get("throughput_pct") or 0 for r in bt_last_rows) / len(bt_last_rows), 1) if bt_last_rows else 0
 
-        # BTRTP current (btrtp_oracle_data may not exist yet — guard it)
+        # BTRTP current — use a fresh cursor to avoid any state from previous queries
         try:
-            cur.execute("""SELECT COUNT(DISTINCT lookup_code) as batchers
+            cur2 = conn.cursor()
+            cur2.execute("""SELECT COUNT(DISTINCT lookup_code) as batchers
                 FROM btrtp_oracle_data WHERE substr(production_date,1,7)=?""", (cur_ym,))
-            row = cur.fetchone()
-            bt_cur = dict(row) if (row and row[0]) else None
+            row = cur2.fetchone()
+            bt_cur = {"batchers": row[0]} if (row and row[0]) else None
         except Exception:
             bt_cur = None
         if bt_cur:
