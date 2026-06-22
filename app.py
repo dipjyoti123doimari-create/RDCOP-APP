@@ -396,6 +396,13 @@ def _require_login():
                                required_roles=[auth.SUPER_ADMIN, auth.HO_VIEWER,
                                                auth.FINANCE_VIEWER, auth.REGIONAL_USER]), 403
 
+    # Non-SUPER_ADMIN users must not enter any module page — redirect to user dashboard
+    _module_prefixes = ("/dashboard", "/id", "/tp/", "/btrtp/", "/ecmd/")
+    if role != auth.SUPER_ADMIN and request.method == "GET":
+        for pfx in _module_prefixes:
+            if path == pfx.rstrip("/") or path.startswith(pfx):
+                return redirect(url_for("page_home"))
+
 
 # ── Context processor (sidebar active-page + bg settings + auth) ────────────
 
@@ -795,6 +802,16 @@ def page_home():
         if id_last:
             id_last["month_name"] = _mn(id_last["month"])
 
+        # Allowed plants for this user (empty list = all plants for global roles)
+        allowed_plants = auth.get_user_allowed_plants(user)
+        is_restricted  = bool(allowed_plants)  # True for REGIONAL_USER / PLANT_USER
+
+        def _plant_filter(rows, col="plant"):
+            if not is_restricted:
+                return rows
+            al = [p.lower() for p in allowed_plants]
+            return [r for r in rows if str(r.get(col, "")).lower() in al]
+
         # I&D last calculated — full detail rows for drill-down
         id_last_rows = []
         if id_last:
@@ -804,9 +821,16 @@ def page_home():
                 ORDER BY plant, employee_name""",
                 (id_last["month"], id_last["year"]))
             cols = [d[0] for d in cur.description]
-            id_last_rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+            id_last_rows = _plant_filter(
+                [dict(zip(cols, r)) for r in cur.fetchall()], col="plant")
+            # Recompute summary counts from filtered rows so the card matches
+            if is_restricted:
+                id_last["total_emp"] = len(id_last_rows)
+                id_last["inc_emp"]   = sum(1 for r in id_last_rows if r.get("incentive_amount") and r["incentive_amount"] > 0)
+                id_last["ded_emp"]   = sum(1 for r in id_last_rows if r.get("deduction_amount") and r["deduction_amount"] > 0)
+                id_last["total_inc"] = sum(r.get("incentive_amount") or 0 for r in id_last_rows)
 
-        # I&D current month raw (backend_data)
+        # I&D current month raw (backend_data) — no plant column, show pan-India total
         cur.execute("""SELECT COUNT(DISTINCT created_by) as emp_count,
             ROUND(SUM(quantity),0) as total_qty
             FROM backend_data WHERE substr(date,1,7)=?""", (cur_ym,))
@@ -840,7 +864,13 @@ def page_home():
                 ORDER BY throughput_pct DESC""",
                 (tp_last["month"], tp_last["year"]))
             cols = [d[0] for d in cur.description]
-            tp_last_rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+            tp_last_rows = _plant_filter(
+                [dict(zip(cols, r)) for r in cur.fetchall()], col="plant_name")
+            if is_restricted:
+                tp_last["plants"]       = len(tp_last_rows)
+                tp_last["above_target"] = sum(1 for r in tp_last_rows if (r.get("throughput_pct") or 0) >= 75)
+                tp_last["below_target"] = sum(1 for r in tp_last_rows if (r.get("throughput_pct") or 0) < 75)
+                tp_last["avg_tp"]       = round(sum(r.get("throughput_pct") or 0 for r in tp_last_rows) / len(tp_last_rows), 1) if tp_last_rows else 0
 
         # TP current month raw (tp_oracle_data)
         cur.execute("""SELECT COUNT(DISTINCT lookup_code) as plants,
@@ -875,7 +905,13 @@ def page_home():
                 ORDER BY throughput_pct DESC""",
                 (bt_last["month"], bt_last["year"]))
             cols = [d[0] for d in cur.description]
-            bt_last_rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+            bt_last_rows = _plant_filter(
+                [dict(zip(cols, r)) for r in cur.fetchall()], col="plant_name")
+            if is_restricted:
+                bt_last["batchers"]     = len(bt_last_rows)
+                bt_last["above_target"] = sum(1 for r in bt_last_rows if (r.get("throughput_pct") or 0) >= 75)
+                bt_last["below_target"] = sum(1 for r in bt_last_rows if (r.get("throughput_pct") or 0) < 75)
+                bt_last["avg_tp"]       = round(sum(r.get("throughput_pct") or 0 for r in bt_last_rows) / len(bt_last_rows), 1) if bt_last_rows else 0
 
         # BTRTP current (btrtp_oracle_data may not exist yet — guard it)
         try:
@@ -912,7 +948,10 @@ def page_home():
                 ORDER BY plant_name""",
                 (ec_last["month"], ec_last["year"]))
             cols = [d[0] for d in cur.description]
-            ec_last_rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+            ec_last_rows = _plant_filter(
+                [dict(zip(cols, r)) for r in cur.fetchall()], col="plant_name")
+            if is_restricted:
+                ec_last["plants"] = len(ec_last_rows)
 
         # ECMD current — readings submitted this month
         cur.execute("""SELECT COUNT(*) as plants FROM ecmd_readings
