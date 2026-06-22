@@ -271,28 +271,20 @@ def run_calculation(month: int, year: int,
         finally:
             conn_m.close()
 
+        # If still no maintenance data at all, proceed with 0 cost for every plant
         if maint_df.empty:
-            return {
-                "total_employees": 0, "mapped": 0, "unmapped": 0,
-                "total_incentive": 0, "total_deduction": 0,
-                "generated_at": _now(), "results_rows": [],
-                "calc_warnings": [],
-                "error": (
-                    "No maintenance cost data found. "
-                    "Please upload maintenance cost data in Data Uploader → Maintenance Cost."
-                ),
-            }
-
-        # Detect which month's data is actually being used and warn if it differs
-        _m_used = int(maint_df["month"].dropna().mode().iloc[0]) if not maint_df["month"].dropna().empty else 0
-        _y_used = int(maint_df["year"].dropna().mode().iloc[0])  if not maint_df["year"].dropna().empty else 0
-        maint_applied_label = (f"{_cal.month_name[_m_used]} {_y_used}"
-                               if _m_used else "Unassigned")
-
-        maint_df["plant_code"] = maint_df["plant_code"].astype(str).str.strip()
-        maint_lookup = dict(
-            zip(maint_df["plant_code"], maint_df["ytd_maintenance_cost"])
-        )
+            maint_applied_label = "None (₹0)"
+            maint_lookup = {}
+        else:
+            # Detect which month's data is actually being used and warn if it differs
+            _m_used = int(maint_df["month"].dropna().mode().iloc[0]) if not maint_df["month"].dropna().empty else 0
+            _y_used = int(maint_df["year"].dropna().mode().iloc[0])  if not maint_df["year"].dropna().empty else 0
+            maint_applied_label = (f"{_cal.month_name[_m_used]} {_y_used}"
+                                   if _m_used else "Unassigned")
+            maint_df["plant_code"] = maint_df["plant_code"].astype(str).str.strip()
+            maint_lookup = dict(
+                zip(maint_df["plant_code"], maint_df["ytd_maintenance_cost"])
+            )
 
         # ── Step 3: Separate mapped vs unmapped ──────────────────────────────
         known_codes = set(master_df["employee_code"].tolist())

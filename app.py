@@ -260,28 +260,17 @@ def _auto_calculate_current_month():
     fd     = str(today.replace(day=1))
     td     = str(today)
     try:
-        # I&D auto-calculation — uses maintenance cost for current month if set,
-        # otherwise falls back to whatever month's data is available in the DB.
-        maint_count = 0
-        conn_m = database.get_connection()
-        try:
-            row = conn_m.execute("SELECT COUNT(*) FROM maintenance_cost").fetchone()
-            maint_count = row[0] if row else 0
-        finally:
-            conn_m.close()
-
-        if maint_count == 0:
-            print(f"[auto-calc] I&D skipped — no maintenance cost data in DB")
+        # I&D auto-calculation — uses current-month maintenance cost if set,
+        # falls back to latest available month's data, or ₹0 if none uploaded.
+        result = calculator.run_calculation(
+            month, year, start_date=fd, end_date=td, persist=True)
+        if result.get("error"):
+            print(f"[auto-calc] I&D skipped — {result['error']}")
+        elif result["total_employees"] == 0:
+            print(f"[auto-calc] I&D skipped — no production data for {year}-{month:02d}")
         else:
-            result = calculator.run_calculation(
-                month, year, start_date=fd, end_date=td, persist=True)
-            if result.get("error"):
-                print(f"[auto-calc] I&D skipped — {result['error']}")
-            elif result["total_employees"] == 0:
-                print(f"[auto-calc] I&D skipped — no production data for {year}-{month:02d}")
-            else:
-                print(f"[auto-calc] I&D done — {result['total_employees']} employees "
-                      f"for {year}-{month:02d}")
+            print(f"[auto-calc] I&D done — {result['total_employees']} employees "
+                  f"for {year}-{month:02d}")
     except Exception as exc:
         print(f"[auto-calc] I&D error: {exc}")
     try:
