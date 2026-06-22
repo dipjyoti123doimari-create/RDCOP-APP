@@ -248,15 +248,42 @@ def _shared_oracle_fetch_job():
 def _auto_calculate_current_month():
     """
     Runs daily at 00:30 — after Oracle data has been fetched (00:10).
-    Calculates TP and BTRTP for the current month automatically and saves results.
-    I&D is not auto-calculated because it requires maintenance cost data set by admin.
-    This ensures the user dashboard always shows up-to-date current month data.
+    Calculates I&D, TP, and BTRTP for the current month automatically.
+
+    I&D: uses current-month maintenance cost if set; falls back to the latest
+    available maintenance cost data (calculator already does this internally).
+    Skipped only when no maintenance cost rows exist at all.
     """
     today  = _date.today()
     month  = today.month
     year   = today.year
     fd     = str(today.replace(day=1))
     td     = str(today)
+    try:
+        # I&D auto-calculation — uses maintenance cost for current month if set,
+        # otherwise falls back to whatever month's data is available in the DB.
+        maint_count = 0
+        conn_m = database.get_connection()
+        try:
+            row = conn_m.execute("SELECT COUNT(*) FROM maintenance_cost").fetchone()
+            maint_count = row[0] if row else 0
+        finally:
+            conn_m.close()
+
+        if maint_count == 0:
+            print(f"[auto-calc] I&D skipped — no maintenance cost data in DB")
+        else:
+            result = calculator.run_calculation(
+                month, year, start_date=fd, end_date=td, persist=True)
+            if result.get("error"):
+                print(f"[auto-calc] I&D skipped — {result['error']}")
+            elif result["total_employees"] == 0:
+                print(f"[auto-calc] I&D skipped — no production data for {year}-{month:02d}")
+            else:
+                print(f"[auto-calc] I&D done — {result['total_employees']} employees "
+                      f"for {year}-{month:02d}")
+    except Exception as exc:
+        print(f"[auto-calc] I&D error: {exc}")
     try:
         # TP auto-calculation
         plant_rows, loc_rows, warns = tp_calculator.run_tp_calculation(
