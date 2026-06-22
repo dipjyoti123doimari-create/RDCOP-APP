@@ -803,8 +803,9 @@ def page_home():
             id_last["month_name"] = _mn(id_last["month"])
 
         # Allowed plants for this user (empty list = all plants for global roles)
-        allowed_plants = auth.get_user_allowed_plants(user)
-        is_restricted  = bool(allowed_plants)  # True for REGIONAL_USER / PLANT_USER
+        allowed_plants  = auth.get_user_allowed_plants(user)
+        user_plant_rows = database.get_user_plant_access(user["id"]) if allowed_plants else []
+        is_restricted   = bool(allowed_plants)  # True for REGIONAL_USER / PLANT_USER
 
         def _plant_filter(rows, col="plant"):
             if not is_restricted:
@@ -974,6 +975,7 @@ def page_home():
         bt_last=bt_last, bt_last_rows=bt_last_rows, bt_cur=bt_cur,
         ec_last=ec_last, ec_last_rows=ec_last_rows, ec_cur=ec_cur,
         cur_month_name=_mn(now.month), cur_year=now.year,
+        user_plant_rows=user_plant_rows,
         entry_open=entry_open,
         entry_month_name=_mn(entry_month) if entry_open else "",
         entry_year=entry_year,

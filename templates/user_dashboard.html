@@ -187,6 +187,24 @@
   {% endif %}
 </div>
 
+<!-- Plant badge — top left (only for restricted roles with assigned plants) -->
+{% if allowed_plants %}
+<div style="position:fixed;top:16px;left:20px;z-index:200;
+  display:flex;flex-direction:column;gap:4px;
+  background:rgba(255,255,255,0.07);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border:1px solid var(--border);border-radius:12px;padding:8px 14px;max-width:260px">
+  <div style="font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-faint)">Assigned Plant{% if allowed_plants|length > 1 %}s{% endif %}</div>
+  {% for p in user_plant_rows %}
+  <div style="display:flex;align-items:center;gap:6px">
+    <span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px;
+      background:rgba(0,200,100,.12);color:#00C864;border:1px solid rgba(0,200,100,.25);
+      white-space:nowrap">{{ p.plant_code }}</span>
+    <span style="font-size:12px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.plant_name }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 <!-- Main -->
 <div class="ud-wrap">
 
