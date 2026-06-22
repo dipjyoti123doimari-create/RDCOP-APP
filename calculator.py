@@ -385,7 +385,12 @@ def run_calculation(month: int, year: int,
 
         # ── Data quality warnings ────────────────────────────────────────────
         calc_warnings = []
-        if _m_used != month or _y_used != year:
+        if maint_applied_label == "None (₹0)":
+            calc_warnings.append(
+                f"⚠️ No maintenance cost data found — all plants calculated with ₹0 cost. "
+                f"Upload maintenance cost for {calc_month_label} for accurate results."
+            )
+        elif _m_used != month or _y_used != year:
             calc_warnings.append(
                 f"⚠️ Maintenance cost month mismatch: calculation is for {calc_month_label} "
                 f"but maintenance cost data applied is from {maint_applied_label}. "
