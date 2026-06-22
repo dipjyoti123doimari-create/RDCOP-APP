@@ -1328,8 +1328,8 @@ def tp_calculate():
     return render_template("tp_calculate.html",
                            plant_rows=plant_rows, location_rows=location_rows,
                            warnings=warnings, ran=ran,
-                           default_from=_ms("tp", "calc_from", str(today.replace(day=1))),
-                           default_to=_ms("tp", "calc_to", str(today)),
+                           default_from=str(today.replace(day=1)),
+                           default_to=str(today),
                            **ctx)
 
 
@@ -1368,11 +1368,9 @@ def _apply_tp_filters(plant_rows, excos, bheads, plants, band, search):
 def tp_reports():
     today = _date.today()
 
-    # Date range — default to the last calculation's range, else this month.
-    from_s = request.args.get("from_date",
-                              _ms("tp", "calc_from", str(today.replace(day=1))))
-    to_s   = request.args.get("to_date",
-                              _ms("tp", "calc_to", str(today)))
+    # Date range — default to 1st of current month → today.
+    from_s = request.args.get("from_date", str(today.replace(day=1)))
+    to_s   = request.args.get("to_date",   str(today))
     try:
         fd = _date.fromisoformat(from_s)
         td = _date.fromisoformat(to_s)
@@ -2119,8 +2117,8 @@ def btrtp_calculate():
     return render_template("btrtp_calculate.html",
                            batcher_rows=batcher_rows, plant_groups=plant_groups,
                            warnings=warnings, ran=ran,
-                           default_from=_ms("btrtp", "calc_from", str(today.replace(day=1))),
-                           default_to=_ms("btrtp", "calc_to", str(today)),
+                           default_from=str(today.replace(day=1)),
+                           default_to=str(today),
                            **ctx)
 
 
@@ -2152,10 +2150,8 @@ def _apply_btrtp_filters(rows, excos, bheads, plants, batchers, band, search):
 def btrtp_reports():
     today = _date.today()
 
-    from_s = request.args.get("from_date",
-                              _ms("btrtp", "calc_from", str(today.replace(day=1))))
-    to_s   = request.args.get("to_date",
-                              _ms("btrtp", "calc_to", str(today)))
+    from_s = request.args.get("from_date", str(today.replace(day=1)))
+    to_s   = request.args.get("to_date",   str(today))
     try:
         fd = _date.fromisoformat(from_s)
         td = _date.fromisoformat(to_s)
