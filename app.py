@@ -1123,10 +1123,11 @@ def page_tp():
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 @app.route("/tp/dashboard")
 def tp_dashboard():
+    all_counts = database.get_table_counts()
     counts = {
-        "tp_plant_data":  database.get_table_counts().get("tp_plant_data", 0),
-        "tp_oracle_data": database.get_table_counts().get("tp_oracle_data", 0),
-        "tp_results":     database.get_table_counts().get("tp_results", 0),
+        "tp_plant_data":  all_counts.get("tp_plant_data", 0),
+        "tp_oracle_data": all_counts.get("oracle_raw_data", 0),
+        "tp_results":     all_counts.get("tp_results", 0),
     }
     last_sync  = google_sheets.get_tp_last_sync_info()
     ora_ready  = oracle_connector.is_configured()
@@ -1144,7 +1145,7 @@ def tp_data_uploader():
     sheet_id     = database.get_module_setting("tp", "gsheet_id",
                                                database.get_setting("gsheet_id", ""))
     tp_worksheet = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
-    ora_counts   = database.get_table_counts().get("tp_oracle_data", 0)
+    ora_counts   = database.get_table_counts().get("oracle_raw_data", 0)
 
     plant_rows  = database.get_tp_plants()
     plant_count = len(plant_rows)
@@ -1949,7 +1950,7 @@ def page_btrtp():
 def btrtp_dashboard():
     all_counts = database.get_table_counts()
     counts = {
-        "btrtp_oracle_data": all_counts.get("btrtp_oracle_data", 0),
+        "btrtp_oracle_data": all_counts.get("oracle_raw_data",   0),
         "btrtp_master_data": all_counts.get("btrtp_master_data", 0),
         "btrtp_results":     all_counts.get("btrtp_results",     0),
         "tp_plant_data":     all_counts.get("tp_plant_data",     0),
@@ -1980,7 +1981,7 @@ def btrtp_data_uploader():
     plant_worksheet  = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
 
     all_counts   = database.get_table_counts()
-    ora_counts   = all_counts.get("btrtp_oracle_data", 0)
+    ora_counts   = all_counts.get("oracle_raw_data", 0)
     master_count = all_counts.get("btrtp_master_data", 0)
     plant_count  = all_counts.get("tp_plant_data", 0)
 
