@@ -209,99 +209,76 @@ def _build_tp_excel(plant_rows, location_rows) -> bytes:
     return buf.read()
 
 
-def _tp_daily_oracle_fetch_job():
+def _shared_oracle_fetch_job():
     """
-    Runs every day at 00:10.
-    Fetches Oracle TP data for the previous month (full) and the current month
-    (1st → today), replaces what is stored, then purges data older than the
-    previous month. This keeps the local store always current with minimal load.
+    Single daily Oracle fetch for ALL modules (replaces 3 separate jobs).
+    Fetches previous month (full) + current month (1st → today) in one query.
+    Stores to oracle_raw_data — shared by I&D, TP, BTRTP calculators.
     """
     if not oracle_connector.is_configured():
         return
-    today      = _date.today()
-    # Current month: 1st → today
-    cur_from   = today.replace(day=1)
-    cur_to     = today
-    # Previous month: 1st → last day
+    import calendar as _cal
+    today     = _date.today()
+    cur_from  = today.replace(day=1)
+    cur_to    = today
     if today.month == 1:
         prev_from = _date(today.year - 1, 12, 1)
-        import calendar as _cal
         prev_to   = _date(today.year - 1, 12, _cal.monthrange(today.year - 1, 12)[1])
     else:
-        import calendar as _cal
         prev_from = _date(today.year, today.month - 1, 1)
         prev_to   = _date(today.year, today.month - 1,
                           _cal.monthrange(today.year, today.month - 1)[1])
     try:
+        total = 0
         for fd, td in [(str(prev_from), str(prev_to)), (str(cur_from), str(cur_to))]:
-            raw_df, _ = oracle_connector.fetch_tp_data(fd, td)
+            raw_df, warnings = oracle_connector.fetch_oracle_raw_data(fd, td)
+            for w in warnings:
+                print(f"[oracle-fetch] {w}")
             if not raw_df.empty:
-                parsed, _ = tp_calculator.parse_oracle_df(raw_df)
-                oracle_connector.save_tp_oracle_data(raw_df, fd, td, parsed, replace=True)
+                saved = oracle_connector.save_oracle_raw_data(raw_df, replace=True)
+                total += saved
         database.purge_old_oracle_data()
-        print(f"[tp-daily-fetch] done — prev: {prev_from}→{prev_to}, cur: {cur_from}→{cur_to}")
+        print(f"[oracle-fetch] done — {total} rows saved "
+              f"(prev: {prev_from}→{prev_to}, cur: {cur_from}→{cur_to})")
     except Exception as exc:
-        print(f"[tp-daily-fetch] error: {exc}")
+        print(f"[oracle-fetch] error: {exc}")
 
 
-def _id_daily_oracle_fetch_job():
+
+def _auto_calculate_current_month():
     """
-    Runs every day at 00:15.
-    Fetches I&D Oracle backend_data for previous month (full) + current month
-    (1st → today). Keeps local store always at 2-month rolling window.
+    Runs daily at 00:30 — after Oracle data has been fetched (00:10).
+    Calculates TP and BTRTP for the current month automatically and saves results.
+    I&D is not auto-calculated because it requires maintenance cost data set by admin.
+    This ensures the user dashboard always shows up-to-date current month data.
     """
-    if not oracle_connector.is_configured():
-        return
-    import calendar as _cal
-    today    = _date.today()
-    cur_from = str(today.replace(day=1))
-    cur_to   = str(today)
-    if today.month == 1:
-        prev_from = _date(today.year - 1, 12, 1)
-        prev_to   = _date(today.year - 1, 12, _cal.monthrange(today.year - 1, 12)[1])
-    else:
-        prev_from = _date(today.year, today.month - 1, 1)
-        prev_to   = _date(today.year, today.month - 1,
-                          _cal.monthrange(today.year, today.month - 1)[1])
+    today  = _date.today()
+    month  = today.month
+    year   = today.year
+    fd     = str(today.replace(day=1))
+    td     = str(today)
     try:
-        for fd, td in [(str(prev_from), str(prev_to)), (cur_from, cur_to)]:
-            df_ora, _ = oracle_connector.fetch_backend_data(fd, td)
-            if not df_ora.empty:
-                oracle_connector.save_oracle_backend_data(df_ora, fd, td, replace=True)
-        database.purge_old_oracle_data()
-        print(f"[id-daily-fetch] done — prev: {prev_from}→{prev_to}, cur: {cur_from}→{cur_to}")
+        # TP auto-calculation
+        plant_rows, loc_rows, warns = tp_calculator.run_tp_calculation(
+            month, year, from_date=fd, to_date=td)
+        if plant_rows:
+            tp_calculator.save_tp_results(plant_rows, month, year)
+            print(f"[auto-calc] TP done — {len(plant_rows)} plants for {year}-{month:02d}")
+        else:
+            print(f"[auto-calc] TP skipped — no data ({'; '.join(warns[:2])})")
     except Exception as exc:
-        print(f"[id-daily-fetch] error: {exc}")
-
-
-def _btrtp_daily_oracle_fetch_job():
-    """
-    Runs every day at 00:20.
-    Fetches BTRTP Oracle data for previous month (full) + current month (1st → today).
-    """
-    if not oracle_connector.is_configured():
-        return
-    import calendar as _cal
-    today    = _date.today()
-    cur_from = str(today.replace(day=1))
-    cur_to   = str(today)
-    if today.month == 1:
-        prev_from = _date(today.year - 1, 12, 1)
-        prev_to   = _date(today.year - 1, 12, _cal.monthrange(today.year - 1, 12)[1])
-    else:
-        prev_from = _date(today.year, today.month - 1, 1)
-        prev_to   = _date(today.year, today.month - 1,
-                          _cal.monthrange(today.year, today.month - 1)[1])
+        print(f"[auto-calc] TP error: {exc}")
     try:
-        for fd, td in [(str(prev_from), str(prev_to)), (cur_from, cur_to)]:
-            raw_df, _ = oracle_connector.fetch_btrtp_data(fd, td)
-            if not raw_df.empty:
-                parsed, _ = btrtp_calculator.parse_btrtp_oracle_df(raw_df)
-                oracle_connector.save_btrtp_oracle_data(parsed, replace=True)
-        database.purge_old_oracle_data()
-        print(f"[btrtp-daily-fetch] done — prev: {prev_from}→{prev_to}, cur: {cur_from}→{cur_to}")
+        # BTRTP auto-calculation
+        batcher_rows, warns = btrtp_calculator.run_btrtp_calculation(
+            month, year, from_date=fd, to_date=td)
+        if batcher_rows:
+            btrtp_calculator.save_btrtp_results(batcher_rows, month, year)
+            print(f"[auto-calc] BTRTP done — {len(batcher_rows)} batcher rows for {year}-{month:02d}")
+        else:
+            print(f"[auto-calc] BTRTP skipped — no data ({'; '.join(warns[:2])})")
     except Exception as exc:
-        print(f"[btrtp-daily-fetch] error: {exc}")
+        print(f"[auto-calc] BTRTP error: {exc}")
 
 
 def _startup_oracle_fetch():
@@ -316,10 +293,9 @@ def _startup_oracle_fetch():
     if not oracle_connector.is_configured() or not oracle_connector.is_reachable():
         print("[startup-fetch] Oracle not reachable — skipping startup seed")
         return
-    print("[startup-fetch] Oracle reachable — seeding all modules")
-    _tp_daily_oracle_fetch_job()
-    _id_daily_oracle_fetch_job()
-    _btrtp_daily_oracle_fetch_job()
+    print("[startup-fetch] Oracle reachable — running shared fetch for all modules")
+    _shared_oracle_fetch_job()
+    _auto_calculate_current_month()
     print("[startup-fetch] done")
 
 
@@ -384,18 +360,14 @@ def _start_scheduler():
     _scheduler.add_job(_tp_scheduled_email_job,
                        CronTrigger(day=1, hour=th, minute=tm),
                        id="tp_monthly_email", replace_existing=True)
-    # RDC-TP daily Oracle fetch — keeps previous month + current month data fresh.
-    _scheduler.add_job(_tp_daily_oracle_fetch_job,
+    # Shared daily Oracle fetch — one query feeds I&D, TP, and BTRTP.
+    _scheduler.add_job(_shared_oracle_fetch_job,
                        CronTrigger(hour=0, minute=10),
-                       id="tp_daily_oracle_fetch", replace_existing=True)
-    # RDC-I&D daily Oracle fetch
-    _scheduler.add_job(_id_daily_oracle_fetch_job,
-                       CronTrigger(hour=0, minute=15),
-                       id="id_daily_oracle_fetch", replace_existing=True)
-    # RDC-BTRTP daily Oracle fetch
-    _scheduler.add_job(_btrtp_daily_oracle_fetch_job,
-                       CronTrigger(hour=0, minute=20),
-                       id="btrtp_daily_oracle_fetch", replace_existing=True)
+                       id="oracle_daily_fetch", replace_existing=True)
+    # Auto-calculate TP and BTRTP for current month daily (after Oracle fetch).
+    _scheduler.add_job(_auto_calculate_current_month,
+                       CronTrigger(hour=0, minute=30),
+                       id="auto_calculate_current_month", replace_existing=True)
     _scheduler.start()
 
 
@@ -924,12 +896,18 @@ def page_home():
                 id_last["ded_emp"]   = sum(1 for r in id_last_rows if r.get("deduction_amount") and r["deduction_amount"] > 0)
                 id_last["total_inc"] = sum(r.get("incentive_amount") or 0 for r in id_last_rows)
 
-        # I&D current month raw (backend_data) — no plant column, show pan-India total
+        # I&D current month — oracle_raw_data first, fallback to backend_data
         cur.execute("""SELECT COUNT(DISTINCT created_by) as emp_count,
             ROUND(SUM(quantity),0) as total_qty,
-            MAX(uploaded_at) as last_sync
-            FROM backend_data WHERE substr(date,1,7)=?""", (cur_ym,))
+            MAX(fetched_at) as last_sync
+            FROM oracle_raw_data WHERE substr(production_date,1,7)=?""", (cur_ym,))
         row = cur.fetchone()
+        if not (row and row[0]):
+            cur.execute("""SELECT COUNT(DISTINCT created_by) as emp_count,
+                ROUND(SUM(quantity),0) as total_qty,
+                MAX(uploaded_at) as last_sync
+                FROM backend_data WHERE substr(date,1,7)=?""", (cur_ym,))
+            row = cur.fetchone()
         id_cur = dict(row) if (row and row[0]) else None
         if id_cur:
             id_cur["month_name"] = _mn(now.month)
@@ -967,21 +945,20 @@ def page_home():
                 tp_last["below_target"] = sum(1 for r in tp_last_rows if (r.get("throughput_pct") or 0) < 75)
                 tp_last["avg_tp"]       = round(sum(r.get("throughput_pct") or 0 for r in tp_last_rows) / len(tp_last_rows), 1) if tp_last_rows else 0
 
-        # TP current month raw (tp_oracle_data)
-        cur.execute("""SELECT COUNT(DISTINCT lookup_code) as plants,
+        # TP current month — from shared oracle_raw_data (plant_code = lookup proxy)
+        cur.execute("""SELECT COUNT(DISTINCT plant_code) as plants,
             ROUND(SUM(quantity),0) as total_qty,
             MAX(fetched_at) as last_sync
-            FROM tp_oracle_data WHERE substr(production_date,1,7)=?""", (cur_ym,))
+            FROM oracle_raw_data WHERE substr(production_date,1,7)=?""", (cur_ym,))
         row = cur.fetchone()
         tp_cur = {"plants": row[0] or 0, "total_qty": row[1] or 0,
-                  "last_sync": row[2]} if row else None
+                  "last_sync": row[2]} if (row and row[0]) else None
         if tp_cur:
             tp_cur["month_name"] = _mn(now.month)
             tp_cur["month"] = now.month
             tp_cur["year"]  = now.year
-        # If no current-month data yet but there IS older local data, show last known sync
         if tp_cur is None:
-            cur.execute("SELECT MAX(fetched_at) FROM tp_oracle_data")
+            cur.execute("SELECT MAX(fetched_at) FROM oracle_raw_data")
             r = cur.fetchone()
             tp_last_known_sync = r[0] if r else None
         else:
@@ -1017,17 +994,17 @@ def page_home():
                 bt_last["below_target"] = sum(1 for r in bt_last_rows if (r.get("throughput_pct") or 0) < 75)
                 bt_last["avg_tp"]       = round(sum(r.get("throughput_pct") or 0 for r in bt_last_rows) / len(bt_last_rows), 1) if bt_last_rows else 0
 
-        # BTRTP current — use a fresh cursor to avoid any state from previous queries
+        # BTRTP current — from shared oracle_raw_data (created_by = batcher proxy)
         bt_last_known_sync = None
         try:
             cur2 = conn.cursor()
-            cur2.execute("""SELECT COUNT(DISTINCT lookup_code) as batchers,
+            cur2.execute("""SELECT COUNT(DISTINCT created_by) as batchers,
                 MAX(fetched_at) as last_sync
-                FROM btrtp_oracle_data WHERE substr(production_date,1,7)=?""", (cur_ym,))
+                FROM oracle_raw_data WHERE substr(production_date,1,7)=?""", (cur_ym,))
             row = cur2.fetchone()
             bt_cur = {"batchers": row[0], "last_sync": row[1]} if (row and row[0]) else None
             if bt_cur is None:
-                cur2.execute("SELECT MAX(fetched_at) FROM btrtp_oracle_data")
+                cur2.execute("SELECT MAX(fetched_at) FROM oracle_raw_data")
                 r = cur2.fetchone()
                 bt_last_known_sync = r[0] if r else None
         except Exception:

@@ -87,18 +87,31 @@ def run_btrtp_calculation(month: int, year: int,
     """
     warnings = []
 
-    # 1. Load BTRTP Oracle data
-    ora_df = database.read_table("btrtp_oracle_data")
+    # 1. Load BTRTP Oracle data from shared cache, fall back to legacy table
+    conn = database.get_connection()
+    try:
+        fd_str = str(from_date) if from_date else "0000-00-00"
+        td_str = str(to_date)   if to_date   else "9999-12-31"
+        ora_df = pd.read_sql_query(
+            """SELECT production_date, created_by AS batcher_id,
+                      plant_code, batch_ref, quantity, time_taken_min
+               FROM oracle_raw_data
+               WHERE production_date >= ? AND production_date <= ?""",
+            conn, params=(fd_str, td_str)
+        )
+        if ora_df.empty:
+            ora_df = pd.read_sql_query(
+                """SELECT production_date, batcher_id, plant_code,
+                          batch_ref, quantity, time_taken_min
+                   FROM btrtp_oracle_data
+                   WHERE production_date >= ? AND production_date <= ?""",
+                conn, params=(fd_str, td_str)
+            )
+    finally:
+        conn.close()
     if ora_df.empty:
         warnings.append("No Oracle data found — fetch from Oracle first.")
         return [], warnings
-
-    if from_date and to_date:
-        pd_str = ora_df["production_date"].astype(str).str.slice(0, 10)
-        ora_df = ora_df[(pd_str >= str(from_date)) & (pd_str <= str(to_date))]
-        if ora_df.empty:
-            warnings.append(f"No Oracle data in range {from_date} → {to_date}.")
-            return [], warnings
 
     # 2. Load TP plant master (mixer capacity — shared with RDC-TP)
     plant_df = database.read_table("tp_plant_data")
@@ -118,6 +131,16 @@ def run_btrtp_calculation(month: int, year: int,
     # 4. Aggregate by (batcher_id, lookup_code)
     ora_df["quantity"]       = pd.to_numeric(ora_df["quantity"],       errors="coerce").fillna(0)
     ora_df["time_taken_min"] = pd.to_numeric(ora_df["time_taken_min"], errors="coerce").fillna(0)
+
+    # Derive lookup_code from batch_ref if not present (shared oracle_raw_data)
+    if "lookup_code" not in ora_df.columns:
+        ora_df["lookup_code"] = ora_df["batch_ref"].apply(
+            lambda b: _parse_batch(str(b))[2]
+        )
+
+    # Drop zero-time and zero-qty rows
+    ora_df = ora_df[(ora_df["time_taken_min"] > 0) & (ora_df["time_taken_min"] <= 100)
+                    & (ora_df["quantity"] > 0)]
 
     grouped = (
         ora_df.groupby(["batcher_id", "lookup_code"], sort=True)

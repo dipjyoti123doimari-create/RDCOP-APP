@@ -325,6 +325,23 @@ TABLE_SCHEMAS = {
         )
     """,
 
+    # ── Shared Oracle raw cache ──────────────────────────────────────────────
+    # One table for ALL modules — fetched once, read by I&D / TP / BTRTP.
+    # Columns are a superset of every module's needs.
+    # Index on production_date keeps per-month queries fast.
+    "oracle_raw_data": """
+        CREATE TABLE IF NOT EXISTS oracle_raw_data (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            production_date TEXT NOT NULL,
+            created_by      TEXT,
+            plant_code      TEXT,
+            batch_ref       TEXT,
+            quantity        REAL,
+            time_taken_min  REAL,
+            fetched_at      TEXT
+        )
+    """,
+
     # ── RDC-BTRTP tables ────────────────────────────────────────────────────
 
     # Raw Oracle rows with batcher (CREATED_BY) column
@@ -469,6 +486,10 @@ def init_db():
         if "year" not in existing_cols:
             cur.execute("ALTER TABLE maintenance_cost ADD COLUMN year  INTEGER")
 
+        # Index for fast date-range queries on the shared Oracle raw cache
+        cur.execute("""CREATE INDEX IF NOT EXISTS idx_oracle_raw_date
+                       ON oracle_raw_data(production_date)""")
+
         conn.commit()
     finally:
         conn.close()
@@ -577,9 +598,10 @@ def replace_table_rows(table, rows):
 # Shared by ALL modules — add new modules' Oracle tables here so the rolling
 # retention policy covers them automatically.
 ORACLE_DATA_TABLES = {
-    "backend_data":      "date",             # RDC-I&D
-    "tp_oracle_data":    "production_date",  # RDC-TP
-    "btrtp_oracle_data": "production_date",  # RDC-BTRTP
+    "oracle_raw_data":   "production_date",  # shared cache — all modules
+    "backend_data":      "date",             # RDC-I&D (Excel uploads kept separately)
+    "tp_oracle_data":    "production_date",  # RDC-TP legacy (kept for compat)
+    "btrtp_oracle_data": "production_date",  # RDC-BTRTP legacy (kept for compat)
 }
 
 

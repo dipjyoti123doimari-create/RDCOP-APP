@@ -386,6 +386,121 @@ def save_tp_oracle_data(df: pd.DataFrame, from_date, to_date,
     return database.insert_rows("tp_oracle_data", parsed_rows)
 
 
+def fetch_oracle_raw_data(from_date, to_date) -> tuple:
+    """
+    Single Oracle query that fetches ALL columns needed by every module.
+    I&D uses: created_by, production_date, quantity, time_taken_min
+    TP  uses: plant_code, batch_ref, production_date, quantity, time_taken_min
+    BTRTP uses: all of the above together
+
+    Returns (DataFrame, warnings_list).
+    DataFrame columns: production_date, created_by, plant_code, batch_ref,
+                       quantity, time_taken_min
+    """
+    cfg  = get_oracle_config()
+    cols = get_tp_oracle_cols()
+    batcher_col = (database.get_module_setting("btrtp", "oracle_batcher_col", "CREATED_BY") or "CREATED_BY").strip()
+    warnings = []
+
+    _init_thick(cfg["instantclient"])
+    conn = oracledb.connect(user=cfg["user"], password=cfg["password"], dsn=_dsn(cfg))
+    try:
+        cur = conn.cursor()
+        fd, td = str(from_date), str(to_date)
+        params = {"from_date": fd, "to_date": td}
+        status_clause = ""
+        if cfg["status_filter"]:
+            status_clause = "AND STATUS = :status"
+            params["status"] = cfg["status_filter"]
+
+        sql = f"""
+            SELECT
+                PRODDATE              AS production_date,
+                {batcher_col}         AS created_by,
+                {cols['plant']}       AS plant_code,
+                {cols['batch']}       AS batch_ref,
+                PRODUCED_QUANTITY     AS quantity,
+                {cols['time']}        AS time_taken_min
+            FROM {_TABLE}
+            WHERE PRODDATE >= :from_date
+              AND PRODDATE <= :to_date
+              {status_clause}
+            ORDER BY PRODDATE, {batcher_col}
+        """
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+        col_names = [d[0].lower() for d in cur.description]
+
+        if not rows:
+            warnings.append(f"No rows found in Oracle for {from_date} → {to_date}.")
+            return pd.DataFrame(columns=["production_date","created_by","plant_code",
+                                         "batch_ref","quantity","time_taken_min"]), warnings
+
+        df = pd.DataFrame(rows, columns=col_names)
+        df["quantity"]       = pd.to_numeric(df["quantity"],       errors="coerce").fillna(0)
+        df["time_taken_min"] = pd.to_numeric(df["time_taken_min"], errors="coerce").fillna(0)
+
+        # Drop rows with zero time (business rule: no time = don't count)
+        zero_time = df["time_taken_min"] == 0
+        if zero_time.sum():
+            warnings.append(f"{zero_time.sum()} row(s) skipped — time_taken = 0.")
+        df = df[~zero_time].reset_index(drop=True)
+
+        # Drop rows with blank created_by
+        df["created_by"] = df["created_by"].fillna("").astype(str).str.strip()
+        blank_by = df["created_by"] == ""
+        if blank_by.sum():
+            warnings.append(f"{blank_by.sum()} row(s) skipped — blank {batcher_col}.")
+        df = df[~blank_by].reset_index(drop=True)
+
+        # Drop zero/negative quantity
+        bad_qty = df["quantity"] <= 0
+        if bad_qty.sum():
+            warnings.append(f"{bad_qty.sum()} row(s) skipped — zero/negative quantity.")
+        df = df[~bad_qty].reset_index(drop=True)
+
+        return df, warnings
+    finally:
+        conn.close()
+
+
+def save_oracle_raw_data(df: pd.DataFrame, replace: bool = True) -> int:
+    """
+    Save a DataFrame from fetch_oracle_raw_data() into the shared oracle_raw_data table.
+    replace=True clears existing data for the rows' date range first.
+    Returns rows saved.
+    """
+    if df.empty:
+        return 0
+    now = datetime.now().isoformat(timespec="seconds")
+    rows = []
+    for _, row in df.iterrows():
+        rows.append({
+            "production_date": str(row["production_date"]),
+            "created_by":      str(row["created_by"]),
+            "plant_code":      str(row.get("plant_code", "") or ""),
+            "batch_ref":       str(row.get("batch_ref", "") or ""),
+            "quantity":        float(row["quantity"]),
+            "time_taken_min":  float(row["time_taken_min"]),
+            "fetched_at":      now,
+        })
+    if replace:
+        # Clear rows in the same date range before inserting
+        if rows:
+            min_d = min(r["production_date"] for r in rows)
+            max_d = max(r["production_date"] for r in rows)
+            conn = database.get_connection()
+            try:
+                conn.execute(
+                    "DELETE FROM oracle_raw_data WHERE production_date >= ? AND production_date <= ?",
+                    (min_d, max_d)
+                )
+                conn.commit()
+            finally:
+                conn.close()
+    return database.insert_rows("oracle_raw_data", rows)
+
+
 def save_oracle_backend_data(df: pd.DataFrame, from_date, to_date,
                               replace: bool = True) -> int:
     """
