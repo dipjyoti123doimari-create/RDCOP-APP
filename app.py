@@ -2876,7 +2876,8 @@ def page_reports():
 
     if has_params and not no_backend:
         range_key = f"{from_date}|{to_date}"
-        if _s("rpt_range_key") != range_key:
+        cached_empty = (not _s("rpt_all", None)) and _s("rpt_range_key") == range_key
+        if _s("rpt_range_key") != range_key or cached_empty:
             # View Reports never writes to backend_data — oracle_raw_data is
             # the shared cache maintained by the nightly fetch job. Just report
             # how many rows oracle_raw_data has for this range.
