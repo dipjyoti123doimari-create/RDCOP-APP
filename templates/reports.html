@@ -1,23 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Calculate &amp; Reports{% endblock %}
+{% block title %}View Reports{% endblock %}
 {% block content %}
 
 <div class="page-header">
-  <h1>Calculate &amp; Reports</h1>
-  <p>Pick a date range, apply filters — then run calculation or browse existing results</p>
+  <h1>View Reports</h1>
+  <p>Pick a date range, apply filters, then browse and export the report</p>
 </div>
 
 {% if maint_month_label %}
 <div class="alert {{ 'alert-error' if maint_mismatch else 'alert-info' }}" style="margin-bottom:10px">
   {% if maint_mismatch %}
-  ⚠️ <strong>Maintenance cost month mismatch:</strong> Uploaded data is for <strong>{{ maint_month_label }}</strong> — calculation will use this data. Upload the correct month's maintenance cost for accurate results.
+  ⚠️ <strong>Maintenance cost month mismatch:</strong> Uploaded data is for <strong>{{ maint_month_label }}</strong>, but report period is a different month. Results may be incorrect — upload the correct month's maintenance cost.
   {% else %}
   📋 <strong>YTD Maintenance Cost applied:</strong> {{ maint_month_label }}
   {% endif %}
-</div>
-{% else %}
-<div class="alert alert-error" style="margin-bottom:10px">
-  ⚠️ <strong>No maintenance cost data uploaded.</strong> Calculation will fail — please upload maintenance cost data first.
 </div>
 {% endif %}
 
@@ -28,156 +24,133 @@
 </div>
 {% else %}
 
-<!-- ── Single unified date range + filters + action card ── -->
+<!-- Date range + filter form -->
 <div class="card">
   <div class="section-title">📅 Report Period &amp; Filters</div>
-
   {% if ora_live %}
   <div class="alert alert-info" style="margin-bottom:14px">🔌 Live data — Oracle will be queried automatically for the selected range.</div>
   {% endif %}
 
-  <!-- Date row shared by both the GET filter form and the POST calculation form -->
-  <div class="date-row" style="align-items:flex-end">
-    <div class="form-group">
-      <label>From Date</label>
-      <input type="date" id="shared-from" value="{{ from_date or default_from }}" required>
-    </div>
-    <div class="form-group">
-      <label>To Date</label>
-      <input type="date" id="shared-to" value="{{ to_date or default_to }}" required>
-    </div>
-    <div class="form-group">
-      <label>&nbsp;</label>
-      <div class="btn-group">
-        <!-- Run Calculation — POST to run_calculation, dates copied by JS -->
-        <form method="POST" action="{{ url_for('run_calculation') }}" id="calc-form" style="display:inline">
-          <input type="hidden" name="from_date" id="pf-from">
-          <input type="hidden" name="to_date"   id="pf-to">
-          <button type="submit" class="btn btn-primary" id="run-btn">⚡ Run Calculation</button>
-        </form>
-        <!-- Load / Filter — GET, dates + filters copied by JS -->
-        <form method="GET" action="{{ url_for('page_reports') }}" id="filter-form" style="display:inline">
-          <input type="hidden" name="from_date" id="ff-from">
-          <input type="hidden" name="to_date"   id="ff-to">
-          <!-- filter fields inserted by JS before submit -->
-          <div id="ff-filter-fields"></div>
-          <button type="submit" class="btn btn-secondary" id="load-btn">🔄 Load / Filter</button>
-        </form>
+  <form method="GET" action="{{ url_for('page_reports') }}" id="filter-form">
+    <!-- Date range -->
+    <div class="date-row">
+      <div class="form-group">
+        <label>From Date</label>
+        <input type="date" name="from_date" value="{{ from_date }}" required>
+      </div>
+      <div class="form-group">
+        <label>To Date</label>
+        <input type="date" name="to_date" value="{{ to_date }}" required>
+      </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <button type="submit" class="btn btn-primary" id="load-btn">🔄 Load Report</button>
       </div>
     </div>
-  </div>
 
-  <!-- Filters — always visible once results exist -->
-  {% if unique_cats or unique_desigs or unique_plants %}
-  <hr class="divider">
-  <div class="filter-grid filter-grid-3">
+    <!-- Filters — always visible -->
+    {% if unique_cats or unique_desigs or unique_plants %}
+    <hr class="divider">
+    <div class="filter-grid filter-grid-3">
 
-    <div class="form-group" style="margin-bottom:0">
-      <label>Category</label>
-      <div class="ms-wrap">
-        <div class="ms-box" tabindex="0">
-          <span class="ms-label {% if not cats %}placeholder{% endif %}">{% if cats %}{{ cats|length }} selected{% else %}All{% endif %}</span>
-          <span class="ms-arrow">▾</span>
-        </div>
-        <div class="ms-panel">
-          <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
-          <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
-          <div class="ms-opts" id="f-cats">
-            {% for c in unique_cats %}
-            <label><input type="checkbox" name="category" value="{{ c }}" {% if c in cats %}checked{% endif %}> {{ c }}</label>
-            {% endfor %}
+      <!-- Category multi-select -->
+      <div class="form-group" style="margin-bottom:0">
+        <label>Category</label>
+        <div class="ms-wrap">
+          <div class="ms-box" tabindex="0">
+            <span class="ms-label {% if not cats %}placeholder{% endif %}">{% if cats %}{{ cats|length }} selected{% else %}All{% endif %}</span>
+            <span class="ms-arrow">▾</span>
+          </div>
+          <div class="ms-panel">
+            <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
+            <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
+            <div class="ms-opts">
+              {% for c in unique_cats %}
+              <label><input type="checkbox" name="category" value="{{ c }}" {% if c in cats %}checked{% endif %}> {{ c }}</label>
+              {% endfor %}
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <div class="form-group" style="margin-bottom:0">
-      <label>Designation</label>
-      <div class="ms-wrap">
-        <div class="ms-box" tabindex="0">
-          <span class="ms-label {% if not desigs %}placeholder{% endif %}">{% if desigs %}{{ desigs|length }} selected{% else %}All{% endif %}</span>
-          <span class="ms-arrow">▾</span>
-        </div>
-        <div class="ms-panel">
-          <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
-          <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
-          <div class="ms-opts" id="f-desigs">
-            {% for d in unique_desigs %}
-            <label><input type="checkbox" name="designation" value="{{ d }}" {% if d in desigs %}checked{% endif %}> {{ d }}</label>
-            {% endfor %}
+      <!-- Designation multi-select -->
+      <div class="form-group" style="margin-bottom:0">
+        <label>Designation</label>
+        <div class="ms-wrap">
+          <div class="ms-box" tabindex="0">
+            <span class="ms-label {% if not desigs %}placeholder{% endif %}">{% if desigs %}{{ desigs|length }} selected{% else %}All{% endif %}</span>
+            <span class="ms-arrow">▾</span>
+          </div>
+          <div class="ms-panel">
+            <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
+            <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
+            <div class="ms-opts">
+              {% for d in unique_desigs %}
+              <label><input type="checkbox" name="designation" value="{{ d }}" {% if d in desigs %}checked{% endif %}> {{ d }}</label>
+              {% endfor %}
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <div class="form-group" style="margin-bottom:0">
-      <label>Plant</label>
-      <div class="ms-wrap">
-        <div class="ms-box" tabindex="0">
-          <span class="ms-label {% if not plants %}placeholder{% endif %}">{% if plants %}{{ plants|length }} selected{% else %}All{% endif %}</span>
-          <span class="ms-arrow">▾</span>
-        </div>
-        <div class="ms-panel">
-          <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
-          <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
-          <div class="ms-opts" id="f-plants">
-            {% for p in unique_plants %}
-            <label><input type="checkbox" name="plant" value="{{ p }}" {% if p in plants %}checked{% endif %}> {{ p }}</label>
-            {% endfor %}
+      <!-- Plant multi-select -->
+      <div class="form-group" style="margin-bottom:0">
+        <label>Plant</label>
+        <div class="ms-wrap">
+          <div class="ms-box" tabindex="0">
+            <span class="ms-label {% if not plants %}placeholder{% endif %}">{% if plants %}{{ plants|length }} selected{% else %}All{% endif %}</span>
+            <span class="ms-arrow">▾</span>
+          </div>
+          <div class="ms-panel">
+            <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
+            <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
+            <div class="ms-opts">
+              {% for p in unique_plants %}
+              <label><input type="checkbox" name="plant" value="{{ p }}" {% if p in plants %}checked{% endif %}> {{ p }}</label>
+              {% endfor %}
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <div class="form-group" style="margin-bottom:0">
-      <label>Incentive Eligibility</label>
-      <select id="f-elig" name="elig">
-        <option value="All" {% if elig=='All' %}selected{% endif %}>All</option>
-        <option value="Yes" {% if elig=='Yes' %}selected{% endif %}>Eligible (Yes)</option>
-        <option value="No"  {% if elig=='No'  %}selected{% endif %}>Not eligible (No)</option>
-      </select>
-    </div>
+      <!-- Incentive Eligibility -->
+      <div class="form-group" style="margin-bottom:0">
+        <label>Incentive Eligibility</label>
+        <select name="elig">
+          <option value="All" {% if elig=='All' %}selected{% endif %}>All</option>
+          <option value="Yes" {% if elig=='Yes' %}selected{% endif %}>Eligible (Yes)</option>
+          <option value="No"  {% if elig=='No'  %}selected{% endif %}>Not eligible (No)</option>
+        </select>
+      </div>
 
-    <div class="form-group" style="margin-bottom:0">
-      <label>Outcome</label>
-      <select id="f-outcome" name="outcome">
-        <option value="All"       {% if outcome=='All' %}selected{% endif %}>All</option>
-        <option value="incentive" {% if outcome=='incentive' %}selected{% endif %}>Has incentive</option>
-        <option value="deduction" {% if outcome=='deduction' %}selected{% endif %}>Has deduction</option>
-        <option value="both"      {% if outcome=='both' %}selected{% endif %}>Has both</option>
-        <option value="neither"   {% if outcome=='neither' %}selected{% endif %}>Neither</option>
-      </select>
-    </div>
+      <!-- Outcome -->
+      <div class="form-group" style="margin-bottom:0">
+        <label>Outcome</label>
+        <select name="outcome">
+          <option value="All"       {% if outcome=='All' %}selected{% endif %}>All</option>
+          <option value="incentive" {% if outcome=='incentive' %}selected{% endif %}>Has incentive</option>
+          <option value="deduction" {% if outcome=='deduction' %}selected{% endif %}>Has deduction</option>
+          <option value="both"      {% if outcome=='both' %}selected{% endif %}>Has both</option>
+          <option value="neither"   {% if outcome=='neither' %}selected{% endif %}>Neither</option>
+        </select>
+      </div>
 
-    <div class="form-group" style="margin-bottom:0">
-      <label>Search Code / Name</label>
-      <input type="text" id="f-search" value="{{ search }}" placeholder="e.g. 1023 or Ramesh">
-    </div>
+      <!-- Search -->
+      <div class="form-group" style="margin-bottom:0">
+        <label>Search Code / Name</label>
+        <input type="text" name="search" value="{{ search }}" placeholder="e.g. 1023 or Ramesh">
+      </div>
 
-  </div>
-  <div style="margin-top:14px">
-    {% if cats or desigs or plants or elig != 'All' or outcome != 'All' or search %}
-    <a href="{{ url_for('page_reports', from_date=from_date, to_date=to_date) }}" class="btn btn-secondary btn-sm">✕ Clear Filters</a>
+    </div>
+    <div style="margin-top:14px">
+      <button type="submit" class="btn btn-secondary btn-sm">Apply Filters</button>
+      {% if cats or desigs or plants or elig != 'All' or outcome != 'All' or search %}
+      <a href="{{ url_for('page_reports', from_date=from_date, to_date=to_date) }}" class="btn btn-secondary btn-sm" style="margin-left:8px">✕ Clear Filters</a>
+      {% endif %}
+    </div>
     {% endif %}
-  </div>
-  {% endif %}
-
-  <!-- Preflight banner (I&D only) — shown/hidden by JS -->
-  <div id="preflight-banner" style="display:none;margin-top:14px;border-radius:8px;padding:12px 16px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35)">
-    <div style="font-weight:700;color:#f87171;margin-bottom:6px;font-size:13px">🚫 Data Integrity Problems Detected — Calculation is Blocked</div>
-    <ul id="preflight-list" style="margin:0;padding-left:18px;font-size:12px;color:#fca5a5;line-height:1.8"></ul>
-    <div style="margin-top:8px;font-size:11px;color:rgba(252,165,165,.7)">Fix the issues above before running the calculation. Proceeding with bad data will cause wrong incentive/deduction amounts for employees.</div>
-  </div>
-  <div id="preflight-ok" style="display:none;margin-top:14px;border-radius:8px;padding:10px 16px;background:rgba(16,185,129,.10);border:1px solid rgba(16,185,129,.30);font-size:12px;color:#6ee7b7">
-    ✅ Data integrity check passed — safe to calculate.
-  </div>
-
-  <div class="loading" id="calc-loading"><div class="spinner"></div> Running calculation…</div>
+  </form>
   <div class="loading" id="report-loading"><div class="spinner"></div> Loading report…</div>
-
-  {% if last_calc and last_calc.ran_at %}
-  <p class="caption" style="margin-top:10px">Last run: {{ last_calc.ran_at }} · {{ last_calc.mapped }} employees · {{ last_calc.unmapped }} unmapped</p>
-  {% endif %}
 </div>
 
 {% if error_msg %}
@@ -226,7 +199,7 @@
   <button type="button" class="btn btn-secondary btn-sm" onclick="openWaiverModal()">🛡️ Manage Waivers <span style="display:inline-block;background:#e55;color:#fff;border-radius:10px;padding:0 7px;font-size:11px;margin-left:4px">{{ all_waivers | length }}</span></button>
 </div>
 
-<!-- Toolbar -->
+<!-- Toolbar: row count left · export actions right -->
 <div class="report-toolbar">
   <p class="caption" style="margin:0">Showing <strong>{{ results | length | format_int }}</strong> of <strong>{{ total_rows | format_int }}</strong> rows · {{ from_date }} → {{ to_date }}</p>
   <div class="btn-group">
@@ -277,7 +250,7 @@
   </div>
 </div>
 
-<!-- Category tabs -->
+<!-- Category tabs (mirrors Calculate page) -->
 <div class="tabs">
   {% set ns = namespace(first=true) %}
   {% for label in cat_tabs.keys() %}
@@ -334,31 +307,10 @@
 {% endif %}
 {% endfor %}
 
-{% if unmapped %}
-<hr class="divider">
-<div class="card">
-  <div class="section-title">⚠️ {{ unmapped | length }} Unmapped Employee(s)</div>
-  <p class="caption" style="margin-bottom:10px">Employee codes in backend data not found in master data</p>
-  <div class="table-wrapper">
-    <table>
-      <thead><tr><th>Employee Code</th><th>Total Qty</th><th>Records</th><th>Period</th><th>Detected At</th></tr></thead>
-      <tbody>
-        {% for row in unmapped %}
-        <tr>
-          <td>{{ row.employee_code }}</td><td>{{ row.total_quantity }}</td>
-          <td>{{ row.record_count }}</td><td>{{ row.period }}</td><td>{{ row.detected_at }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% endif %}
 
 {% endif %}
 {% endif %}
 {% endif %}
-
 <!-- ── Waiver Management Modal ── -->
 <div id="waiver-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeWaiverModal()">
   <div class="modal-box" style="max-width:780px;max-height:90vh;overflow-y:auto">
@@ -385,14 +337,14 @@
           <label>Month</label>
           <select name="waiver_month" required>
             {% for m_num, m_name in waiver_month_opts %}
-            <option value="{{ m_num }}" {% if m_num == (last_calc.month | int) %}selected{% endif %}>{{ m_name }}</option>
+            <option value="{{ m_num }}" {% if last_calc and m_num == (last_calc.month | int) %}selected{% endif %}>{{ m_name }}</option>
             {% endfor %}
           </select>
         </div>
 
         <div class="form-group" style="margin:0;flex:0 0 88px">
           <label>Year</label>
-          <input type="number" name="waiver_year" value="{{ last_calc.year or current_year }}" min="2020" max="2099" required style="width:88px">
+          <input type="number" name="waiver_year" value="{{ last_calc.year if last_calc else current_year }}" min="2020" max="2099" required style="width:88px">
         </div>
 
         <div class="form-group" style="margin:0;flex:1 1 200px">
@@ -455,7 +407,6 @@
             box-shadow:0 8px 28px rgba(0,0,0,0.6);min-width:240px">
   {% for e in waiver_employees %}
   <div class="waiver-emp-opt" data-code="{{ e.code }}" data-label="{{ e.code }} — {{ e.name }}"
-       onmousedown="waiverEmpSelect(this)"
        style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid rgba(255,255,255,0.05)">
     <strong>{{ e.code }}</strong>&nbsp;&nbsp;{{ e.name }}
   </div>
@@ -468,95 +419,10 @@
 {% endblock %}
 {% block scripts %}
 <script>
-/* ── Sync shared date pickers into the hidden fields of each form ── */
-(function() {
-  var sharedFrom = document.getElementById('shared-from');
-  var sharedTo   = document.getElementById('shared-to');
-
-  function syncDates() {
-    var f = sharedFrom.value, t = sharedTo.value;
-    // Calculation form hidden fields
-    document.getElementById('pf-from').value = f;
-    document.getElementById('pf-to').value   = t;
-    // Filter form hidden fields
-    document.getElementById('ff-from').value = f;
-    document.getElementById('ff-to').value   = t;
-  }
-
-  sharedFrom.addEventListener('change', function() { syncDates(); runPreflight(); });
-  sharedTo.addEventListener('change',   function() { syncDates(); runPreflight(); });
-  syncDates(); // init on page load
-})();
-
-/* Before filter-form submits, copy active filter values into its hidden container */
 document.getElementById('filter-form').addEventListener('submit', function() {
-  var container = document.getElementById('ff-filter-fields');
-  container.innerHTML = '';
-  function addHidden(name, value) {
-    var inp = document.createElement('input');
-    inp.type = 'hidden'; inp.name = name; inp.value = value;
-    container.appendChild(inp);
-  }
-  // Category checkboxes
-  document.querySelectorAll('#f-cats input[type=checkbox]:checked').forEach(function(cb) {
-    addHidden('category', cb.value);
-  });
-  // Designation checkboxes
-  document.querySelectorAll('#f-desigs input[type=checkbox]:checked').forEach(function(cb) {
-    addHidden('designation', cb.value);
-  });
-  // Plant checkboxes
-  document.querySelectorAll('#f-plants input[type=checkbox]:checked').forEach(function(cb) {
-    addHidden('plant', cb.value);
-  });
-  // Single selects
-  addHidden('elig',    document.getElementById('f-elig').value);
-  addHidden('outcome', document.getElementById('f-outcome').value);
-  addHidden('search',  document.getElementById('f-search').value);
-
   document.getElementById('report-loading').classList.add('active');
   document.getElementById('load-btn').disabled = true;
 });
-
-/* ── Preflight check ── */
-function runPreflight() {
-  var f = document.getElementById('shared-from').value;
-  var t = document.getElementById('shared-to').value;
-  if (!f || !t) return;
-  var banner = document.getElementById('preflight-banner');
-  var list   = document.getElementById('preflight-list');
-  var okBox  = document.getElementById('preflight-ok');
-  var runBtn = document.getElementById('run-btn');
-  fetch('/action/preflight-check?from_date=' + f + '&to_date=' + t)
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.errors && data.errors.length > 0) {
-        list.innerHTML = data.errors.map(function(e) { return '<li>' + e + '</li>'; }).join('');
-        banner.style.display = 'block';
-        okBox.style.display  = 'none';
-        runBtn.disabled = true;
-        runBtn.style.opacity = '0.45';
-        runBtn.title = 'Fix data integrity issues before calculating';
-      } else {
-        banner.style.display = 'none';
-        okBox.style.display  = 'block';
-        runBtn.disabled = false;
-        runBtn.style.opacity = '';
-        runBtn.title = '';
-      }
-    }).catch(function() {});
-}
-// Run preflight on page load
-runPreflight();
-
-/* ── Calculation form AJAX ── */
-submitFormAjax(
-  document.getElementById('calc-form'),
-  document.getElementById('calc-loading'),
-  document.getElementById('run-btn')
-);
-
-/* ── Email modal ── */
 function openEmailModal() {
   var m = document.getElementById('email-modal');
   if (m) { m.style.display = 'flex'; document.body.style.overflow = 'hidden'; }
@@ -565,8 +431,6 @@ function closeEmailModal() {
   var m = document.getElementById('email-modal');
   if (m) { m.style.display = 'none'; document.body.style.overflow = ''; }
 }
-
-/* ── Waiver modal ── */
 function openWaiverModal() {
   document.getElementById('waiver-modal').style.display = 'flex';
   document.body.style.overflow = 'hidden';
@@ -575,20 +439,15 @@ function closeWaiverModal() {
   document.getElementById('waiver-modal').style.display = 'none';
   document.body.style.overflow = '';
 }
-
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') { closeEmailModal(); closeWaiverModal(); }
 });
-
-/* ── Reason toggle ── */
 function toggleCustomReason(sel) {
   var grp = document.getElementById('waiver-custom-group');
   var inp = document.getElementById('waiver-custom-input');
   if (sel.value === 'other') { grp.style.display = ''; inp.required = true; }
   else { grp.style.display = 'none'; inp.required = false; inp.value = ''; }
 }
-
-/* ── Employee search LOV ── */
 document.addEventListener('DOMContentLoaded', function() {
   var searchInp = document.getElementById('waiver-emp-search');
   var codeInp   = document.getElementById('waiver-emp-code');
@@ -597,7 +456,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function ddPosition() {
     var r = searchInp.getBoundingClientRect();
-    dd.style.top = (r.bottom + 4) + 'px';
+    dd.style.top  = (r.bottom + 4) + 'px';
     dd.style.left = r.left + 'px';
     dd.style.width = r.width + 'px';
   }
@@ -609,7 +468,6 @@ document.addEventListener('DOMContentLoaded', function() {
       opt.style.display = opt.dataset.label.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
     });
   }
-
   searchInp.addEventListener('focus', function() { ddFilter(); ddShow(); });
   searchInp.addEventListener('input', function() { codeInp.value = ''; ddFilter(); ddShow(); });
   opts.forEach(function(opt) {
@@ -622,7 +480,6 @@ document.addEventListener('DOMContentLoaded', function() {
       ddHide();
     });
   });
-
   document.body.appendChild(dd);
   document.addEventListener('mousedown', function(e) {
     if (e.target !== searchInp && !dd.contains(e.target)) ddHide();
