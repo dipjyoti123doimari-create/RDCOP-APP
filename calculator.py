@@ -86,42 +86,57 @@ def _fetch_backend_for_period(month: int, year: int,
                                end_date: str = None) -> pd.DataFrame:
     """
     Return production rows for the given period for I&D calculation.
-    Reads from oracle_raw_data (Oracle-sourced) UNION backend_data (Excel uploads).
-    oracle_raw_data uses column 'production_date'; backend_data uses 'date'.
-    Both are aliased to 'date' and 'created_by'/'quantity' for the calculator.
+
+    Priority: if oracle_raw_data has rows for this period, use ONLY that table.
+    Fall back to backend_data (Excel uploads) only when oracle has nothing.
+    This prevents double-counting when Oracle data was also manually uploaded.
     """
     conn = database.get_connection()
     try:
         if start_date and end_date:
-            df = pd.read_sql_query(
-                """SELECT created_by, quantity, production_date AS date
-                   FROM oracle_raw_data
-                   WHERE production_date >= ? AND production_date <= ?
-                   UNION ALL
-                   SELECT created_by, quantity, date
-                   FROM backend_data
-                   WHERE date >= ? AND date <= ?""",
-                conn,
-                params=(start_date, end_date, start_date, end_date),
+            # Check if Oracle has data for this date range
+            oracle_check = pd.read_sql_query(
+                "SELECT COUNT(*) AS cnt FROM oracle_raw_data "
+                "WHERE production_date >= ? AND production_date <= ?",
+                conn, params=(start_date, end_date)
             )
+            if oracle_check["cnt"].iloc[0] > 0:
+                df = pd.read_sql_query(
+                    "SELECT created_by, quantity, production_date AS date "
+                    "FROM oracle_raw_data "
+                    "WHERE production_date >= ? AND production_date <= ?",
+                    conn, params=(start_date, end_date)
+                )
+            else:
+                df = pd.read_sql_query(
+                    "SELECT created_by, quantity, date "
+                    "FROM backend_data "
+                    "WHERE date >= ? AND date <= ?",
+                    conn, params=(start_date, end_date)
+                )
         else:
             period = f"{year:04d}-{month:02d}"
-            df = pd.read_sql_query(
-                """SELECT created_by, quantity, production_date AS date
-                   FROM oracle_raw_data
-                   WHERE substr(production_date,1,7) = ?
-                   UNION ALL
-                   SELECT created_by, quantity, date
-                   FROM backend_data
-                   WHERE substr(date,1,7) = ?""",
-                conn,
-                params=(period, period),
+            oracle_check = pd.read_sql_query(
+                "SELECT COUNT(*) AS cnt FROM oracle_raw_data "
+                "WHERE substr(production_date,1,7) = ?",
+                conn, params=(period,)
             )
+            if oracle_check["cnt"].iloc[0] > 0:
+                df = pd.read_sql_query(
+                    "SELECT created_by, quantity, production_date AS date "
+                    "FROM oracle_raw_data "
+                    "WHERE substr(production_date,1,7) = ?",
+                    conn, params=(period,)
+                )
+            else:
+                df = pd.read_sql_query(
+                    "SELECT created_by, quantity, date "
+                    "FROM backend_data "
+                    "WHERE substr(date,1,7) = ?",
+                    conn, params=(period,)
+                )
     finally:
         conn.close()
-    # Deduplicate — if a row exists in both (e.g. re-upload after Oracle fetch), keep oracle
-    if not df.empty:
-        df = df.drop_duplicates(subset=["created_by", "date", "quantity"])
     return df
 
 
