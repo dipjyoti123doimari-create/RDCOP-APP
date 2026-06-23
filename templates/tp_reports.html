@@ -30,7 +30,6 @@
       </div>
     </div>
 
-    {% if unique_excos or unique_bheads %}
     <hr class="divider">
     <div class="filter-grid filter-grid-3">
 
@@ -118,7 +117,6 @@
       <a href="{{ url_for('tp_reports', from_date=from_date, to_date=to_date) }}" class="btn btn-secondary btn-sm" style="margin-left:8px">✕ Clear Filters</a>
       {% endif %}
     </div>
-    {% endif %}
   </form>
   <div class="loading" id="report-loading"><div class="spinner"></div> Loading report…</div>
 </div>
