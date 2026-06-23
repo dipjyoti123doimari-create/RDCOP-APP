@@ -635,6 +635,12 @@
       <button class="ud-modal-close" onclick="closeModal('modal-tp')">✕</button>
     </div>
     <div class="ud-modal-body">
+      <div style="font-size:11px;color:var(--text-faint);background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:7px 12px;margin-bottom:10px;line-height:1.6">
+        ⚠ <strong style="color:#FFB400">Exclusions applied:</strong>
+        Batches with <strong>time = 0 min</strong> (diversion/transfer quantities) are excluded.
+        Batches with <strong>time &gt; 100 min</strong> are excluded as outliers.
+        Only valid production batches are counted.
+      </div>
       {% for mi in range(tp_months|length) %}
       {% set rows = tp_months_rows[mi] if mi < tp_months_rows|length else [] %}
       <div class="ud-tab-panel {% if mi==0 %}active{% endif %}" id="tp-modal-panel-{{ mi }}">
@@ -642,7 +648,8 @@
         <table class="ud-dt">
           <thead><tr>
             <th>Plant</th><th>Location</th><th>Business Head</th><th>Plant Manager</th>
-            <th class="r">Quantity (m³)</th><th class="r">Throughput %</th><th class="r">Batches</th>
+            <th class="r">Qty (m³)</th><th class="r">Time (hrs)</th>
+            <th class="r">Mixer Cap</th><th class="r">Throughput %</th><th class="r">Batches</th>
           </tr></thead>
           <tbody>
             {% for r in rows %}
@@ -650,7 +657,9 @@
             <tr class="{% if above %}row-inc{% else %}row-ded{% endif %}">
               <td>{{ r.plant_name }}</td><td>{{ r.exco_location }}</td>
               <td>{{ r.business_head }}</td><td>{{ r.plant_manager }}</td>
-              <td class="r">{{ "{:,.0f}".format(r.total_quantity or 0) }}</td>
+              <td class="r">{{ "{:,.1f}".format(r.total_quantity or 0) }}</td>
+              <td class="r">{{ "{:,.2f}".format(r.total_time_hrs or 0) }}</td>
+              <td class="r">{{ "{:,.0f}".format(r.mixer_theo_cap or 0) }}</td>
               <td class="r">
                 <span class="tp-bar" style="width:{{ [r.throughput_pct,100]|min }}px;background:{% if above %}#00C864{% else %}#FF5050{% endif %}"></span>
                 {{ r.throughput_pct }}%
@@ -688,6 +697,12 @@
       <button class="ud-modal-close" onclick="closeModal('modal-bt')">✕</button>
     </div>
     <div class="ud-modal-body">
+      <div style="font-size:11px;color:var(--text-faint);background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:7px 12px;margin-bottom:10px;line-height:1.6">
+        ⚠ <strong style="color:#FFB400">Exclusions applied:</strong>
+        Batches with <strong>time = 0 min</strong> (diversion/transfer quantities) are excluded.
+        Batches with <strong>time &gt; 100 min</strong> are excluded as outliers.
+        Only valid production batches are counted.
+      </div>
       {% for mi in range(bt_months|length) %}
       {% set rows = bt_months_rows[mi] if mi < bt_months_rows|length else [] %}
       <div class="ud-tab-panel {% if mi==0 %}active{% endif %}" id="bt-modal-panel-{{ mi }}">
@@ -832,11 +847,18 @@
       <button class="ud-modal-close" onclick="closeModal('modal-tp-cur')">✕</button>
     </div>
     <div class="ud-modal-body">
+      <div style="font-size:11px;color:var(--text-faint);background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:7px 12px;margin-bottom:10px;line-height:1.6">
+        ⚠ <strong style="color:#FFB400">Exclusions applied:</strong>
+        Batches with <strong>time = 0 min</strong> (diversion/transfer quantities) are excluded.
+        Batches with <strong>time &gt; 100 min</strong> are excluded as outliers.
+        Only valid production batches are counted.
+      </div>
       {% if tp_cur_rows %}
       <table class="ud-dt">
         <thead><tr>
           <th>Plant</th><th>Location</th><th>Business Head</th><th>Plant Manager</th>
-          <th class="r">Quantity (m³)</th><th class="r">Throughput %</th><th class="r">Batches</th>
+          <th class="r">Qty (m³)</th><th class="r">Time (hrs)</th>
+          <th class="r">Mixer Cap</th><th class="r">Throughput %</th><th class="r">Batches</th>
         </tr></thead>
         <tbody>
           {% for r in tp_cur_rows %}
@@ -844,7 +866,9 @@
           <tr class="{% if above %}row-inc{% else %}row-ded{% endif %}">
             <td>{{ r.plant_name }}</td><td>{{ r.exco_location }}</td>
             <td>{{ r.business_head }}</td><td>{{ r.plant_manager }}</td>
-            <td class="r">{{ "{:,.0f}".format(r.total_quantity or 0) }}</td>
+            <td class="r">{{ "{:,.1f}".format(r.total_quantity or 0) }}</td>
+            <td class="r">{{ "{:,.2f}".format(r.total_time_hrs or 0) }}</td>
+            <td class="r">{{ "{:,.0f}".format(r.mixer_theo_cap or 0) }}</td>
             <td class="r">
               <span class="tp-bar" style="width:{{ [r.throughput_pct,100]|min }}px;background:{% if above %}#00C864{% else %}#FF5050{% endif %}"></span>
               {{ r.throughput_pct }}%
@@ -872,6 +896,12 @@
       <button class="ud-modal-close" onclick="closeModal('modal-bt-cur')">✕</button>
     </div>
     <div class="ud-modal-body">
+      <div style="font-size:11px;color:var(--text-faint);background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:7px 12px;margin-bottom:10px;line-height:1.6">
+        ⚠ <strong style="color:#FFB400">Exclusions applied:</strong>
+        Batches with <strong>time = 0 min</strong> (diversion/transfer quantities) are excluded.
+        Batches with <strong>time &gt; 100 min</strong> are excluded as outliers.
+        Only valid production batches are counted.
+      </div>
       {% if bt_cur_rows %}
       <table class="ud-dt">
         <thead><tr>
