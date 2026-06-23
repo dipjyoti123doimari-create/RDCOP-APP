@@ -2877,18 +2877,22 @@ def page_reports():
     if has_params and not no_backend:
         range_key = f"{from_date}|{to_date}"
         if _s("rpt_range_key") != range_key:
-            # Optionally fetch Oracle data first
+            # View Reports never writes to backend_data — oracle_raw_data is
+            # the shared cache maintained by the nightly fetch job. Just report
+            # how many rows oracle_raw_data has for this range.
             if ora_live:
                 try:
-                    df_ora, _ = oracle_connector.fetch_backend_data(from_date, to_date)
-                    if not df_ora.empty:
-                        oracle_connector.save_oracle_backend_data(
-                            df_ora, from_date, to_date, replace=True)
-                        ora_note = f"Oracle: {len(df_ora):,} rows loaded."
-                    else:
-                        ora_note = "Oracle returned no rows for this range."
+                    conn_ora = database.get_connection()
+                    ora_cnt = conn_ora.execute(
+                        "SELECT COUNT(*) FROM oracle_raw_data "
+                        "WHERE production_date >= ? AND production_date <= ?",
+                        (str(from_date), str(to_date))
+                    ).fetchone()[0]
+                    conn_ora.close()
+                    ora_note = (f"Oracle: {ora_cnt:,} rows loaded."
+                                if ora_cnt > 0 else "Oracle returned no rows for this range.")
                 except Exception as exc:
-                    ora_note = f"Oracle fetch failed: {exc}"
+                    ora_note = f"Oracle check failed: {exc}"
 
             res = calculator.run_calculation(
                 month=from_date.month, year=from_date.year,
