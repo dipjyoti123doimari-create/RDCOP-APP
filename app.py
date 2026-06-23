@@ -2764,7 +2764,7 @@ def page_reports():
     default_to   = str(today)
     last_calc    = calculator.get_last_calculation_info()
     all_waivers  = database.get_all_waivers()
-    _wdf = database.read_table_limited("master_data", ["employee_code", "employee_name"], limit=5000)
+    _wdf = database.read_table_limited("master_data", order_by="employee_code", limit=5000)
     waiver_employees = [{"code": r["employee_code"], "name": r["employee_name"]}
                         for _, r in _wdf.iterrows()] if not _wdf.empty else []
     waiver_month_opts = [(m, __import__('calendar').month_name[m]) for m in range(1, 13)]
