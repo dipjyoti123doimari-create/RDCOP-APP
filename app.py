@@ -1372,57 +1372,15 @@ def tp_sync_sheets():
 # ── Calculate ─────────────────────────────────────────────────────────────────
 @app.route("/tp/calculate", methods=["GET", "POST"])
 def tp_calculate():
-    plant_rows    = _ms("tp", "plant_rows", [])
-    location_rows = _ms("tp", "location_rows", [])
-    warnings      = _ms("tp", "calc_warnings", [])
-    ran           = _ms("tp", "calc_ran", False)
-
-    if request.method == "POST":
-        from_s = request.form.get("from_date", "")
-        to_s   = request.form.get("to_date", "")
-        try:
-            fd = _date.fromisoformat(from_s)
-            td = _date.fromisoformat(to_s)
-        except (ValueError, TypeError):
-            flash("Please select valid From and To dates.", "error")
-            return jsonify({"ok": False, "redirect": url_for("tp_calculate")})
-        if fd > td:
-            flash("'From Date' must be on or before 'To Date'.", "error")
-            return jsonify({"ok": False, "redirect": url_for("tp_calculate")})
-
-        month, year = fd.month, fd.year
-        _set_progress(20, "Loading Oracle data…")
-        plant_rows, location_rows, warnings = tp_calculator.run_tp_calculation(
-            month, year, from_date=str(fd), to_date=str(td))
-        _set_progress(80, "Saving throughput results…")
-        _mss("tp", "plant_rows",    plant_rows)
-        _mss("tp", "location_rows", location_rows)
-        _mss("tp", "calc_warnings", warnings)
-        _mss("tp", "calc_month",    month)
-        _mss("tp", "calc_year",     year)
-        _mss("tp", "calc_from",     str(fd))
-        _mss("tp", "calc_to",       str(td))
-        _mss("tp", "calc_ran",      True)
-        ran = True
-
-        if plant_rows:
-            tp_calculator.save_tp_results(plant_rows, month, year)
-            flash(f"✅ Calculated throughput for {fd} → {td} — {len(plant_rows)} plants, "
-                  f"{len([l for l in location_rows if not l['is_pan_india']])} locations.", "success")
-        else:
-            flash("No results produced — check data and warnings.", "warning")
-        _set_progress(100, "Complete")
-        return jsonify({"ok": True, "redirect": url_for("tp_calculate")})
-
+    # Unified page: calculate → redirect to reports with dates in query params
     today = _date.today()
-    ctx = _tp_ctx()
-    ctx["active_page"] = "calculate"
-    return render_template("tp_calculate.html",
-                           plant_rows=plant_rows, location_rows=location_rows,
-                           warnings=warnings, ran=ran,
-                           default_from=str(today.replace(day=1)),
-                           default_to=str(today),
-                           **ctx)
+    if request.method == "POST":
+        from_s = request.form.get("from_date", str(today.replace(day=1)))
+        to_s   = request.form.get("to_date",   str(today))
+        return redirect(url_for("tp_reports", from_date=from_s, to_date=to_s))
+    return redirect(url_for("tp_reports",
+                            from_date=str(today.replace(day=1)),
+                            to_date=str(today)))
 
 
 # ── Reports ───────────────────────────────────────────────────────────────────
@@ -2162,56 +2120,15 @@ def btrtp_sync_plant():
 # ── Calculate ─────────────────────────────────────────────────────────────────
 @app.route("/btrtp/calculate", methods=["GET", "POST"])
 def btrtp_calculate():
-    batcher_rows = _ms("btrtp", "batcher_rows", [])
-    warnings     = _ms("btrtp", "calc_warnings", [])
-    ran          = _ms("btrtp", "calc_ran", False)
-
-    if request.method == "POST":
-        from_s = request.form.get("from_date", "")
-        to_s   = request.form.get("to_date", "")
-        try:
-            fd = _date.fromisoformat(from_s)
-            td = _date.fromisoformat(to_s)
-        except (ValueError, TypeError):
-            flash("Please select valid From and To dates.", "error")
-            return jsonify({"ok": False, "redirect": url_for("btrtp_calculate")})
-        if fd > td:
-            flash("'From Date' must be on or before 'To Date'.", "error")
-            return jsonify({"ok": False, "redirect": url_for("btrtp_calculate")})
-
-        month, year = fd.month, fd.year
-        _set_progress(20, "Loading Oracle data…")
-        batcher_rows, warnings = btrtp_calculator.run_btrtp_calculation(
-            month, year, from_date=str(fd), to_date=str(td))
-        _set_progress(80, "Saving results…")
-        _mss("btrtp", "batcher_rows",  batcher_rows)
-        _mss("btrtp", "calc_warnings", warnings)
-        _mss("btrtp", "calc_month",    month)
-        _mss("btrtp", "calc_year",     year)
-        _mss("btrtp", "calc_from",     str(fd))
-        _mss("btrtp", "calc_to",       str(td))
-        _mss("btrtp", "calc_ran",      True)
-        ran = True
-
-        if batcher_rows:
-            btrtp_calculator.save_btrtp_results(batcher_rows, month, year)
-            flash(f"✅ Calculated batcher throughput for {fd} → {td} — "
-                  f"{len(batcher_rows)} batcher-plant rows.", "success")
-        else:
-            flash("No results produced — check data and warnings.", "warning")
-        _set_progress(100, "Complete")
-        return jsonify({"ok": True, "redirect": url_for("btrtp_calculate")})
-
+    # Unified page: calculate → redirect to reports with dates in query params
     today = _date.today()
-    plant_groups = _group_btrtp_by_plant(batcher_rows)
-    ctx = _btrtp_ctx()
-    ctx["active_page"] = "calculate"
-    return render_template("btrtp_calculate.html",
-                           batcher_rows=batcher_rows, plant_groups=plant_groups,
-                           warnings=warnings, ran=ran,
-                           default_from=str(today.replace(day=1)),
-                           default_to=str(today),
-                           **ctx)
+    if request.method == "POST":
+        from_s = request.form.get("from_date", str(today.replace(day=1)))
+        to_s   = request.form.get("to_date",   str(today))
+        return redirect(url_for("btrtp_reports", from_date=from_s, to_date=to_s))
+    return redirect(url_for("btrtp_reports",
+                            from_date=str(today.replace(day=1)),
+                            to_date=str(today)))
 
 
 # ── Reports ───────────────────────────────────────────────────────────────────
@@ -2841,6 +2758,18 @@ def page_reports():
     ora_live   = oracle_connector.is_configured()
     no_backend = (not available) and (not ora_live)
 
+    # Variables for the merged run-calculation section
+    today = _date.today()
+    default_from = str(today.replace(day=1))
+    default_to   = str(today)
+    last_calc    = calculator.get_last_calculation_info()
+    all_waivers  = database.get_all_waivers()
+    _wdf = database.read_table_limited("master_data", ["employee_code", "employee_name"], limit=5000)
+    waiver_employees = [{"code": r["employee_code"], "name": r["employee_name"]}
+                        for _, r in _wdf.iterrows()] if not _wdf.empty else []
+    waiver_month_opts = [(m, __import__('calendar').month_name[m]) for m in range(1, 13)]
+    current_year = today.year
+
     from_date_s = request.args.get("from_date", str(_date.today().replace(day=1)))
     to_date_s   = request.args.get("to_date",   str(_date.today()))
     try:
@@ -2990,6 +2919,7 @@ def page_reports():
 
     return render_template("reports.html",
                            from_date=str(from_date), to_date=str(to_date),
+                           default_from=default_from, default_to=default_to,
                            results=results,
                            cat_tabs=CAT_TABS, cat_results=cat_results,
                            unmapped=unmapped,
@@ -3008,7 +2938,12 @@ def page_reports():
                            default_subject=default_subj, default_body=default_body,
                            email_log=email_log,
                            maint_month_label=maint_month_label,
-                           maint_mismatch=maint_mismatch)
+                           maint_mismatch=maint_mismatch,
+                           last_calc=last_calc,
+                           all_waivers=all_waivers,
+                           waiver_employees=waiver_employees,
+                           waiver_month_opts=waiver_month_opts,
+                           current_year=current_year)
 
 
 @app.route("/validation")
@@ -3369,7 +3304,7 @@ def run_calculation():
         td = _date.fromisoformat(to_s)
         if fd > td:
             flash("'From Date' must be on or before 'To Date'.", "error")
-            return jsonify({"ok": False, "redirect": url_for("page_calculate")})
+            return jsonify({"ok": False, "redirect": url_for("page_reports")})
         _set_progress(15, "Loading employee data…")
         result = calculator.run_calculation(
             month=fd.month, year=fd.year,
@@ -3388,7 +3323,7 @@ def run_calculation():
     except Exception as exc:
         flash(f"Calculation error: {exc}", "error")
     _set_progress(100, "Complete")
-    return jsonify({"ok": True, "redirect": url_for("page_calculate")})
+    return jsonify({"ok": True, "redirect": url_for("page_reports")})
 
 
 @app.route("/action/run-validation", methods=["POST"])
@@ -3797,13 +3732,13 @@ def action_add_waiver():
     cust = request.form.get("waiver_custom", "").strip()
     if not emp or not mon or not yr or not rsn:
         flash("All waiver fields are required.", "error")
-        return redirect(url_for("page_calculate", anchor="waivers"))
+        return redirect(url_for("page_reports", anchor="waivers"))
     try:
         database.upsert_waiver(emp, int(mon), int(yr), rsn, cust)
         flash(f"✅ Waiver saved for {emp}.", "success")
     except Exception as e:
         flash(f"Could not save waiver: {e}", "error")
-    return redirect(url_for("page_calculate", anchor="waivers"))
+    return redirect(url_for("page_reports", anchor="waivers"))
 
 
 @app.route("/action/delete-waiver", methods=["POST"])
@@ -3811,10 +3746,10 @@ def action_delete_waiver():
     wid = request.form.get("waiver_id", "").strip()
     if not wid:
         flash("Invalid waiver ID.", "error")
-        return redirect(url_for("page_calculate", anchor="waivers"))
+        return redirect(url_for("page_reports", anchor="waivers"))
     database.delete_waiver(int(wid))
     flash("Waiver removed.", "success")
-    return redirect(url_for("page_calculate", anchor="waivers"))
+    return redirect(url_for("page_reports", anchor="waivers"))
 
 
 @app.route("/action/send-email", methods=["POST"])
@@ -4030,64 +3965,15 @@ def ecmd_delete_reading():
 # ── Calculate ─────────────────────────────────────────────────────────────────
 @app.route("/ecmd/calculate", methods=["GET", "POST"])
 def ecmd_calculate():
-    import calendar as _cal
-
+    # Unified page: calculate → redirect to reports with dates in query params
     today = _date.today()
-    plant_rows = _ms("ecmd", "plant_rows", [])
-    loc_rows   = _ms("ecmd", "loc_rows",   [])
-    warnings   = _ms("ecmd", "calc_warnings", [])
-    ran        = _ms("ecmd", "calc_ran", False)
-
-    months_list = [(m, _cal.month_name[m]) for m in range(1, 13)]
-    years_list  = list(range(today.year - 2, today.year + 2))
-
     if request.method == "POST":
-        from_s = request.form.get("from_date", "")
-        to_s   = request.form.get("to_date",   "")
-        try:
-            fd = _date.fromisoformat(from_s)
-            td = _date.fromisoformat(to_s)
-        except (ValueError, TypeError):
-            flash("Please select valid From and To dates.", "error")
-            return jsonify({"ok": False, "redirect": url_for("ecmd_calculate")})
-        if fd > td:
-            flash("'From Date' must be on or before 'To Date'.", "error")
-            return jsonify({"ok": False, "redirect": url_for("ecmd_calculate")})
-
-        month, year = fd.month, fd.year
-        _set_progress(20, "Running ECMD calculations…")
-        plant_rows, warnings = ecmd_calculator.run_ecmd_calculation(
-            month, year, from_date=str(fd), to_date=str(td))
-        _set_progress(70, "Building location summary…")
-        loc_rows = ecmd_calculator.build_location_summary(plant_rows)
-        _set_progress(85, "Saving results…")
-        _mss("ecmd", "plant_rows",     plant_rows)
-        _mss("ecmd", "loc_rows",       loc_rows)
-        _mss("ecmd", "calc_warnings",  warnings)
-        _mss("ecmd", "calc_month",     month)
-        _mss("ecmd", "calc_year",      year)
-        _mss("ecmd", "calc_from",      str(fd))
-        _mss("ecmd", "calc_to",        str(td))
-        _mss("ecmd", "calc_ran",       True)
-        ran = True
-
-        if plant_rows:
-            database.save_ecmd_results(plant_rows, month, year)
-            flash(f"✅ Calculated {len(plant_rows)} plant(s) for {fd} → {td}.", "success")
-        else:
-            flash("No results — enter readings first or check warnings.", "warning")
-        _set_progress(100, "Complete")
-        return jsonify({"ok": True, "redirect": url_for("ecmd_calculate")})
-
-    ctx = _ecmd_ctx()
-    ctx["active_page"] = "calculate"
-    return render_template("ecmd_calculate.html",
-                           plant_rows=plant_rows, loc_rows=loc_rows,
-                           warnings=warnings, ran=ran,
-                           months_list=months_list, years_list=years_list,
-                           default_from=_ms("ecmd", "calc_from", str(today.replace(day=1))),
-                           default_to=_ms("ecmd", "calc_to", str(today)),
-                           **ctx)
+        from_s = request.form.get("from_date", str(today.replace(day=1)))
+        to_s   = request.form.get("to_date",   str(today))
+        return redirect(url_for("ecmd_reports", from_date=from_s, to_date=to_s))
+    return redirect(url_for("ecmd_reports",
+                            from_date=str(today.replace(day=1)),
+                            to_date=str(today)))
 
 
 # ── Reports ───────────────────────────────────────────────────────────────────

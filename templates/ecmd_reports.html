@@ -1,15 +1,15 @@
 {% extends "ecmd_base.html" %}
-{% block title %}Reports{% endblock %}
+{% block title %}Calculate &amp; Reports{% endblock %}
 {% block content %}
 
 <div class="page-header">
-  <h1>Reports</h1>
-  <p>Energy consumption &amp; Mixer DG ratio — plant-wise and location-wise</p>
+  <h1>Calculate &amp; Reports</h1>
+  <p>Energy consumption &amp; Mixer DG ratio — calculate, filter, browse, export or email</p>
 </div>
 
 <!-- Date range + filter -->
 <div class="card">
-  <div class="section-title">🔎 Filter Report</div>
+  <div class="section-title">📅 Date Range &amp; Filters</div>
   <form method="GET" action="{{ url_for('ecmd_reports') }}">
     <div class="date-row">
       <div class="form-group">
@@ -21,7 +21,7 @@
         <input type="date" name="to_date" value="{{ to_date }}" required>
       </div>
       <div class="form-group" style="align-self:flex-end">
-        <button type="submit" class="btn btn-primary">🔄 Load Report</button>
+        <button type="submit" class="btn btn-primary">⚡ Run / Reload</button>
       </div>
     </div>
     <div class="form-grid" style="margin-top:8px">

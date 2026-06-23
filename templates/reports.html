@@ -1,19 +1,23 @@
 {% extends "base.html" %}
-{% block title %}View Reports{% endblock %}
+{% block title %}Calculate &amp; Reports{% endblock %}
 {% block content %}
 
 <div class="page-header">
-  <h1>View Reports</h1>
-  <p>Pick a date range, apply filters, then browse and export the report</p>
+  <h1>Calculate &amp; Reports</h1>
+  <p>Choose a date range, run the calculation, apply filters, then browse and export</p>
 </div>
 
 {% if maint_month_label %}
 <div class="alert {{ 'alert-error' if maint_mismatch else 'alert-info' }}" style="margin-bottom:10px">
   {% if maint_mismatch %}
-  ⚠️ <strong>Maintenance cost month mismatch:</strong> Uploaded data is for <strong>{{ maint_month_label }}</strong>, but report period is a different month. Results may be incorrect — upload the correct month's maintenance cost.
+  ⚠️ <strong>Maintenance cost month mismatch:</strong> Uploaded data is for <strong>{{ maint_month_label }}</strong> — calculation will use this data. Upload the correct month's maintenance cost for accurate results.
   {% else %}
   📋 <strong>YTD Maintenance Cost applied:</strong> {{ maint_month_label }}
   {% endif %}
+</div>
+{% else %}
+<div class="alert alert-error" style="margin-bottom:10px">
+  ⚠️ <strong>No maintenance cost data uploaded.</strong> Calculation will fail — please upload maintenance cost data first.
 </div>
 {% endif %}
 
@@ -24,15 +28,51 @@
 </div>
 {% else %}
 
-<!-- Date range + filter form -->
+<!-- ── Run Calculation ── -->
 <div class="card">
-  <div class="section-title">📅 Report Period &amp; Filters</div>
+  <div class="section-title">⚡ Run Calculation</div>
+  <form method="POST" action="{{ url_for('run_calculation') }}" id="calc-form">
+    <div class="date-row">
+      <div class="form-group">
+        <label>From Date</label>
+        <input type="date" name="from_date" id="pf-from" value="{{ default_from }}" required>
+      </div>
+      <div class="form-group">
+        <label>To Date</label>
+        <input type="date" name="to_date" id="pf-to" value="{{ default_to }}" required>
+      </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <button type="submit" class="btn btn-primary" id="run-btn">⚡ Run Calculation</button>
+      </div>
+    </div>
+  </form>
+
+  <!-- Live preflight banner -->
+  <div id="preflight-banner" style="display:none;margin-top:14px;border-radius:8px;padding:12px 16px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35)">
+    <div style="font-weight:700;color:#f87171;margin-bottom:6px;font-size:13px">🚫 Data Integrity Problems Detected — Calculation is Blocked</div>
+    <ul id="preflight-list" style="margin:0;padding-left:18px;font-size:12px;color:#fca5a5;line-height:1.8"></ul>
+    <div style="margin-top:8px;font-size:11px;color:rgba(252,165,165,.7)">Fix the issues above before running the calculation. Proceeding with bad data will cause wrong incentive/deduction amounts for employees.</div>
+  </div>
+  <div id="preflight-ok" style="display:none;margin-top:14px;border-radius:8px;padding:10px 16px;background:rgba(16,185,129,.10);border:1px solid rgba(16,185,129,.30);font-size:12px;color:#6ee7b7">
+    ✅ Data integrity check passed — safe to calculate.
+  </div>
+
+  <div class="loading" id="calc-loading"><div class="spinner"></div> Running calculation…</div>
+
+  {% if last_calc and last_calc.ran_at %}
+  <p class="caption">Last run: {{ last_calc.ran_at }} · {{ last_calc.mapped }} employees · {{ last_calc.unmapped }} unmapped</p>
+  {% endif %}
+</div>
+
+<!-- ── Filters ── -->
+<div class="card">
+  <div class="section-title">🔎 Report Period &amp; Filters</div>
   {% if ora_live %}
   <div class="alert alert-info" style="margin-bottom:14px">🔌 Live data — Oracle will be queried automatically for the selected range.</div>
   {% endif %}
 
   <form method="GET" action="{{ url_for('page_reports') }}" id="filter-form">
-    <!-- Date range -->
     <div class="date-row">
       <div class="form-group">
         <label>From Date</label>
@@ -44,16 +84,14 @@
       </div>
       <div class="form-group">
         <label>&nbsp;</label>
-        <button type="submit" class="btn btn-primary" id="load-btn">🔄 Load Report</button>
+        <button type="submit" class="btn btn-secondary" id="load-btn">🔄 Load / Filter</button>
       </div>
     </div>
 
-    <!-- Filters — always visible -->
     {% if unique_cats or unique_desigs or unique_plants %}
     <hr class="divider">
     <div class="filter-grid filter-grid-3">
 
-      <!-- Category multi-select -->
       <div class="form-group" style="margin-bottom:0">
         <label>Category</label>
         <div class="ms-wrap">
@@ -73,7 +111,6 @@
         </div>
       </div>
 
-      <!-- Designation multi-select -->
       <div class="form-group" style="margin-bottom:0">
         <label>Designation</label>
         <div class="ms-wrap">
@@ -93,7 +130,6 @@
         </div>
       </div>
 
-      <!-- Plant multi-select -->
       <div class="form-group" style="margin-bottom:0">
         <label>Plant</label>
         <div class="ms-wrap">
@@ -113,7 +149,6 @@
         </div>
       </div>
 
-      <!-- Incentive Eligibility -->
       <div class="form-group" style="margin-bottom:0">
         <label>Incentive Eligibility</label>
         <select name="elig">
@@ -123,7 +158,6 @@
         </select>
       </div>
 
-      <!-- Outcome -->
       <div class="form-group" style="margin-bottom:0">
         <label>Outcome</label>
         <select name="outcome">
@@ -135,7 +169,6 @@
         </select>
       </div>
 
-      <!-- Search -->
       <div class="form-group" style="margin-bottom:0">
         <label>Search Code / Name</label>
         <input type="text" name="search" value="{{ search }}" placeholder="e.g. 1023 or Ramesh">
@@ -190,12 +223,16 @@
   </div>
 </div>
 
-<div class="legend">
-  <span class="legend-item legend-green">🟢 Green — Incentive earned</span>
-  <span class="legend-item legend-red">🔴 Red — Deduction applied (overrides incentive if both)</span>
+<!-- Legend + Waiver button -->
+<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:2px">
+  <div class="legend" style="margin:0">
+    <span class="legend-item legend-green">🟢 Green — Incentive earned</span>
+    <span class="legend-item legend-red">🔴 Red — Deduction applied (overrides incentive if both)</span>
+  </div>
+  <button type="button" class="btn btn-secondary btn-sm" onclick="openWaiverModal()">🛡️ Manage Waivers <span style="display:inline-block;background:#e55;color:#fff;border-radius:10px;padding:0 7px;font-size:11px;margin-left:4px">{{ all_waivers | length }}</span></button>
 </div>
 
-<!-- Toolbar: row count left · export actions right -->
+<!-- Toolbar -->
 <div class="report-toolbar">
   <p class="caption" style="margin:0">Showing <strong>{{ results | length | format_int }}</strong> of <strong>{{ total_rows | format_int }}</strong> rows · {{ from_date }} → {{ to_date }}</p>
   <div class="btn-group">
@@ -246,7 +283,7 @@
   </div>
 </div>
 
-<!-- Category tabs (mirrors Calculate page) -->
+<!-- Category tabs -->
 <div class="tabs">
   {% set ns = namespace(first=true) %}
   {% for label in cat_tabs.keys() %}
@@ -303,17 +340,199 @@
 {% endif %}
 {% endfor %}
 
+{% if unmapped %}
+<hr class="divider">
+<div class="card">
+  <div class="section-title">⚠️ {{ unmapped | length }} Unmapped Employee(s)</div>
+  <p class="caption" style="margin-bottom:10px">Employee codes in backend data not found in master data</p>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr><th>Employee Code</th><th>Total Qty</th><th>Records</th><th>Period</th><th>Detected At</th></tr></thead>
+      <tbody>
+        {% for row in unmapped %}
+        <tr>
+          <td>{{ row.employee_code }}</td><td>{{ row.total_quantity }}</td>
+          <td>{{ row.record_count }}</td><td>{{ row.period }}</td><td>{{ row.detected_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
 {% endif %}
 {% endif %}
 {% endif %}
+
+<!-- ── Waiver Management Modal ── -->
+<div id="waiver-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeWaiverModal()">
+  <div class="modal-box" style="max-width:780px;max-height:90vh;overflow-y:auto">
+    <div class="modal-header">
+      <span>🛡️ Deduction Waivers</span>
+      <button class="modal-close" onclick="closeWaiverModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:#8ea0b4;margin-bottom:16px">Waived employees appear <strong style="color:#ef4444">red</strong> in the report but their deduction amount is ₹0. The waiver reason is shown in Remarks.</p>
+
+      <form method="POST" action="{{ url_for('action_add_waiver') }}"
+            style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;
+                   margin-bottom:20px;padding:14px;
+                   background:rgba(255,255,255,0.03);border-radius:8px;
+                   border:1px solid rgba(255,255,255,0.08)">
+
+        <div class="form-group" style="margin:0;flex:1 1 240px;position:relative">
+          <label>Employee <span style="color:#8ea0b4;font-size:11px">(search by code or name)</span></label>
+          <input type="text" id="waiver-emp-search" autocomplete="off"
+                 placeholder="Type to search…" style="width:100%">
+          <input type="hidden" name="waiver_emp_code" id="waiver-emp-code" required>
+        </div>
+
+        <div class="form-group" style="margin:0;flex:0 0 130px">
+          <label>Month</label>
+          <select name="waiver_month" required>
+            {% for m_num, m_name in waiver_month_opts %}
+            <option value="{{ m_num }}" {% if m_num == (last_calc.month | int) %}selected{% endif %}>{{ m_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-group" style="margin:0;flex:0 0 88px">
+          <label>Year</label>
+          <input type="number" name="waiver_year" value="{{ last_calc.year or current_year }}"
+                 min="2020" max="2099" required style="width:88px">
+        </div>
+
+        <div class="form-group" style="margin:0;flex:1 1 200px">
+          <label>Reason</label>
+          <select name="waiver_reason" id="waiver-reason-sel" onchange="toggleCustomReason(this)">
+            <option value="dr_bhoon">Waived by Dr. Bhoon</option>
+            <option value="approved_leave">Waived, on approved leave</option>
+            <option value="other">Waived, Other reason</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="waiver-custom-group" style="margin:0;flex:1 1 180px;display:none">
+          <label>Custom Reason</label>
+          <input type="text" name="waiver_custom" id="waiver-custom-input" placeholder="Type reason…">
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="align-self:flex-end;white-space:nowrap">➕ Add Waiver</button>
+      </form>
+
+      {% if all_waivers %}
+      <div class="table-wrapper" style="max-height:320px;overflow-y:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Employee Code</th><th>Month</th><th>Year</th>
+              <th>Waiver Reason (shown in Remarks)</th><th style="width:70px">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for w in all_waivers %}
+            {% set display = "Waived by Dr. Bhoon" if w.reason == "dr_bhoon"
+                        else ("Waived, on approved leave" if w.reason == "approved_leave"
+                        else ("Waived, " ~ w.custom_reason if w.custom_reason else "Waived")) %}
+            <tr class="row-red">
+              <td><strong>{{ w.employee_code }}</strong></td>
+              <td>{{ ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][w.month] }}</td>
+              <td>{{ w.year }}</td>
+              <td>{{ display }}</td>
+              <td>
+                <form method="POST" action="{{ url_for('action_delete_waiver') }}"
+                      onsubmit="return confirm('Remove waiver for {{ w.employee_code }}?')">
+                  <input type="hidden" name="waiver_id" value="{{ w.id }}">
+                  <button type="submit" class="btn btn-danger btn-sm">🗑️</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p style="color:#8ea0b4;font-size:13px;text-align:center;padding:20px 0">No waivers recorded yet.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Employee LOV dropdown — outside modal so overflow:auto doesn't clip it -->
+<div id="waiver-emp-dd"
+     style="display:none;position:fixed;z-index:99999;
+            background:#0d2d4a;border:1px solid rgba(255,255,255,0.2);
+            border-radius:6px;max-height:220px;overflow-y:auto;
+            box-shadow:0 8px 28px rgba(0,0,0,0.6);min-width:240px">
+  {% for e in waiver_employees %}
+  <div class="waiver-emp-opt"
+       data-code="{{ e.code }}"
+       data-label="{{ e.code }} — {{ e.name }}"
+       onmousedown="waiverEmpSelect(this)"
+       style="padding:8px 12px;cursor:pointer;font-size:13px;
+              border-bottom:1px solid rgba(255,255,255,0.05)">
+    <strong>{{ e.code }}</strong>&nbsp;&nbsp;{{ e.name }}
+  </div>
+  {% endfor %}
+  {% if not waiver_employees %}
+  <div style="padding:10px 12px;font-size:13px;color:#8ea0b4">No master data — upload first.</div>
+  {% endif %}
+</div>
+
 {% endblock %}
 {% block scripts %}
 <script>
+/* ── Preflight check ── */
+(function(){
+  var fromEl = document.getElementById('pf-from');
+  var toEl   = document.getElementById('pf-to');
+  var banner = document.getElementById('preflight-banner');
+  var list   = document.getElementById('preflight-list');
+  var okBox  = document.getElementById('preflight-ok');
+  var runBtn = document.getElementById('run-btn');
+
+  function runPreflight(){
+    var f = fromEl.value, t = toEl.value;
+    if(!f || !t) return;
+    fetch('/action/preflight-check?from_date='+f+'&to_date='+t)
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        if(data.errors && data.errors.length > 0){
+          list.innerHTML = data.errors.map(function(e){ return '<li>'+e+'</li>'; }).join('');
+          banner.style.display = 'block';
+          okBox.style.display  = 'none';
+          runBtn.disabled = true;
+          runBtn.style.opacity = '0.45';
+          runBtn.title = 'Fix data integrity issues before calculating';
+        } else {
+          banner.style.display = 'none';
+          okBox.style.display  = 'block';
+          runBtn.disabled = false;
+          runBtn.style.opacity = '';
+          runBtn.title = '';
+        }
+      }).catch(function(){});
+  }
+
+  fromEl.addEventListener('change', runPreflight);
+  toEl.addEventListener('change', runPreflight);
+  if(fromEl.value && toEl.value) runPreflight();
+})();
+
+/* ── Calculation form AJAX submit ── */
+submitFormAjax(
+  document.getElementById('calc-form'),
+  document.getElementById('calc-loading'),
+  document.getElementById('run-btn')
+);
+
+/* ── Filter form loader ── */
 document.getElementById('filter-form').addEventListener('submit', function() {
   document.getElementById('report-loading').classList.add('active');
   document.getElementById('load-btn').disabled = true;
 });
+
+/* ── Email modal ── */
 function openEmailModal() {
   var m = document.getElementById('email-modal');
   if (m) { m.style.display = 'flex'; document.body.style.overflow = 'hidden'; }
@@ -322,6 +541,81 @@ function closeEmailModal() {
   var m = document.getElementById('email-modal');
   if (m) { m.style.display = 'none'; document.body.style.overflow = ''; }
 }
-document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeEmailModal(); });
+
+/* ── Waiver modal ── */
+function openWaiverModal() {
+  document.getElementById('waiver-modal').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+function closeWaiverModal() {
+  document.getElementById('waiver-modal').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') { closeEmailModal(); closeWaiverModal(); }
+});
+
+/* ── Reason toggle ── */
+function toggleCustomReason(sel) {
+  var grp = document.getElementById('waiver-custom-group');
+  var inp = document.getElementById('waiver-custom-input');
+  if (sel.value === 'other') {
+    grp.style.display = '';
+    inp.required = true;
+  } else {
+    grp.style.display = 'none';
+    inp.required = false;
+    inp.value = '';
+  }
+}
+
+/* ── Employee search LOV ── */
+document.addEventListener('DOMContentLoaded', function() {
+  var searchInp = document.getElementById('waiver-emp-search');
+  var codeInp   = document.getElementById('waiver-emp-code');
+  var dd        = document.getElementById('waiver-emp-dd');
+  var opts      = dd.querySelectorAll('.waiver-emp-opt');
+
+  function ddPosition() {
+    var r = searchInp.getBoundingClientRect();
+    dd.style.top   = (r.bottom + 4) + 'px';
+    dd.style.left  = r.left + 'px';
+    dd.style.width = r.width + 'px';
+  }
+  function ddShow() { ddPosition(); dd.style.display = 'block'; }
+  function ddHide() { dd.style.display = 'none'; }
+  function ddFilter() {
+    var q = searchInp.value.trim().toLowerCase();
+    opts.forEach(function(opt) {
+      opt.style.display = opt.dataset.label.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+    });
+  }
+
+  searchInp.addEventListener('focus', function() { ddFilter(); ddShow(); });
+  searchInp.addEventListener('input', function() { codeInp.value = ''; ddFilter(); ddShow(); });
+  opts.forEach(function(opt) {
+    opt.addEventListener('mouseenter', function() { this.style.background = 'rgba(255,255,255,0.08)'; });
+    opt.addEventListener('mouseleave', function() { this.style.background = ''; });
+    opt.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      searchInp.value = this.dataset.label;
+      codeInp.value   = this.dataset.code;
+      ddHide();
+    });
+  });
+
+  document.body.appendChild(dd);
+  document.addEventListener('mousedown', function(e) {
+    if (e.target !== searchInp && !dd.contains(e.target)) ddHide();
+  });
+  document.getElementById('waiver-modal').addEventListener('scroll', function() {
+    if (dd.style.display !== 'none') ddPosition();
+  }, true);
+
+  {% if request.args.get('anchor') == 'waivers' %}
+  openWaiverModal();
+  {% endif %}
+});
 </script>
 {% endblock %}
