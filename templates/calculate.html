@@ -33,11 +33,11 @@
     <div class="date-row">
       <div class="form-group">
         <label>From Date</label>
-        <input type="date" name="from_date" value="{{ default_from }}" required>
+        <input type="date" name="from_date" id="pf-from" value="{{ default_from }}" required>
       </div>
       <div class="form-group">
         <label>To Date</label>
-        <input type="date" name="to_date" value="{{ default_to }}" required>
+        <input type="date" name="to_date" id="pf-to" value="{{ default_to }}" required>
       </div>
       <div class="form-group">
         <label>&nbsp;</label>
@@ -45,12 +45,64 @@
       </div>
     </div>
   </form>
+
+  <!-- Live preflight banner — shown before user clicks Calculate -->
+  <div id="preflight-banner" style="display:none;margin-top:14px;border-radius:8px;padding:12px 16px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35)">
+    <div style="font-weight:700;color:#f87171;margin-bottom:6px;font-size:13px">🚫 Data Integrity Problems Detected — Calculation is Blocked</div>
+    <ul id="preflight-list" style="margin:0;padding-left:18px;font-size:12px;color:#fca5a5;line-height:1.8"></ul>
+    <div style="margin-top:8px;font-size:11px;color:rgba(252,165,165,.7)">Fix the issues above before running the calculation. Proceeding with bad data will cause wrong incentive/deduction amounts for employees.</div>
+  </div>
+  <div id="preflight-ok" style="display:none;margin-top:14px;border-radius:8px;padding:10px 16px;background:rgba(16,185,129,.10);border:1px solid rgba(16,185,129,.30);font-size:12px;color:#6ee7b7">
+    ✅ Data integrity check passed — safe to calculate.
+  </div>
+
   <div class="loading" id="calc-loading"><div class="spinner"></div> Running calculation…</div>
 
   {% if last_calc.ran_at %}
   <p class="caption">Last run: {{ last_calc.ran_at }} · {{ last_calc.mapped }} employees · {{ last_calc.unmapped }} unmapped</p>
   {% endif %}
 </div>
+
+<script>
+(function(){
+  var fromEl = document.getElementById('pf-from');
+  var toEl   = document.getElementById('pf-to');
+  var banner = document.getElementById('preflight-banner');
+  var list   = document.getElementById('preflight-list');
+  var okBox  = document.getElementById('preflight-ok');
+  var runBtn = document.getElementById('run-btn');
+
+  function runPreflight(){
+    var f = fromEl.value, t = toEl.value;
+    if(!f || !t) return;
+    fetch('/action/preflight-check?from_date='+f+'&to_date='+t)
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        if(data.errors && data.errors.length > 0){
+          list.innerHTML = data.errors.map(function(e){
+            return '<li>'+e+'</li>';
+          }).join('');
+          banner.style.display = 'block';
+          okBox.style.display  = 'none';
+          runBtn.disabled = true;
+          runBtn.style.opacity = '0.45';
+          runBtn.title = 'Fix data integrity issues before calculating';
+        } else {
+          banner.style.display = 'none';
+          okBox.style.display  = 'block';
+          runBtn.disabled = false;
+          runBtn.style.opacity = '';
+          runBtn.title = '';
+        }
+      }).catch(function(){ /* network error — don't block */ });
+  }
+
+  fromEl.addEventListener('change', runPreflight);
+  toEl.addEventListener('change', runPreflight);
+  // Run on page load with default dates
+  if(fromEl.value && toEl.value) runPreflight();
+})();
+</script>
 
 {% if results %}
 

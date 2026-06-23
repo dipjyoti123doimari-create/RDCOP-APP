@@ -147,6 +147,139 @@ def _fetch_backend_for_period(month: int, year: int,
 _VALID_CATEGORIES = set(config.CATEGORIES)
 
 
+# ---------------------------------------------------------------------------
+# PRE-FLIGHT DATA INTEGRITY CHECK
+# ---------------------------------------------------------------------------
+
+def preflight_check(month: int, year: int,
+                    start_date: str = None, end_date: str = None) -> list:
+    """
+    Run before every calculation. Returns a list of BLOCKING error strings.
+    If the list is non-empty the calculation MUST NOT proceed — the caller
+    must show every error to the admin and abort.
+
+    Checks performed:
+    1. Both oracle_raw_data AND backend_data have rows for the same period
+       → double-count risk.  BLOCK.
+    2. oracle_raw_data has zero rows and backend_data also has zero rows.
+       BLOCK (nothing to calculate).
+    3. Row counts between the two tables are suspiciously close (within 5%)
+       when both are non-empty → likely same data uploaded twice.  BLOCK.
+    4. backend_data contains a source_file that looks like an Oracle export
+       (contains the word "Oracle") for this period → user uploaded Oracle
+       data manually.  BLOCK.
+    5. Total quantity for the period is suspiciously low (< 100 m³ across
+       all employees for a full month) → possible empty/partial upload.  WARN.
+    6. Employee count for the period is zero.  BLOCK.
+    7. Master data table is empty.  BLOCK.
+    """
+    errors = []
+    conn = database.get_connection()
+    try:
+        period = f"{year:04d}-{month:02d}"
+        if start_date and end_date:
+            oracle_cnt = conn.execute(
+                "SELECT COUNT(*) FROM oracle_raw_data "
+                "WHERE production_date >= ? AND production_date <= ?",
+                (start_date, end_date)).fetchone()[0]
+            backend_cnt = conn.execute(
+                "SELECT COUNT(*) FROM backend_data "
+                "WHERE date >= ? AND date <= ?",
+                (start_date, end_date)).fetchone()[0]
+            oracle_qty = conn.execute(
+                "SELECT COALESCE(SUM(quantity),0) FROM oracle_raw_data "
+                "WHERE production_date >= ? AND production_date <= ?",
+                (start_date, end_date)).fetchone()[0]
+            backend_qty = conn.execute(
+                "SELECT COALESCE(SUM(quantity),0) FROM backend_data "
+                "WHERE date >= ? AND date <= ?",
+                (start_date, end_date)).fetchone()[0]
+            oracle_source_files = [r[0] or "" for r in conn.execute(
+                "SELECT DISTINCT source_file FROM backend_data "
+                "WHERE date >= ? AND date <= ?",
+                (start_date, end_date)).fetchall()]
+        else:
+            oracle_cnt = conn.execute(
+                "SELECT COUNT(*) FROM oracle_raw_data "
+                "WHERE substr(production_date,1,7) = ?", (period,)).fetchone()[0]
+            backend_cnt = conn.execute(
+                "SELECT COUNT(*) FROM backend_data "
+                "WHERE substr(date,1,7) = ?", (period,)).fetchone()[0]
+            oracle_qty = conn.execute(
+                "SELECT COALESCE(SUM(quantity),0) FROM oracle_raw_data "
+                "WHERE substr(production_date,1,7) = ?", (period,)).fetchone()[0]
+            backend_qty = conn.execute(
+                "SELECT COALESCE(SUM(quantity),0) FROM backend_data "
+                "WHERE substr(date,1,7) = ?", (period,)).fetchone()[0]
+            oracle_source_files = [r[0] or "" for r in conn.execute(
+                "SELECT DISTINCT source_file FROM backend_data "
+                "WHERE substr(date,1,7) = ?", (period,)).fetchall()]
+
+        master_cnt = conn.execute("SELECT COUNT(*) FROM master_data").fetchone()[0]
+    finally:
+        conn.close()
+
+    # 1 & 3: Both tables non-empty — double-count risk
+    if oracle_cnt > 0 and backend_cnt > 0:
+        # Identical or near-identical row counts → same data in both tables
+        ratio = min(oracle_cnt, backend_cnt) / max(oracle_cnt, backend_cnt)
+        if ratio >= 0.90:
+            errors.append(
+                f"DOUBLE-COUNT BLOCKED: oracle_raw_data has {oracle_cnt:,} rows "
+                f"and backend_data also has {backend_cnt:,} rows for this period. "
+                f"Row counts are {ratio*100:.0f}% similar — this is almost certainly "
+                f"the same data in both tables. If the Oracle fetch succeeded, "
+                f"delete the manual Excel upload from Backend Data before calculating. "
+                f"Proceeding would halve every employee's quantity and cause "
+                f"wrong deductions."
+            )
+        else:
+            # Different counts but both present — still suspicious, warn loudly
+            errors.append(
+                f"DUPLICATE SOURCE BLOCKED: oracle_raw_data has {oracle_cnt:,} rows "
+                f"and backend_data has {backend_cnt:,} rows for the same period. "
+                f"Having data in both tables causes double-counting. "
+                f"Remove the overlapping source before proceeding."
+            )
+
+    # 4: backend_data source file name looks like an Oracle export
+    for sf in oracle_source_files:
+        if "oracle" in sf.lower():
+            errors.append(
+                f"ORACLE DATA IN MANUAL UPLOAD BLOCKED: backend_data contains a file "
+                f"named '{sf}' which appears to be Oracle-sourced data uploaded "
+                f"manually. This creates a duplicate of oracle_raw_data. "
+                f"Delete this entry from Backend Data before calculating."
+            )
+            break  # one message is enough
+
+    # 2 & 6: No data at all
+    if oracle_cnt == 0 and backend_cnt == 0:
+        errors.append(
+            f"NO DATA: Neither oracle_raw_data nor backend_data has any rows for "
+            f"period {period}. Fetch from Oracle or upload an Excel file first."
+        )
+
+    # 5: Suspiciously low total quantity (only check if we have data and no other errors)
+    active_qty = oracle_qty if oracle_cnt > 0 else backend_qty
+    if not errors and active_qty < 100:
+        errors.append(
+            f"SUSPICIOUSLY LOW DATA: Total quantity for this period is only "
+            f"{active_qty:.1f} m³ across all rows. This is likely an incomplete "
+            f"or empty upload. Verify the data source before calculating."
+        )
+
+    # 7: Master data empty
+    if master_cnt == 0:
+        errors.append(
+            "MASTER DATA MISSING: Master Data table is empty. "
+            "Every employee would be treated as unmapped and receive no "
+            "incentive or deduction. Upload Master Data first."
+        )
+
+    return errors
+
+
 def _calculate_incentive(total_qty: float, category: str,
                           ytd_cost: float) -> tuple:
     """
@@ -240,6 +373,18 @@ def run_calculation(month: int, year: int,
         }
     """
     try:
+        # ── Step 0: Pre-flight integrity check — BLOCKS if data is unsafe ────
+        pf_errors = preflight_check(month, year, start_date, end_date)
+        if pf_errors:
+            return {
+                "total_employees": 0, "mapped": 0, "unmapped": 0,
+                "total_incentive": 0, "total_deduction": 0,
+                "generated_at": _now(), "results_rows": [],
+                "calc_warnings": [],
+                "preflight_errors": pf_errors,
+                "error": "Calculation blocked by data integrity checks. See preflight_errors.",
+            }
+
         # ── Step 1: Fetch and aggregate backend data ─────────────────────────
         backend_df = _fetch_backend_for_period(month, year, start_date, end_date)
         if backend_df.empty:
@@ -247,6 +392,8 @@ def run_calculation(month: int, year: int,
                 "total_employees": 0, "mapped": 0, "unmapped": 0,
                 "total_incentive": 0, "total_deduction": 0,
                 "generated_at": _now(), "results_rows": [],
+                "calc_warnings": [],
+                "preflight_errors": [],
                 "error": "No backend data found for the selected period.",
             }
 
@@ -457,6 +604,7 @@ def run_calculation(month: int, year: int,
             "results_rows":    results,
             "unmapped_rows":   unmapped_rows,
             "calc_warnings":   calc_warnings,
+            "preflight_errors": [],
             "error":           None,
         }
 
@@ -465,6 +613,8 @@ def run_calculation(month: int, year: int,
             "total_employees": 0, "mapped": 0, "unmapped": 0,
             "total_incentive": 0, "total_deduction": 0,
             "generated_at": _now(), "results_rows": [],
+            "calc_warnings": [],
+            "preflight_errors": [],
             "error": str(exc),
         }
 

@@ -3333,6 +3333,20 @@ def fetch_oracle():
     return jsonify({"ok": True, "redirect": url_for("page_data_uploader") + "#oracle"})
 
 
+@app.route("/action/preflight-check", methods=["GET"])
+def preflight_check_api():
+    """Return data-integrity check results for the given date range (JSON)."""
+    from_s = request.args.get("from_date")
+    to_s   = request.args.get("to_date")
+    try:
+        fd = _date.fromisoformat(from_s)
+        td = _date.fromisoformat(to_s)
+        errors = calculator.preflight_check(fd.month, fd.year, str(fd), str(td))
+        return jsonify({"errors": errors})
+    except Exception as exc:
+        return jsonify({"errors": [str(exc)]})
+
+
 @app.route("/action/run-calculation", methods=["POST"])
 def run_calculation():
     from_s = request.form.get("from_date")
@@ -3349,9 +3363,11 @@ def run_calculation():
             start_date=str(fd), end_date=str(td),
         )
         _set_progress(90, "Saving results…")
-        if result["error"]:
+        for pf_err in result.get("preflight_errors", []):
+            flash(f"🚫 {pf_err}", "error")
+        if result["error"] and not result.get("preflight_errors"):
             flash(f"Calculation failed: {result['error']}", "error")
-        else:
+        elif not result["error"]:
             flash(f"Calculation complete — {result['mapped']:,} employees, {result['unmapped']} unmapped.", "success")
             for w in result.get("calc_warnings", []):
                 flash(w, "warning")
