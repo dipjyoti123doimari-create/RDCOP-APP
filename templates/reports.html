@@ -150,6 +150,13 @@
     </div>
     {% endif %}
   </form>
+
+  <!-- Manage Waivers — always visible -->
+  <div style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:space-between">
+    <span style="font-size:12px;color:#8ea0b4">Waiver overrides: deduction row stays red but amount becomes ₹0</span>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="openWaiverModal()">🛡️ Manage Waivers <span style="display:inline-block;background:#e55;color:#fff;border-radius:10px;padding:0 7px;font-size:11px;margin-left:4px">{{ all_waivers | length }}</span></button>
+  </div>
+
   <div class="loading" id="report-loading"><div class="spinner"></div> Loading report…</div>
 </div>
 
@@ -190,13 +197,9 @@
   </div>
 </div>
 
-<!-- Legend + Waiver button -->
-<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:2px">
-  <div class="legend" style="margin:0">
-    <span class="legend-item legend-green">🟢 Green — Incentive earned</span>
-    <span class="legend-item legend-red">🔴 Red — Deduction applied (overrides incentive if both)</span>
-  </div>
-  <button type="button" class="btn btn-secondary btn-sm" onclick="openWaiverModal()">🛡️ Manage Waivers <span style="display:inline-block;background:#e55;color:#fff;border-radius:10px;padding:0 7px;font-size:11px;margin-left:4px">{{ all_waivers | length }}</span></button>
+<div class="legend">
+  <span class="legend-item legend-green">🟢 Green — Incentive earned</span>
+  <span class="legend-item legend-red">🔴 Red — Deduction applied (overrides incentive if both)</span>
 </div>
 
 <!-- Toolbar: row count left · export actions right -->
