@@ -4,53 +4,96 @@
 
 <div class="page-header">
   <h1>Calculate &amp; Reports</h1>
-  <p>Energy consumption &amp; Mixer DG ratio — calculate, filter, browse, export or email</p>
+  <p>Energy consumption &amp; Mixer DG ratio for <strong>{{ month_label }}</strong> — calculate, filter, browse, export or email</p>
 </div>
 
-<!-- Date range + filter -->
+<!-- Single unified card -->
 <div class="card">
-  <div class="section-title">📅 Date Range &amp; Filters</div>
-  <form method="GET" action="{{ url_for('ecmd_reports') }}">
-    <div class="date-row">
-      <div class="form-group">
-        <label>From Date</label>
-        <input type="date" name="from_date" value="{{ from_date }}" required>
-      </div>
-      <div class="form-group">
-        <label>To Date</label>
-        <input type="date" name="to_date" value="{{ to_date }}" required>
-      </div>
-      <div class="form-group" style="align-self:flex-end">
-        <button type="submit" class="btn btn-primary">⚡ Run / Reload</button>
+  <div class="section-title">📅 Report Period &amp; Filters</div>
+
+  <div class="date-row" style="align-items:flex-end">
+    <div class="form-group">
+      <label>From Date</label>
+      <input type="date" id="ec-shared-from" value="{{ from_date }}" required>
+    </div>
+    <div class="form-group">
+      <label>To Date</label>
+      <input type="date" id="ec-shared-to" value="{{ to_date }}" required>
+    </div>
+    <div class="form-group">
+      <label>&nbsp;</label>
+      <div class="btn-group">
+        <form method="GET" action="{{ url_for('ecmd_reports') }}" id="ec-run-form" style="display:inline">
+          <input type="hidden" name="from_date" id="ec-run-from">
+          <input type="hidden" name="to_date"   id="ec-run-to">
+          <button type="submit" class="btn btn-primary" id="ec-run-btn">⚡ Run Calculation</button>
+        </form>
+        <form method="GET" action="{{ url_for('ecmd_reports') }}" id="filter-form" style="display:inline">
+          <input type="hidden" name="from_date" id="ec-ff-from">
+          <input type="hidden" name="to_date"   id="ec-ff-to">
+          <div id="ec-ff-fields"></div>
+          <button type="submit" class="btn btn-secondary" id="load-btn">🔄 Load / Filter</button>
+        </form>
       </div>
     </div>
-    <div class="form-grid" style="margin-top:8px">
-      <div class="form-group">
-        <label>Exco Location</label>
-        <select name="exco" multiple size="3">
-          {% for e in unique_excos %}
-          <option value="{{ e }}" {% if e in excos %}selected{% endif %}>{{ e }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Business Head</label>
-        <select name="bhead" multiple size="3">
-          {% for b in unique_bheads %}
-          <option value="{{ b }}" {% if b in bheads %}selected{% endif %}>{{ b }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Search Plant</label>
-        <input type="text" name="search" value="{{ search }}" placeholder="Plant code or name…">
+  </div>
+
+  {% if unique_excos or unique_bheads %}
+  <hr class="divider">
+  <div class="filter-grid filter-grid-3">
+
+    <div class="form-group" style="margin-bottom:0">
+      <label>Exco Location</label>
+      <div class="ms-wrap">
+        <div class="ms-box" tabindex="0">
+          <span class="ms-label {% if not excos %}placeholder{% endif %}">{% if excos %}{{ excos|length }} selected{% else %}All{% endif %}</span>
+          <span class="ms-arrow">▾</span>
+        </div>
+        <div class="ms-panel">
+          <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
+          <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
+          <div class="ms-opts" id="ec-f-excos">
+            {% for e in unique_excos %}
+            <label><input type="checkbox" name="exco" value="{{ e }}" {% if e in excos %}checked{% endif %}> {{ e }}</label>
+            {% endfor %}
+          </div>
+        </div>
       </div>
     </div>
+
+    <div class="form-group" style="margin-bottom:0">
+      <label>Business Head</label>
+      <div class="ms-wrap">
+        <div class="ms-box" tabindex="0">
+          <span class="ms-label {% if not bheads %}placeholder{% endif %}">{% if bheads %}{{ bheads|length }} selected{% else %}All{% endif %}</span>
+          <span class="ms-arrow">▾</span>
+        </div>
+        <div class="ms-panel">
+          <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
+          <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
+          <div class="ms-opts" id="ec-f-bheads">
+            {% for b in unique_bheads %}
+            <label><input type="checkbox" name="bhead" value="{{ b }}" {% if b in bheads %}checked{% endif %}> {{ b }}</label>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-bottom:0">
+      <label>Search Plant</label>
+      <input type="text" id="ec-f-search" value="{{ search }}" placeholder="Plant code or name…">
+    </div>
+
+  </div>
+  <div style="margin-top:14px">
     {% if excos or bheads or search %}
-    <a href="{{ url_for('ecmd_reports', from_date=from_date, to_date=to_date) }}"
-       class="btn btn-secondary btn-sm" style="margin-top:6px">Clear Filters</a>
+    <a href="{{ url_for('ecmd_reports', from_date=from_date, to_date=to_date) }}" class="btn btn-secondary btn-sm">✕ Clear Filters</a>
     {% endif %}
-  </form>
+  </div>
+  {% endif %}
+
+  <div class="loading" id="report-loading"><div class="spinner"></div> Loading…</div>
 </div>
 
 {% if plant_rows %}
@@ -310,8 +353,7 @@
   <div style="font-size:40px;margin-bottom:12px">📊</div>
   <div style="font-size:16px;font-weight:600;margin-bottom:8px">No results for this period</div>
   <div style="color:var(--text-muted);margin-bottom:16px">
-    Enter readings in <a href="{{ url_for('ecmd_data_entry') }}">Data Entry</a>, then
-    <a href="{{ url_for('ecmd_calculate') }}">Calculate</a> first.
+    Enter readings in <a href="{{ url_for('ecmd_data_entry') }}">Data Entry</a>, then select a date range above and click <strong>⚡ Run Calculation</strong>.
   </div>
 </div>
 {% endif %}
@@ -320,14 +362,33 @@
 
 {% block scripts %}
 <script>
-// Toggle email panel visibility
-const emailBtn = document.querySelector('[onclick*="email-panel"]');
-const emailPanel = document.getElementById('email-panel');
-if (emailBtn && emailPanel) {
-  emailBtn.addEventListener('click', function() {
-    emailPanel.style.display = emailPanel.style.display === 'none' ? 'block' : 'none';
-  });
-  emailBtn.removeAttribute('onclick');
-}
+(function() {
+  var sf = document.getElementById('ec-shared-from');
+  var st = document.getElementById('ec-shared-to');
+  function sync() {
+    document.getElementById('ec-run-from').value = sf.value;
+    document.getElementById('ec-run-to').value   = st.value;
+    document.getElementById('ec-ff-from').value  = sf.value;
+    document.getElementById('ec-ff-to').value    = st.value;
+  }
+  sf.addEventListener('change', sync);
+  st.addEventListener('change', sync);
+  sync();
+})();
+
+document.getElementById('filter-form').addEventListener('submit', function() {
+  var c = document.getElementById('ec-ff-fields');
+  c.innerHTML = '';
+  function h(n, v) { var i = document.createElement('input'); i.type='hidden'; i.name=n; i.value=v; c.appendChild(i); }
+  document.querySelectorAll('#ec-f-excos input:checked').forEach(function(cb)  { h('exco',  cb.value); });
+  document.querySelectorAll('#ec-f-bheads input:checked').forEach(function(cb) { h('bhead', cb.value); });
+  h('search', document.getElementById('ec-f-search').value);
+  document.getElementById('report-loading').classList.add('active');
+  document.getElementById('load-btn').disabled = true;
+});
+
+document.getElementById('ec-run-form').addEventListener('submit', function() {
+  document.getElementById('report-loading').classList.add('active');
+});
 </script>
 {% endblock %}
