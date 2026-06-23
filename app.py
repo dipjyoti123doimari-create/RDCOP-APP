@@ -912,7 +912,8 @@ def page_home():
         id_months_rows = []
         for m in id_months:
             cur.execute("""SELECT employee_code, employee_name, designation, plant,
-                total_quantity, incentive_eligible, incentive_amount, deduction_amount, remarks
+                total_quantity, incentive_eligible, incentive_rate,
+                incentive_amount, deduction_target, shortfall_quantity, deduction_amount, remarks
                 FROM calculation_results WHERE month=? AND year=?
                 ORDER BY plant, employee_name""",
                 (m["month"], m["year"]))
@@ -944,7 +945,8 @@ def page_home():
         id_cur_rows = []
         if id_cur:
             cur.execute("""SELECT employee_code, employee_name, designation, plant,
-                total_quantity, incentive_eligible, incentive_amount, deduction_amount, remarks
+                total_quantity, incentive_eligible, incentive_rate,
+                incentive_amount, deduction_target, shortfall_quantity, deduction_amount, remarks
                 FROM calculation_results WHERE month=? AND year=?
                 ORDER BY plant, employee_name""", (now.month, now.year))
             cols = [d[0] for d in cur.description]

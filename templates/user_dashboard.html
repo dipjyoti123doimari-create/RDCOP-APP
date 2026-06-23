@@ -158,6 +158,15 @@
 .row-ded { color: #FF5050; }
 .row-neu { color: var(--text-muted); }
 .tp-bar { display: inline-block; height: 6px; border-radius: 3px; vertical-align: middle; margin-right: 6px; }
+/* I&D employee list inside card */
+.id-emp-list { display: flex; flex-direction: column; gap: 5px; margin: 8px 0 4px; }
+.id-emp-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.id-emp-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); }
+.id-emp-badge { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 20px; flex-shrink: 0; white-space: nowrap; }
+.id-emp-badge.inc  { background: rgba(0,200,100,.12); color: #00C864; border: 1px solid rgba(0,200,100,.3); }
+.id-emp-badge.ded  { background: rgba(255,80,80,.12);  color: #FF5050; border: 1px solid rgba(255,80,80,.3); }
+.id-emp-badge.none { background: rgba(255,255,255,.06); color: var(--text-faint); border: 1px solid rgba(255,255,255,.1); }
+.id-emp-amt { font-size: 11px; font-weight: 600; flex-shrink: 0; width: 72px; text-align: right; }
 /* BTRTP batcher list inside card */
 .bt-batcher-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 4px; }
 .bt-batcher-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
@@ -248,82 +257,60 @@
   </div>
 
   <!-- ═══ RDC-I&D ══════════════════════════════════════════════ -->
+  {% macro id_emp_rows(rows) %}
+  <div class="id-emp-list">
+    {% for r in rows %}
+    {% set is_inc = r.incentive_amount and r.incentive_amount > 0 %}
+    {% set is_ded = r.deduction_amount and r.deduction_amount > 0 %}
+    <div class="id-emp-row">
+      <span class="id-emp-name" title="{{ r.employee_name }}">{{ r.employee_name }}</span>
+      {% if is_inc %}
+        <span class="id-emp-badge inc">Incentive</span>
+        <span class="id-emp-amt" style="color:#00C864">₹{{ "{:,.0f}".format(r.incentive_amount) }}</span>
+      {% elif is_ded %}
+        <span class="id-emp-badge ded">Deduction</span>
+        <span class="id-emp-amt" style="color:#FF5050">₹{{ "{:,.0f}".format(r.deduction_amount) }}</span>
+      {% else %}
+        <span class="id-emp-badge none">No Action</span>
+        <span class="id-emp-amt" style="color:var(--text-faint)">—</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endmacro %}
+
   <div class="ud-section">
     <div class="ud-section-label">RDC-I&amp;D — Batching Incentive &amp; Deduction</div>
     <div class="ud-module-row">
 
-      <!-- Last calculated -->
+      <!-- Previous month — employee list -->
       <div class="ud-card {% if not id_last %}no-click{% endif %}" onclick="{% if id_last %}openModal('modal-id',0){% endif %}">
         <div class="ud-card-head">
           <span class="ud-mod-badge id">RDC-I&amp;D</span>
-          {% if id_months|length > 1 %}
-          <div class="ud-month-tabs" onclick="event.stopPropagation()">
-            {% for m in id_months %}
-            <button class="ud-mtab {% if loop.index0==0 %}active{% endif %}" onclick="switchCardTab('id',{{ loop.index0 }})">{{ m.month_name[:3] }} {{ m.year }}</button>
-            {% endfor %}
-          </div>
-          {% elif id_last %}
+          {% if id_last %}
           <span class="ud-card-tag last">{{ id_last.month_name }} {{ id_last.year }}</span>
           {% else %}
           <span class="ud-card-tag last">No Data</span>
           {% endif %}
         </div>
-        {% if id_last %}
-        {% for m in id_months %}
-        <div class="ud-tab-panel {% if loop.index0==0 %}active{% endif %}" id="id-card-tab-{{ loop.index0 }}">
-          <div class="ud-kpi-main">
-            <div class="ud-kpi-val c-inc">{{ m.inc_emp }} <span style="font-size:14px;font-weight:600">employees</span></div>
-            <div class="ud-kpi-lbl">Earned Incentive</div>
-          </div>
-          <div class="ud-kpi-sub">
-            <div class="ud-sub-item">
-              <div class="ud-sub-val c-ded">{{ m.ded_emp }}</div>
-              <div class="ud-sub-lbl">Got Deduction</div>
-            </div>
-            <div class="ud-sub-item">
-              <div class="ud-sub-val c-muted">{{ m.total_emp }}</div>
-              <div class="ud-sub-lbl">Total Employees</div>
-            </div>
-            <div class="ud-sub-item">
-              <div class="ud-sub-val c-inc">₹ {{ "{:,.0f}".format(m.total_inc) }}</div>
-              <div class="ud-sub-lbl">Total Incentive</div>
-            </div>
-          </div>
-        </div>
-        {% endfor %}
-        <div class="ud-hint">Click to view full details →</div>
+        {% if id_last_rows %}
+          {{ id_emp_rows(id_last_rows) }}
+          <div class="ud-hint">Click to view full details →</div>
         {% else %}
         <div class="ud-nodata">No calculation run yet</div>
         {% endif %}
       </div>
 
-      <!-- Current ongoing — calculated results for current month -->
+      <!-- Current month — employee list -->
       <div class="ud-card {% if not id_cur %}no-click{% endif %}" onclick="{% if id_cur %}openModal('modal-id-cur',0){% endif %}">
         <div class="ud-card-head">
           <span class="ud-mod-badge id">RDC-I&amp;D</span>
           <span class="ud-card-tag current">● Current</span>
           <span class="ud-card-period">{{ cur_month_name }} {{ cur_year }}</span>
         </div>
-        {% if id_cur %}
-        <div class="ud-kpi-main">
-          <div class="ud-kpi-val c-inc">{{ id_cur.inc_emp }} <span style="font-size:14px;font-weight:600">employees</span></div>
-          <div class="ud-kpi-lbl">Earned Incentive</div>
-        </div>
-        <div class="ud-kpi-sub">
-          <div class="ud-sub-item">
-            <div class="ud-sub-val c-ded">{{ id_cur.ded_emp }}</div>
-            <div class="ud-sub-lbl">Got Deduction</div>
-          </div>
-          <div class="ud-sub-item">
-            <div class="ud-sub-val c-muted">{{ id_cur.total_emp }}</div>
-            <div class="ud-sub-lbl">Total Employees</div>
-          </div>
-          <div class="ud-sub-item">
-            <div class="ud-sub-val c-inc">₹ {{ "{:,.0f}".format(id_cur.total_inc or 0) }}</div>
-            <div class="ud-sub-lbl">Total Incentive</div>
-          </div>
-        </div>
-        <div class="ud-hint">Click to view full details →</div>
+        {% if id_cur_rows %}
+          {{ id_emp_rows(id_cur_rows) }}
+          <div class="ud-hint">Click to view full details →</div>
         {% else %}
         <div class="ud-nodata">Calculation not run yet for {{ cur_month_name }}</div>
         {% endif %}
@@ -598,7 +585,9 @@
         <table class="ud-dt">
           <thead><tr>
             <th>Employee</th><th>Code</th><th>Designation</th><th>Plant</th>
-            <th class="r">Quantity (m³)</th><th class="r">Incentive (₹)</th><th class="r">Deduction (₹)</th><th>Status</th>
+            <th class="r">Qty (m³)</th><th class="r">Inc. Rate</th>
+            <th class="r">Ded. Target</th><th class="r">Shortfall (m³)</th>
+            <th class="r">Incentive (₹)</th><th class="r">Deduction (₹)</th><th>Remarks</th>
           </tr></thead>
           <tbody>
             {% for r in rows %}
@@ -608,9 +597,12 @@
               <td>{{ r.employee_name }}</td><td>{{ r.employee_code }}</td>
               <td>{{ r.designation }}</td><td>{{ r.plant }}</td>
               <td class="r">{{ "{:,.1f}".format(r.total_quantity or 0) }}</td>
+              <td class="r">{% if r.incentive_rate %}₹{{ r.incentive_rate }}/m³{% else %}—{% endif %}</td>
+              <td class="r">{% if r.deduction_target %}{{ "{:,.0f}".format(r.deduction_target) }} m³{% else %}—{% endif %}</td>
+              <td class="r">{% if is_ded and r.shortfall_quantity %}{{ "{:,.1f}".format(r.shortfall_quantity) }}{% else %}—{% endif %}</td>
               <td class="r">{% if is_inc %}₹ {{ "{:,.0f}".format(r.incentive_amount) }}{% else %}—{% endif %}</td>
               <td class="r">{% if is_ded %}₹ {{ "{:,.0f}".format(r.deduction_amount) }}{% else %}—{% endif %}</td>
-              <td>{% if is_inc %}✅ Incentive{% elif is_ded %}🔴 Deduction{% else %}—{% endif %}</td>
+              <td style="font-size:11px;color:var(--text-faint)">{{ r.remarks or '—' }}</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -800,7 +792,9 @@
       <table class="ud-dt">
         <thead><tr>
           <th>Employee</th><th>Code</th><th>Designation</th><th>Plant</th>
-          <th class="r">Quantity (m³)</th><th class="r">Incentive (₹)</th><th class="r">Deduction (₹)</th><th>Status</th>
+          <th class="r">Qty (m³)</th><th class="r">Inc. Rate</th>
+          <th class="r">Ded. Target</th><th class="r">Shortfall (m³)</th>
+          <th class="r">Incentive (₹)</th><th class="r">Deduction (₹)</th><th>Remarks</th>
         </tr></thead>
         <tbody>
           {% for r in id_cur_rows %}
@@ -810,9 +804,12 @@
             <td>{{ r.employee_name }}</td><td>{{ r.employee_code }}</td>
             <td>{{ r.designation }}</td><td>{{ r.plant }}</td>
             <td class="r">{{ "{:,.1f}".format(r.total_quantity or 0) }}</td>
+            <td class="r">{% if r.incentive_rate %}₹{{ r.incentive_rate }}/m³{% else %}—{% endif %}</td>
+            <td class="r">{% if r.deduction_target %}{{ "{:,.0f}".format(r.deduction_target) }} m³{% else %}—{% endif %}</td>
+            <td class="r">{% if is_ded and r.shortfall_quantity %}{{ "{:,.1f}".format(r.shortfall_quantity) }}{% else %}—{% endif %}</td>
             <td class="r">{% if is_inc %}₹ {{ "{:,.0f}".format(r.incentive_amount) }}{% else %}—{% endif %}</td>
             <td class="r">{% if is_ded %}₹ {{ "{:,.0f}".format(r.deduction_amount) }}{% else %}—{% endif %}</td>
-            <td>{% if is_inc %}✅ Incentive{% elif is_ded %}🔴 Deduction{% else %}—{% endif %}</td>
+            <td style="font-size:11px;color:var(--text-faint)">{{ r.remarks or '—' }}</td>
           </tr>
           {% endfor %}
         </tbody>
