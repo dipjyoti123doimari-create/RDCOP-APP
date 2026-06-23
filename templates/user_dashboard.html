@@ -641,6 +641,11 @@
         Batches with <strong>time &gt; 100 min</strong> are excluded as outliers.
         Only valid production batches are counted.
       </div>
+      <div style="font-size:11px;color:var(--text-faint);background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:7px 12px;margin-bottom:10px;line-height:1.8">
+        📐 <strong style="color:#00D4FF">Throughput % Formula:</strong><br>
+        Avg Rate (m³/hr) = Total Quantity ÷ Total Time (hrs)<br>
+        Throughput % = (Avg Rate ÷ Mixer Theoretical Capacity) × 100
+      </div>
       {% for mi in range(tp_months|length) %}
       {% set rows = tp_months_rows[mi] if mi < tp_months_rows|length else [] %}
       <div class="ud-tab-panel {% if mi==0 %}active{% endif %}" id="tp-modal-panel-{{ mi }}">
@@ -702,6 +707,11 @@
         Batches with <strong>time = 0 min</strong> (diversion/transfer quantities) are excluded.
         Batches with <strong>time &gt; 100 min</strong> are excluded as outliers.
         Only valid production batches are counted.
+      </div>
+      <div style="font-size:11px;color:var(--text-faint);background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:7px 12px;margin-bottom:10px;line-height:1.8">
+        📐 <strong style="color:#00D4FF">Throughput % Formula:</strong><br>
+        Avg Rate (m³/hr) = Total Quantity ÷ Total Time (hrs)<br>
+        Throughput % = (Avg Rate ÷ Mixer Theoretical Capacity) × 100
       </div>
       {% for mi in range(bt_months|length) %}
       {% set rows = bt_months_rows[mi] if mi < bt_months_rows|length else [] %}
@@ -853,6 +863,11 @@
         Batches with <strong>time &gt; 100 min</strong> are excluded as outliers.
         Only valid production batches are counted.
       </div>
+      <div style="font-size:11px;color:var(--text-faint);background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:7px 12px;margin-bottom:10px;line-height:1.8">
+        📐 <strong style="color:#00D4FF">Throughput % Formula:</strong><br>
+        Avg Rate (m³/hr) = Total Quantity ÷ Total Time (hrs)<br>
+        Throughput % = (Avg Rate ÷ Mixer Theoretical Capacity) × 100
+      </div>
       {% if tp_cur_rows %}
       <table class="ud-dt">
         <thead><tr>
@@ -901,6 +916,11 @@
         Batches with <strong>time = 0 min</strong> (diversion/transfer quantities) are excluded.
         Batches with <strong>time &gt; 100 min</strong> are excluded as outliers.
         Only valid production batches are counted.
+      </div>
+      <div style="font-size:11px;color:var(--text-faint);background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:7px 12px;margin-bottom:10px;line-height:1.8">
+        📐 <strong style="color:#00D4FF">Throughput % Formula:</strong><br>
+        Avg Rate (m³/hr) = Total Quantity ÷ Total Time (hrs)<br>
+        Throughput % = (Avg Rate ÷ Mixer Theoretical Capacity) × 100
       </div>
       {% if bt_cur_rows %}
       <table class="ud-dt">
