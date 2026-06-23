@@ -635,17 +635,6 @@
       <button class="ud-modal-close" onclick="closeModal('modal-tp')">✕</button>
     </div>
     <div class="ud-modal-body">
-      <div style="font-size:11px;color:var(--text-faint);background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:7px 12px;margin-bottom:10px;line-height:1.6">
-        ⚠ <strong style="color:#FFB400">Exclusions applied:</strong>
-        Batches with <strong>time = 0 min</strong> (diversion/transfer quantities) are excluded.
-        Batches with <strong>time &gt; 100 min</strong> are excluded as outliers.
-        Only valid production batches are counted.
-      </div>
-      <div style="font-size:11px;color:var(--text-faint);background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:7px 12px;margin-bottom:10px;line-height:1.8">
-        📐 <strong style="color:#00D4FF">Throughput % Formula:</strong><br>
-        Avg Rate (m³/hr) = Total Quantity ÷ Total Time (hrs)<br>
-        Throughput % = (Avg Rate ÷ Mixer Theoretical Capacity) × 100
-      </div>
       {% for mi in range(tp_months|length) %}
       {% set rows = tp_months_rows[mi] if mi < tp_months_rows|length else [] %}
       <div class="ud-tab-panel {% if mi==0 %}active{% endif %}" id="tp-modal-panel-{{ mi }}">
@@ -674,6 +663,12 @@
             {% endfor %}
           </tbody>
         </table>
+        <div style="font-size:11px;color:var(--text-faint);margin-top:12px;background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:7px 12px;line-height:1.6">
+          ⚠ <strong style="color:#FFB400">Exclusions:</strong> time = 0 min (diversion/transfer) excluded · time &gt; 100 min (outliers) excluded
+        </div>
+        <div style="font-size:11px;color:var(--text-faint);margin-top:6px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:7px 12px;line-height:1.8">
+          📐 <strong style="color:#00D4FF">Formula:</strong> Throughput % = { ( Quantity ÷ Time Taken in Hrs ) ÷ Mixer Theoretical Capacity } × 100
+        </div>
         {% else %}
         <div class="ud-nodata">No data available</div>
         {% endif %}
@@ -702,17 +697,6 @@
       <button class="ud-modal-close" onclick="closeModal('modal-bt')">✕</button>
     </div>
     <div class="ud-modal-body">
-      <div style="font-size:11px;color:var(--text-faint);background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:7px 12px;margin-bottom:10px;line-height:1.6">
-        ⚠ <strong style="color:#FFB400">Exclusions applied:</strong>
-        Batches with <strong>time = 0 min</strong> (diversion/transfer quantities) are excluded.
-        Batches with <strong>time &gt; 100 min</strong> are excluded as outliers.
-        Only valid production batches are counted.
-      </div>
-      <div style="font-size:11px;color:var(--text-faint);background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:7px 12px;margin-bottom:10px;line-height:1.8">
-        📐 <strong style="color:#00D4FF">Throughput % Formula:</strong><br>
-        Avg Rate (m³/hr) = Total Quantity ÷ Total Time (hrs)<br>
-        Throughput % = (Avg Rate ÷ Mixer Theoretical Capacity) × 100
-      </div>
       {% for mi in range(bt_months|length) %}
       {% set rows = bt_months_rows[mi] if mi < bt_months_rows|length else [] %}
       <div class="ud-tab-panel {% if mi==0 %}active{% endif %}" id="bt-modal-panel-{{ mi }}">
@@ -741,6 +725,12 @@
             {% endfor %}
           </tbody>
         </table>
+        <div style="font-size:11px;color:var(--text-faint);margin-top:12px;background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:7px 12px;line-height:1.6">
+          ⚠ <strong style="color:#FFB400">Exclusions:</strong> time = 0 min (diversion/transfer) excluded · time &gt; 100 min (outliers) excluded
+        </div>
+        <div style="font-size:11px;color:var(--text-faint);margin-top:6px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:7px 12px;line-height:1.8">
+          📐 <strong style="color:#00D4FF">Formula:</strong> Throughput % = { ( Quantity ÷ Time Taken in Hrs ) ÷ Mixer Theoretical Capacity } × 100
+        </div>
         {% else %}
         <div class="ud-nodata">No data available</div>
         {% endif %}
@@ -857,17 +847,6 @@
       <button class="ud-modal-close" onclick="closeModal('modal-tp-cur')">✕</button>
     </div>
     <div class="ud-modal-body">
-      <div style="font-size:11px;color:var(--text-faint);background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:7px 12px;margin-bottom:10px;line-height:1.6">
-        ⚠ <strong style="color:#FFB400">Exclusions applied:</strong>
-        Batches with <strong>time = 0 min</strong> (diversion/transfer quantities) are excluded.
-        Batches with <strong>time &gt; 100 min</strong> are excluded as outliers.
-        Only valid production batches are counted.
-      </div>
-      <div style="font-size:11px;color:var(--text-faint);background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:7px 12px;margin-bottom:10px;line-height:1.8">
-        📐 <strong style="color:#00D4FF">Throughput % Formula:</strong><br>
-        Avg Rate (m³/hr) = Total Quantity ÷ Total Time (hrs)<br>
-        Throughput % = (Avg Rate ÷ Mixer Theoretical Capacity) × 100
-      </div>
       {% if tp_cur_rows %}
       <table class="ud-dt">
         <thead><tr>
@@ -893,6 +872,12 @@
           {% endfor %}
         </tbody>
       </table>
+      <div style="font-size:11px;color:var(--text-faint);margin-top:12px;background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:7px 12px;line-height:1.6">
+        ⚠ <strong style="color:#FFB400">Exclusions:</strong> time = 0 min (diversion/transfer) excluded · time &gt; 100 min (outliers) excluded
+      </div>
+      <div style="font-size:11px;color:var(--text-faint);margin-top:6px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:7px 12px;line-height:1.8">
+        📐 <strong style="color:#00D4FF">Formula:</strong> Throughput % = { ( Quantity ÷ Time Taken in Hrs ) ÷ Mixer Theoretical Capacity } × 100
+      </div>
       {% else %}
       <div class="ud-nodata">No data available</div>
       {% endif %}
@@ -911,17 +896,6 @@
       <button class="ud-modal-close" onclick="closeModal('modal-bt-cur')">✕</button>
     </div>
     <div class="ud-modal-body">
-      <div style="font-size:11px;color:var(--text-faint);background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:7px 12px;margin-bottom:10px;line-height:1.6">
-        ⚠ <strong style="color:#FFB400">Exclusions applied:</strong>
-        Batches with <strong>time = 0 min</strong> (diversion/transfer quantities) are excluded.
-        Batches with <strong>time &gt; 100 min</strong> are excluded as outliers.
-        Only valid production batches are counted.
-      </div>
-      <div style="font-size:11px;color:var(--text-faint);background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:7px 12px;margin-bottom:10px;line-height:1.8">
-        📐 <strong style="color:#00D4FF">Throughput % Formula:</strong><br>
-        Avg Rate (m³/hr) = Total Quantity ÷ Total Time (hrs)<br>
-        Throughput % = (Avg Rate ÷ Mixer Theoretical Capacity) × 100
-      </div>
       {% if bt_cur_rows %}
       <table class="ud-dt">
         <thead><tr>
@@ -947,6 +921,12 @@
           {% endfor %}
         </tbody>
       </table>
+      <div style="font-size:11px;color:var(--text-faint);margin-top:12px;background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:7px 12px;line-height:1.6">
+        ⚠ <strong style="color:#FFB400">Exclusions:</strong> time = 0 min (diversion/transfer) excluded · time &gt; 100 min (outliers) excluded
+      </div>
+      <div style="font-size:11px;color:var(--text-faint);margin-top:6px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:7px 12px;line-height:1.8">
+        📐 <strong style="color:#00D4FF">Formula:</strong> Throughput % = { ( Quantity ÷ Time Taken in Hrs ) ÷ Mixer Theoretical Capacity } × 100
+      </div>
       {% else %}
       <div class="ud-nodata">No data available</div>
       {% endif %}
