@@ -2804,44 +2804,36 @@ def page_reports():
         unique_plants = sorted(_cr_all["plant"].dropna().unique().tolist())       if "plant"       in _cr_all.columns else []
 
     if has_params and not no_backend:
-        range_key = f"{from_date}|{to_date}"
-        cached_empty = (not _s("rpt_all", None)) and _s("rpt_range_key") == range_key
-        if _s("rpt_range_key") != range_key or cached_empty:
-            # View Reports never writes to backend_data — oracle_raw_data is
-            # the shared cache maintained by the nightly fetch job. Just report
-            # how many rows oracle_raw_data has for this range.
-            if ora_live:
-                try:
-                    conn_ora = database.get_connection()
-                    ora_cnt = conn_ora.execute(
-                        "SELECT COUNT(*) FROM oracle_raw_data "
-                        "WHERE production_date >= ? AND production_date <= ?",
-                        (str(from_date), str(to_date))
-                    ).fetchone()[0]
-                    conn_ora.close()
-                    ora_note = (f"Oracle: {ora_cnt:,} rows loaded."
-                                if ora_cnt > 0 else "Oracle returned no rows for this range.")
-                except Exception as exc:
-                    ora_note = f"Oracle check failed: {exc}"
+        # Oracle row-count note (read-only, never writes to backend_data)
+        if ora_live:
+            try:
+                conn_ora = database.get_connection()
+                ora_cnt = conn_ora.execute(
+                    "SELECT COUNT(*) FROM oracle_raw_data "
+                    "WHERE production_date >= ? AND production_date <= ?",
+                    (str(from_date), str(to_date))
+                ).fetchone()[0]
+                conn_ora.close()
+                ora_note = (f"Oracle: {ora_cnt:,} rows loaded."
+                            if ora_cnt > 0 else "Oracle returned no rows for this range.")
+            except Exception as exc:
+                ora_note = f"Oracle check failed: {exc}"
 
-            res = calculator.run_calculation(
-                month=from_date.month, year=from_date.year,
-                start_date=str(from_date), end_date=str(to_date),
-                persist=False,
-            )
-            if res["error"]:
-                error_msg = res["error"]
-                _ss("rpt_all", [])
-                _ss("rpt_unmapped", [])
-            else:
-                _ss("rpt_all", res.get("results_rows", []))
-                _ss("rpt_unmapped", res.get("unmapped_rows", []))
-            _ss("rpt_range_key", range_key)
-            _ss("rpt_ora_note", ora_note)
+        # Run calculation on every view — fast because data is already in SQLite.
+        # Never cache large row-lists in the session cookie (exceeds 4 KB limit).
+        res = calculator.run_calculation(
+            month=from_date.month, year=from_date.year,
+            start_date=str(from_date), end_date=str(to_date),
+            persist=False,
+        )
+        if res["error"]:
+            error_msg = res["error"]
+            all_rows = []
+            unmapped = []
+        else:
+            all_rows = res.get("results_rows", [])
+            unmapped = res.get("unmapped_rows", [])
 
-        all_rows = _s("rpt_all", [])
-        unmapped  = _s("rpt_unmapped", [])
-        ora_note  = _s("rpt_ora_note", "")
         total_rows = len(all_rows)
 
         unique_cats   = sorted({r.get("category", "")    for r in all_rows if r.get("category")})
@@ -2875,9 +2867,7 @@ def page_reports():
         if search.strip():    parts.append(f"Search: {search.strip()}")
         applied_filters = " | ".join(parts) if parts else "None"
 
-        # Store snapshot for downloads / email
-        _ss("rpt_filtered",        filtered)
-        _ss("rpt_unmapped_snap",   unmapped)
+        # Store only tiny metadata in session (not the full row lists)
         _ss("rpt_from",            str(from_date))
         _ss("rpt_to",              str(to_date))
         _ss("rpt_applied_filters", applied_filters)
@@ -3670,19 +3660,46 @@ def tp_api_table_columns():
 # ── DOWNLOAD ENDPOINTS ────────────────────────────────────────────────────────
 
 def _snapshot_dfs():
-    filtered = _s("rpt_filtered", [])
-    unmapped  = _s("rpt_unmapped_snap", [])
-    from_s    = _s("rpt_from",  str(_date.today()))
-    to_s      = _s("rpt_to",    str(_date.today()))
-    applied   = _s("rpt_applied_filters", "None")
-    meta      = _build_meta(from_s, to_s, filtered, unmapped, applied)
+    # Re-run calculation from saved date range (never cache large row lists in session cookie)
+    from_s  = _s("rpt_from",  str(_date.today().replace(day=1)))
+    to_s    = _s("rpt_to",    str(_date.today()))
+    applied = _s("rpt_applied_filters", "None")
 
-    col_set = set(RESULT_COLS) | {"category", "month", "year"}
-    all_cols = [c for c in (RESULT_COLS + ["category", "month", "year"])
-                if c not in ("_cls",)]
+    try:
+        fd = _date.fromisoformat(from_s)
+        td = _date.fromisoformat(to_s)
+    except ValueError:
+        fd = _date.today().replace(day=1)
+        td = _date.today()
 
-    df_f = pd.DataFrame(filtered) if filtered else pd.DataFrame()
-    df_u = pd.DataFrame(unmapped) if unmapped else pd.DataFrame()
+    res = calculator.run_calculation(
+        month=fd.month, year=fd.year,
+        start_date=str(fd), end_date=str(td),
+        persist=False,
+    )
+    if res["error"] or not res.get("results_rows"):
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), {}, from_s, to_s
+
+    all_rows = res["results_rows"]
+    unmapped = res.get("unmapped_rows", [])
+
+    # Plant totals
+    plant_inc_map: dict = {}
+    plant_ded_map: dict = {}
+    for r in all_rows:
+        p = r.get("plant", "")
+        plant_inc_map[p] = plant_inc_map.get(p, 0.0) + (r.get("incentive_amount") or 0)
+        plant_ded_map[p] = plant_ded_map.get(p, 0.0) + (r.get("deduction_amount") or 0)
+    for r in all_rows:
+        r["_cls"] = _row_cls(r)
+        r["plant_total_incentive"] = plant_inc_map.get(r.get("plant", ""), 0.0)
+        r["plant_total_deduction"] = plant_ded_map.get(r.get("plant", ""), 0.0)
+
+    filtered = _sort_rows(all_rows)
+    meta = _build_meta(from_s, to_s, filtered, unmapped, applied)
+
+    df_f   = pd.DataFrame(filtered) if filtered else pd.DataFrame()
+    df_u   = pd.DataFrame(unmapped) if unmapped else pd.DataFrame()
     val_df = database.read_table("validation_errors")
     return df_f, df_u, val_df, meta, from_s, to_s
 
@@ -3708,15 +3725,11 @@ def download_excel():
 
 @app.route("/download/csv")
 def download_csv():
-    filtered = _s("rpt_filtered", [])
-    from_s   = _s("rpt_from",  str(_date.today()))
-    to_s     = _s("rpt_to",    str(_date.today()))
-    if not filtered:
-        flash("No report data. Load a report on the View Reports page first.", "warning")
+    df_f, _du, _dv, _meta, from_s, to_s = _snapshot_dfs()
+    if df_f.empty:
+        flash("No report data. Load a report on the Calculate & Reports page first.", "warning")
         return redirect(url_for("page_reports"))
-    df = pd.DataFrame(filtered)
-    # Rename columns for display
-    df_show = df[[c for c in RESULT_COLS if c in df.columns]].rename(columns=RESULT_LABELS)
+    df_show = df_f[[c for c in RESULT_COLS if c in df_f.columns]].rename(columns=RESULT_LABELS)
     csv_bytes = df_show.to_csv(index=False).encode("utf-8")
     fname = f"incentive_report_{from_s}_to_{to_s}.csv"
     return send_file(io.BytesIO(csv_bytes), as_attachment=True,
