@@ -271,7 +271,7 @@
         <span class="id-emp-badge ded">Deduction</span>
         <span class="id-emp-amt" style="color:#FF5050">₹{{ "{:,.0f}".format(r.deduction_amount) }}</span>
       {% else %}
-        <span class="id-emp-badge none">No Action</span>
+        <span class="id-emp-badge none">No Deduction</span>
         <span class="id-emp-amt" style="color:var(--text-faint)">—</span>
       {% endif %}
     </div>
@@ -664,10 +664,17 @@
           </tbody>
         </table>
         <div style="font-size:11px;color:var(--text-faint);margin-top:12px;background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:7px 12px;line-height:1.6">
-          ⚠ <strong style="color:#FFB400">Exclusions:</strong> time = 0 min (diversion/transfer) excluded · time &gt; 100 min (outliers) excluded
+          ⚠ <strong style="color:#FFB400">Batches excluded from this calculation:</strong><br>
+          &nbsp;&nbsp;• <strong>Time = 0 minutes</strong> — These are diversion or material transfer transactions, not actual production batches. They do not consume mixer time, so they are not counted.<br>
+          &nbsp;&nbsp;• <strong>Time &gt; 100 minutes</strong> — These are considered outlier batches (e.g. system entries, delays, or errors). Including them would unfairly reduce the throughput % and distort the result.
         </div>
-        <div style="font-size:11px;color:var(--text-faint);margin-top:6px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:7px 12px;line-height:1.8">
-          📐 <strong style="color:#00D4FF">Formula:</strong> Throughput % = { ( Quantity ÷ Time Taken in Hrs ) ÷ Mixer Theoretical Capacity } × 100
+        <div style="font-size:11px;color:var(--text-faint);margin-top:6px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:8px 14px;line-height:2">
+          📐 <strong style="color:#00D4FF">How Throughput % is calculated:</strong><br>
+          <span style="font-family:monospace;font-size:12px;color:var(--text)">
+          &nbsp;&nbsp;Step 1 → Avg Rate &nbsp;&nbsp;&nbsp;= Total Quantity (m³) ÷ Total Time (hrs)<br>
+          &nbsp;&nbsp;Step 2 → Throughput % = ( Avg Rate ÷ Mixer Theoretical Capacity ) × 100
+          </span><br>
+          <span style="color:var(--text-faint)">A higher Throughput % means the mixer is being utilised closer to its rated capacity. Target is <strong style="color:#00C864">≥ 75%</strong>.</span>
         </div>
         {% else %}
         <div class="ud-nodata">No data available</div>
@@ -726,10 +733,17 @@
           </tbody>
         </table>
         <div style="font-size:11px;color:var(--text-faint);margin-top:12px;background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:7px 12px;line-height:1.6">
-          ⚠ <strong style="color:#FFB400">Exclusions:</strong> time = 0 min (diversion/transfer) excluded · time &gt; 100 min (outliers) excluded
+          ⚠ <strong style="color:#FFB400">Batches excluded from this calculation:</strong><br>
+          &nbsp;&nbsp;• <strong>Time = 0 minutes</strong> — These are diversion or material transfer transactions, not actual production batches. They do not consume mixer time, so they are not counted.<br>
+          &nbsp;&nbsp;• <strong>Time &gt; 100 minutes</strong> — These are considered outlier batches (e.g. system entries, delays, or errors). Including them would unfairly reduce the throughput % and distort the result.
         </div>
-        <div style="font-size:11px;color:var(--text-faint);margin-top:6px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:7px 12px;line-height:1.8">
-          📐 <strong style="color:#00D4FF">Formula:</strong> Throughput % = { ( Quantity ÷ Time Taken in Hrs ) ÷ Mixer Theoretical Capacity } × 100
+        <div style="font-size:11px;color:var(--text-faint);margin-top:6px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:8px 14px;line-height:2">
+          📐 <strong style="color:#00D4FF">How Throughput % is calculated:</strong><br>
+          <span style="font-family:monospace;font-size:12px;color:var(--text)">
+          &nbsp;&nbsp;Step 1 → Avg Rate &nbsp;&nbsp;&nbsp;= Total Quantity (m³) ÷ Total Time (hrs)<br>
+          &nbsp;&nbsp;Step 2 → Throughput % = ( Avg Rate ÷ Mixer Theoretical Capacity ) × 100
+          </span><br>
+          <span style="color:var(--text-faint)">A higher Throughput % means the mixer is being utilised closer to its rated capacity. Target is <strong style="color:#00C864">≥ 75%</strong>.</span>
         </div>
         {% else %}
         <div class="ud-nodata">No data available</div>
@@ -873,10 +887,17 @@
         </tbody>
       </table>
       <div style="font-size:11px;color:var(--text-faint);margin-top:12px;background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:7px 12px;line-height:1.6">
-        ⚠ <strong style="color:#FFB400">Exclusions:</strong> time = 0 min (diversion/transfer) excluded · time &gt; 100 min (outliers) excluded
+        ⚠ <strong style="color:#FFB400">Batches excluded from this calculation:</strong><br>
+        &nbsp;&nbsp;• <strong>Time = 0 minutes</strong> — These are diversion or material transfer transactions, not actual production batches. They do not consume mixer time, so they are not counted.<br>
+        &nbsp;&nbsp;• <strong>Time &gt; 100 minutes</strong> — These are considered outlier batches (e.g. system entries, delays, or errors). Including them would unfairly reduce the throughput % and distort the result.
       </div>
-      <div style="font-size:11px;color:var(--text-faint);margin-top:6px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:7px 12px;line-height:1.8">
-        📐 <strong style="color:#00D4FF">Formula:</strong> Throughput % = { ( Quantity ÷ Time Taken in Hrs ) ÷ Mixer Theoretical Capacity } × 100
+      <div style="font-size:11px;color:var(--text-faint);margin-top:6px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:8px 14px;line-height:2">
+        📐 <strong style="color:#00D4FF">How Throughput % is calculated:</strong><br>
+        <span style="font-family:monospace;font-size:12px;color:var(--text)">
+        &nbsp;&nbsp;Step 1 → Avg Rate &nbsp;&nbsp;&nbsp;= Total Quantity (m³) ÷ Total Time (hrs)<br>
+        &nbsp;&nbsp;Step 2 → Throughput % = ( Avg Rate ÷ Mixer Theoretical Capacity ) × 100
+        </span><br>
+        <span style="color:var(--text-faint)">A higher Throughput % means the mixer is being utilised closer to its rated capacity. Target is <strong style="color:#00C864">≥ 75%</strong>.</span>
       </div>
       {% else %}
       <div class="ud-nodata">No data available</div>
@@ -922,10 +943,17 @@
         </tbody>
       </table>
       <div style="font-size:11px;color:var(--text-faint);margin-top:12px;background:rgba(255,180,0,.07);border:1px solid rgba(255,180,0,.2);border-radius:6px;padding:7px 12px;line-height:1.6">
-        ⚠ <strong style="color:#FFB400">Exclusions:</strong> time = 0 min (diversion/transfer) excluded · time &gt; 100 min (outliers) excluded
+        ⚠ <strong style="color:#FFB400">Batches excluded from this calculation:</strong><br>
+        &nbsp;&nbsp;• <strong>Time = 0 minutes</strong> — These are diversion or material transfer transactions, not actual production batches. They do not consume mixer time, so they are not counted.<br>
+        &nbsp;&nbsp;• <strong>Time &gt; 100 minutes</strong> — These are considered outlier batches (e.g. system entries, delays, or errors). Including them would unfairly reduce the throughput % and distort the result.
       </div>
-      <div style="font-size:11px;color:var(--text-faint);margin-top:6px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:7px 12px;line-height:1.8">
-        📐 <strong style="color:#00D4FF">Formula:</strong> Throughput % = { ( Quantity ÷ Time Taken in Hrs ) ÷ Mixer Theoretical Capacity } × 100
+      <div style="font-size:11px;color:var(--text-faint);margin-top:6px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.18);border-radius:6px;padding:8px 14px;line-height:2">
+        📐 <strong style="color:#00D4FF">How Throughput % is calculated:</strong><br>
+        <span style="font-family:monospace;font-size:12px;color:var(--text)">
+        &nbsp;&nbsp;Step 1 → Avg Rate &nbsp;&nbsp;&nbsp;= Total Quantity (m³) ÷ Total Time (hrs)<br>
+        &nbsp;&nbsp;Step 2 → Throughput % = ( Avg Rate ÷ Mixer Theoretical Capacity ) × 100
+        </span><br>
+        <span style="color:var(--text-faint)">A higher Throughput % means the mixer is being utilised closer to its rated capacity. Target is <strong style="color:#00C864">≥ 75%</strong>.</span>
       </div>
       {% else %}
       <div class="ud-nodata">No data available</div>
