@@ -387,8 +387,10 @@ def run_calculation(month: int, year: int,
         }
     """
     try:
-        # ── Step 0: Pre-flight integrity check — BLOCKS if data is unsafe ────
-        pf_errors = preflight_check(month, year, start_date, end_date)
+        # ── Step 0: Pre-flight integrity check — only blocks official saves ──
+        # persist=False means View Reports / scheduler / email — don't block those.
+        # Only block when admin is about to write results to the database.
+        pf_errors = preflight_check(month, year, start_date, end_date) if persist else []
         if pf_errors:
             return {
                 "total_employees": 0, "mapped": 0, "unmapped": 0,
