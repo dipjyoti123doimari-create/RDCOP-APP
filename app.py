@@ -883,6 +883,7 @@ def page_home():
         allowed_plants  = auth.get_user_allowed_plants(user)
         user_plant_rows = database.get_user_plant_access(user["id"]) if allowed_plants else []
         is_restricted   = bool(allowed_plants)  # True for REGIONAL_USER / PLANT_USER
+        _allowed_codes  = []  # tp_plant_data plant_codes for restricted user (filled below)
 
         def _plant_filter(rows, col="plant"):
             if not is_restricted:
@@ -903,6 +904,7 @@ def page_home():
         for row in cur.fetchall():
             d = dict(row); d["month_name"] = _mn(d["month"])
             id_months.append(d)
+        id_months.reverse()  # previous month first (index 0), current month last
         id_last = id_months[0] if id_months else None
 
         # Detail rows for each I&D month
@@ -954,6 +956,7 @@ def page_home():
         for row in cur.fetchall():
             d = dict(row); d["month_name"] = _mn(d["month"])
             tp_months.append(d)
+        tp_months.reverse()  # previous month first (index 0), current month last
         tp_last = tp_months[0] if tp_months else None
 
         tp_months_rows = []
@@ -973,11 +976,29 @@ def page_home():
             tp_months_rows.append(rows_f)
         tp_last_rows = tp_months_rows[0] if tp_months_rows else []
 
-        # TP current month — from shared oracle_raw_data (plant_code = lookup proxy)
-        cur.execute("""SELECT COUNT(DISTINCT plant_code) as plants,
-            ROUND(SUM(quantity),0) as total_qty,
-            MAX(fetched_at) as last_sync
-            FROM oracle_raw_data WHERE substr(production_date,1,7)=?""", (cur_ym,))
+        # TP current month — filtered to user's plants if restricted
+        if is_restricted:
+            # Build plant_code list from tp_plant_data matching allowed plant names
+            _allowed_lower = [p.lower() for p in allowed_plants]
+            cur.execute("SELECT plant_code, plant_name FROM tp_plant_data")
+            _allowed_codes = [r2[0] for r2 in cur.fetchall()
+                              if str(r2[1]).lower() in _allowed_lower]
+            if _allowed_codes:
+                _ph = ",".join("?" * len(_allowed_codes))
+                cur.execute(f"""SELECT COUNT(DISTINCT plant_code) as plants,
+                    ROUND(SUM(quantity),0) as total_qty,
+                    MAX(fetched_at) as last_sync
+                    FROM oracle_raw_data
+                    WHERE substr(production_date,1,7)=?
+                    AND plant_code IN ({_ph})""",
+                    [cur_ym] + _allowed_codes)
+            else:
+                cur.execute("SELECT 0,0,NULL")
+        else:
+            cur.execute("""SELECT COUNT(DISTINCT plant_code) as plants,
+                ROUND(SUM(quantity),0) as total_qty,
+                MAX(fetched_at) as last_sync
+                FROM oracle_raw_data WHERE substr(production_date,1,7)=?""", (cur_ym,))
         row = cur.fetchone()
         tp_cur = {"plants": row[0] or 0, "total_qty": row[1] or 0,
                   "last_sync": row[2]} if (row and row[0]) else None
@@ -1004,6 +1025,7 @@ def page_home():
         for row in cur.fetchall():
             d = dict(row); d["month_name"] = _mn(d["month"])
             bt_months.append(d)
+        bt_months.reverse()  # previous month first (index 0), current month last
         bt_last = bt_months[0] if bt_months else None
 
         bt_months_rows = []
@@ -1023,13 +1045,22 @@ def page_home():
             bt_months_rows.append(rows_f)
         bt_last_rows = bt_months_rows[0] if bt_months_rows else []
 
-        # BTRTP current — from shared oracle_raw_data (created_by = batcher proxy)
+        # BTRTP current — filtered to user's plants if restricted
         bt_last_known_sync = None
         try:
             cur2 = conn.cursor()
-            cur2.execute("""SELECT COUNT(DISTINCT created_by) as batchers,
-                MAX(fetched_at) as last_sync
-                FROM oracle_raw_data WHERE substr(production_date,1,7)=?""", (cur_ym,))
+            if is_restricted and _allowed_codes:
+                _ph2 = ",".join("?" * len(_allowed_codes))
+                cur2.execute(f"""SELECT COUNT(DISTINCT created_by) as batchers,
+                    MAX(fetched_at) as last_sync
+                    FROM oracle_raw_data
+                    WHERE substr(production_date,1,7)=?
+                    AND plant_code IN ({_ph2})""",
+                    [cur_ym] + _allowed_codes)
+            else:
+                cur2.execute("""SELECT COUNT(DISTINCT created_by) as batchers,
+                    MAX(fetched_at) as last_sync
+                    FROM oracle_raw_data WHERE substr(production_date,1,7)=?""", (cur_ym,))
             row = cur2.fetchone()
             bt_cur = {"batchers": row[0], "last_sync": row[1]} if (row and row[0]) else None
             if bt_cur is None:
@@ -1054,6 +1085,7 @@ def page_home():
         for row in cur.fetchall():
             d = dict(row); d["month_name"] = _mn(d["month"])
             ec_months.append(d)
+        ec_months.reverse()  # previous month first (index 0), current month last
         ec_last = ec_months[0] if ec_months else None
 
         ec_months_rows = []
