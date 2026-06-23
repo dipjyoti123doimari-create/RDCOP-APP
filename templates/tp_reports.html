@@ -1,5 +1,5 @@
 {% extends "tp_base.html" %}
-{% block title %}Calculate &amp; Reports{% endblock %}
+{% block title %}View Reports{% endblock %}
 {% block content %}
 
 {% if ora_note %}
@@ -7,134 +7,126 @@
 {% endif %}
 
 <div class="page-header">
-  <h1>Calculate &amp; Reports</h1>
-  <p>Plant &amp; location throughput for <strong>{{ month_label }}</strong> — calculate, filter, browse, export or email</p>
+  <h1>View Reports</h1>
+  <p>Plant &amp; location throughput for <strong>{{ month_label }}</strong> — filter, browse, export or email</p>
 </div>
 
-<!-- Single unified card -->
+<!-- Date range + filter form -->
 <div class="card">
   <div class="section-title">📅 Report Period &amp; Filters</div>
-
-  <div class="date-row" style="align-items:flex-end">
-    <div class="form-group">
-      <label>From Date</label>
-      <input type="date" id="tp-shared-from" value="{{ from_date }}" required>
-    </div>
-    <div class="form-group">
-      <label>To Date</label>
-      <input type="date" id="tp-shared-to" value="{{ to_date }}" required>
-    </div>
-    <div class="form-group">
-      <label>&nbsp;</label>
-      <div class="btn-group">
-        <!-- Run Calculation — GET with dates, triggers recalculation in tp_reports -->
-        <form method="GET" action="{{ url_for('tp_reports') }}" id="tp-run-form" style="display:inline">
-          <input type="hidden" name="from_date" id="tp-run-from">
-          <input type="hidden" name="to_date"   id="tp-run-to">
-          <button type="submit" class="btn btn-primary" id="tp-run-btn">⚡ Run Calculation</button>
-        </form>
-        <!-- Load / Filter — GET with dates + filters -->
-        <form method="GET" action="{{ url_for('tp_reports') }}" id="filter-form" style="display:inline">
-          <input type="hidden" name="from_date" id="tp-ff-from">
-          <input type="hidden" name="to_date"   id="tp-ff-to">
-          <div id="tp-ff-fields"></div>
-          <button type="submit" class="btn btn-secondary" id="load-btn">🔄 Load / Filter</button>
-        </form>
+  <form method="GET" action="{{ url_for('tp_reports') }}" id="filter-form">
+    <div class="date-row">
+      <div class="form-group">
+        <label>From Date</label>
+        <input type="date" name="from_date" value="{{ from_date }}" required>
+      </div>
+      <div class="form-group">
+        <label>To Date</label>
+        <input type="date" name="to_date" value="{{ to_date }}" required>
+      </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <button type="submit" class="btn btn-primary" id="load-btn">🔄 Load Report</button>
       </div>
     </div>
-  </div>
 
-  {% if unique_excos or unique_bheads %}
-  <hr class="divider">
-  <div class="filter-grid filter-grid-3">
+    {% if unique_excos or unique_bheads %}
+    <hr class="divider">
+    <div class="filter-grid filter-grid-3">
 
-    <div class="form-group" style="margin-bottom:0">
-      <label>Plant</label>
-      <div class="ms-wrap">
-        <div class="ms-box" tabindex="0">
-          <span class="ms-label {% if not plants %}placeholder{% endif %}">{% if plants %}{{ plants|length }} selected{% else %}All{% endif %}</span>
-          <span class="ms-arrow">▾</span>
-        </div>
-        <div class="ms-panel">
-          <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
-          <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
-          <div class="ms-opts" id="tp-f-plants">
-            {% for p in unique_plants %}
-            <label><input type="checkbox" name="plant" value="{{ p }}" {% if p in plants %}checked{% endif %}> {{ p }}</label>
-            {% endfor %}
+      <!-- Plant multi-select -->
+      <div class="form-group" style="margin-bottom:0">
+        <label>Plant</label>
+        <div class="ms-wrap">
+          <div class="ms-box" tabindex="0">
+            <span class="ms-label {% if not plants %}placeholder{% endif %}">{% if plants %}{{ plants|length }} selected{% else %}All{% endif %}</span>
+            <span class="ms-arrow">▾</span>
+          </div>
+          <div class="ms-panel">
+            <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
+            <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
+            <div class="ms-opts">
+              {% for p in unique_plants %}
+              <label><input type="checkbox" name="plant" value="{{ p }}" {% if p in plants %}checked{% endif %}> {{ p }}</label>
+              {% endfor %}
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <div class="form-group" style="margin-bottom:0">
-      <label>Exco Location</label>
-      <div class="ms-wrap">
-        <div class="ms-box" tabindex="0">
-          <span class="ms-label {% if not excos %}placeholder{% endif %}">{% if excos %}{{ excos|length }} selected{% else %}All{% endif %}</span>
-          <span class="ms-arrow">▾</span>
-        </div>
-        <div class="ms-panel">
-          <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
-          <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
-          <div class="ms-opts" id="tp-f-excos">
-            {% for e in unique_excos %}
-            <label><input type="checkbox" name="exco" value="{{ e }}" {% if e in excos %}checked{% endif %}> {{ e }}</label>
-            {% endfor %}
+      <!-- Exco Location multi-select -->
+      <div class="form-group" style="margin-bottom:0">
+        <label>Exco Location</label>
+        <div class="ms-wrap">
+          <div class="ms-box" tabindex="0">
+            <span class="ms-label {% if not excos %}placeholder{% endif %}">{% if excos %}{{ excos|length }} selected{% else %}All{% endif %}</span>
+            <span class="ms-arrow">▾</span>
+          </div>
+          <div class="ms-panel">
+            <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
+            <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
+            <div class="ms-opts">
+              {% for e in unique_excos %}
+              <label><input type="checkbox" name="exco" value="{{ e }}" {% if e in excos %}checked{% endif %}> {{ e }}</label>
+              {% endfor %}
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <div class="form-group" style="margin-bottom:0">
-      <label>Business Head</label>
-      <div class="ms-wrap">
-        <div class="ms-box" tabindex="0">
-          <span class="ms-label {% if not bheads %}placeholder{% endif %}">{% if bheads %}{{ bheads|length }} selected{% else %}All{% endif %}</span>
-          <span class="ms-arrow">▾</span>
-        </div>
-        <div class="ms-panel">
-          <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
-          <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
-          <div class="ms-opts" id="tp-f-bheads">
-            {% for b in unique_bheads %}
-            <label><input type="checkbox" name="bhead" value="{{ b }}" {% if b in bheads %}checked{% endif %}> {{ b }}</label>
-            {% endfor %}
+      <!-- Business Head multi-select -->
+      <div class="form-group" style="margin-bottom:0">
+        <label>Business Head</label>
+        <div class="ms-wrap">
+          <div class="ms-box" tabindex="0">
+            <span class="ms-label {% if not bheads %}placeholder{% endif %}">{% if bheads %}{{ bheads|length }} selected{% else %}All{% endif %}</span>
+            <span class="ms-arrow">▾</span>
+          </div>
+          <div class="ms-panel">
+            <div class="ms-search-box"><input type="text" placeholder="Search…"></div>
+            <div class="ms-all-row"><label><input type="checkbox" class="ms-all-cb"> Select All</label></div>
+            <div class="ms-opts">
+              {% for b in unique_bheads %}
+              <label><input type="checkbox" name="bhead" value="{{ b }}" {% if b in bheads %}checked{% endif %}> {{ b }}</label>
+              {% endfor %}
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <div class="form-group" style="margin-bottom:0">
-      <label>Throughput Band</label>
-      <select id="tp-f-band">
-        <option value="All"    {% if band=='All' %}selected{% endif %}>All</option>
-        <option value="red"    {% if band=='red' %}selected{% endif %}>🔴 Below 60%</option>
-        <option value="yellow" {% if band=='yellow' %}selected{% endif %}>🟡 60% – 74%</option>
-        <option value="green"  {% if band=='green' %}selected{% endif %}>🟢 75% &amp; above</option>
-      </select>
-    </div>
+      <!-- Throughput band -->
+      <div class="form-group" style="margin-bottom:0">
+        <label>Throughput Band</label>
+        <select name="band">
+          <option value="All"    {% if band=='All' %}selected{% endif %}>All</option>
+          <option value="red"    {% if band=='red' %}selected{% endif %}>🔴 Below 60%</option>
+          <option value="yellow" {% if band=='yellow' %}selected{% endif %}>🟡 60% – 74%</option>
+          <option value="green"  {% if band=='green' %}selected{% endif %}>🟢 75% &amp; above</option>
+        </select>
+      </div>
 
-    <div class="form-group" style="margin-bottom:0">
-      <label>Search Plant Code / Name</label>
-      <input type="text" id="tp-f-search" value="{{ search }}" placeholder="e.g. MU9 or Deonar">
-    </div>
+      <!-- Search -->
+      <div class="form-group" style="margin-bottom:0">
+        <label>Search Plant Code / Name</label>
+        <input type="text" name="search" value="{{ search }}" placeholder="e.g. MU9 or Deonar">
+      </div>
 
-  </div>
-  <div style="margin-top:14px">
-    {% if excos or bheads or plants or band != 'All' or search %}
-    <a href="{{ url_for('tp_reports', from_date=from_date, to_date=to_date) }}" class="btn btn-secondary btn-sm">✕ Clear Filters</a>
+    </div>
+    <div style="margin-top:14px">
+      <button type="submit" class="btn btn-secondary btn-sm">Apply Filters</button>
+      {% if excos or bheads or plants or band != 'All' or search %}
+      <a href="{{ url_for('tp_reports', from_date=from_date, to_date=to_date) }}" class="btn btn-secondary btn-sm" style="margin-left:8px">✕ Clear Filters</a>
+      {% endif %}
+    </div>
     {% endif %}
-  </div>
-  {% endif %}
-
-  <div class="loading" id="report-loading"><div class="spinner"></div> Loading…</div>
+  </form>
+  <div class="loading" id="report-loading"><div class="spinner"></div> Loading report…</div>
 </div>
 
 {% if not plant_rows %}
 <div class="glass-card" style="text-align:center;padding:36px">
   <h3>No rows to show</h3>
-  <p>Select a date range and click <strong>⚡ Run Calculation</strong>, or clear filters to see existing results.</p>
+  <p>Run a calculation on the <strong>Calculate Throughput</strong> page, or change the date range / clear filters above.</p>
 </div>
 {% else %}
 
@@ -197,18 +189,27 @@
         <div class="form-group"><label>Message</label><textarea name="body" rows="7" style="min-height:160px">{{ default_body }}</textarea></div>
         <button type="submit" class="btn btn-primary" {% if not email_ready %}disabled{% endif %}>✉️ Send Report</button>
       </form>
+
       {% if tp_email_log %}
       <hr class="divider" style="margin-top:20px">
       <div class="section-title" style="font-size:13px;margin-bottom:8px">📜 Recent Email Log</div>
       <div class="table-wrapper" style="max-height:200px">
         <table>
-          <thead><tr><th>To</th><th>Subject</th><th>Status</th><th>Sent At</th><th>Error</th></tr></thead>
+          <thead>
+            <tr><th>To</th><th>Subject</th><th>Status</th><th>Sent At</th><th>Error</th></tr>
+          </thead>
           <tbody>
             {% for r in tp_email_log %}
             <tr>
               <td>{{ r.to_emails }}</td>
               <td style="max-width:200px;word-break:break-word">{{ r.subject }}</td>
-              <td>{% if r.status == 'Success' %}<span style="color:#4caf50;font-weight:600">✅ {{ r.status }}</span>{% else %}<span style="color:#f44336;font-weight:600">❌ {{ r.status }}</span>{% endif %}</td>
+              <td>
+                {% if r.status == 'Success' %}
+                  <span style="color:#4caf50;font-weight:600">✅ {{ r.status }}</span>
+                {% else %}
+                  <span style="color:#f44336;font-weight:600">❌ {{ r.status }}</span>
+                {% endif %}
+              </td>
               <td style="white-space:nowrap">{{ r.sent_at }}</td>
               <td style="font-size:11px;color:#f44336;max-width:160px;word-break:break-word">{{ r.error_message or '' }}</td>
             </tr>
@@ -217,6 +218,7 @@
         </table>
       </div>
       {% endif %}
+
     </div>
   </div>
 </div>
@@ -227,11 +229,16 @@
   <button class="tab-btn" data-tabset="rpt" data-tab="location">📍 Location-wise TP</button>
 </div>
 
+<!-- Plant Throughput -->
 <div class="tab-panel active" data-tabpanel="rpt" data-tab="plant">
   <div class="table-wrapper">
     <table>
       <thead>
-        <tr><th>#</th><th>Plant Code</th><th>Plant</th><th>Exco Location</th><th>Business Head</th><th>Plant Manager</th><th>Mixer Cap</th><th>Total Qty</th><th>Time (min)</th><th>Throughput %</th><th>Batches</th></tr>
+        <tr>
+          <th>#</th><th>Plant Code</th><th>Plant</th><th>Exco Location</th>
+          <th>Business Head</th><th>Plant Manager</th><th>Mixer Cap</th>
+          <th>Total Qty</th><th>Time (min)</th><th>Throughput %</th><th>Batches</th>
+        </tr>
       </thead>
       <tbody>
         {% for r in plant_rows %}
@@ -255,10 +262,13 @@
   </div>
 </div>
 
+<!-- Location-wise TP -->
 <div class="tab-panel" data-tabpanel="rpt" data-tab="location">
   <div class="table-wrapper">
     <table>
-      <thead><tr><th>#</th><th>Exco Location</th><th>Plants</th><th>Total Qty</th><th>Avg Throughput %</th></tr></thead>
+      <thead>
+        <tr><th>#</th><th>Exco Location</th><th>Plants</th><th>Total Qty</th><th>Avg Throughput %</th></tr>
+      </thead>
       <tbody>
         {% for r in location_rows %}
         <tr {% if r.is_pan_india %}style="font-weight:700;border-top:2px solid var(--border)"{% endif %}>
@@ -279,42 +289,20 @@
 {% endblock %}
 {% block scripts %}
 <script>
-/* Sync shared date pickers into all form hidden fields */
-(function() {
-  var sf = document.getElementById('tp-shared-from');
-  var st = document.getElementById('tp-shared-to');
-  function sync() {
-    document.getElementById('tp-run-from').value = sf.value;
-    document.getElementById('tp-run-to').value   = st.value;
-    document.getElementById('tp-ff-from').value  = sf.value;
-    document.getElementById('tp-ff-to').value    = st.value;
-  }
-  sf.addEventListener('change', sync);
-  st.addEventListener('change', sync);
-  sync();
-})();
-
-/* Before filter-form submits, copy filter values into hidden fields */
-document.getElementById('filter-form').addEventListener('submit', function() {
-  var c = document.getElementById('tp-ff-fields');
-  c.innerHTML = '';
-  function h(n, v) { var i = document.createElement('input'); i.type='hidden'; i.name=n; i.value=v; c.appendChild(i); }
-  document.querySelectorAll('#tp-f-plants input:checked').forEach(function(cb) { h('plant', cb.value); });
-  document.querySelectorAll('#tp-f-excos input:checked').forEach(function(cb)  { h('exco',  cb.value); });
-  document.querySelectorAll('#tp-f-bheads input:checked').forEach(function(cb) { h('bhead', cb.value); });
-  h('band',   document.getElementById('tp-f-band').value);
-  h('search', document.getElementById('tp-f-search').value);
-  document.getElementById('report-loading').classList.add('active');
-  document.getElementById('load-btn').disabled = true;
+var ff = document.getElementById('filter-form');
+if (ff) ff.addEventListener('submit', function() {
+  var b = document.getElementById('load-btn');
+  var l = document.getElementById('report-loading');
+  if (l) l.classList.add('active');
 });
-
-/* Also copy filters when Run Calculation submits */
-document.getElementById('tp-run-form').addEventListener('submit', function() {
-  document.getElementById('report-loading').classList.add('active');
-});
-
-function openEmailModal()  { var m=document.getElementById('email-modal');  if(m){m.style.display='flex';document.body.style.overflow='hidden';} }
-function closeEmailModal() { var m=document.getElementById('email-modal');  if(m){m.style.display='none';document.body.style.overflow='';} }
-document.addEventListener('keydown', function(e) { if(e.key==='Escape') closeEmailModal(); });
+function openEmailModal() {
+  var m = document.getElementById('email-modal');
+  if (m) { m.style.display = 'flex'; document.body.style.overflow = 'hidden'; }
+}
+function closeEmailModal() {
+  var m = document.getElementById('email-modal');
+  if (m) { m.style.display = 'none'; document.body.style.overflow = ''; }
+}
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeEmailModal(); });
 </script>
 {% endblock %}
