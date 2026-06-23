@@ -89,7 +89,7 @@ CATEGORIES = [
     "SPE",
     "Production Officer",
     "TL BPO",
-    "NA",
+    "Deduction NA",
 ]
 
 
@@ -125,7 +125,7 @@ NO_INCENTIVE_CATEGORIES = ["Production Officer"]
 # Deduction Amount = (target - total_quantity) * rate, but only when
 # total_quantity is BELOW the target. Otherwise the deduction is 0.
 #
-# "NA" has no deduction at all (target 0).
+# "Deduction NA" has no deduction at all (target 0).
 
 DEDUCTION_RULES = {
     "Civil Trainee":      {"target": 300, "rate": 10},
@@ -136,7 +136,7 @@ DEDUCTION_RULES = {
     "SPE":                {"target": 500, "rate": 20},
     "Production Officer":  {"target": 500, "rate": 20},
     "TL BPO":             {"target": 500, "rate": 20},
-    "NA":                 {"target": 0,   "rate": 0},
+    "Deduction NA":       {"target": 0,   "rate": 0},
 }
 
 
@@ -154,7 +154,7 @@ REPORT_SHEETS = {
     "SPE Incentive & Deduction": ["SPE"],
     "TL Employee Incentive & Deduction": ["TL BPO"],
     "Production Officer Deduction": ["Production Officer"],
-    "NA Incentive": ["NA"],
+    "Deduction NA Incentive": ["Deduction NA"],
     "Unmapped Employees": [],   # special sheet
     "Validation Errors": [],    # special sheet
 }

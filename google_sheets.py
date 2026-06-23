@@ -148,7 +148,8 @@ def _fetch_public(sheet_id: str, worksheet_name: str) -> pd.DataFrame:
 
             # dtype=str keeps numeric codes from scientific notation.
             # keep_default_na=False prevents pandas treating "NA" as NaN —
-            # "NA" is a valid employee category in this app.
+            # "Deduction NA" category contains the substring "NA" which pandas
+            # would silently convert to NaN without this flag.
             df = pd.read_csv(io.StringIO(content), dtype=str, keep_default_na=False)
             if df.empty:
                 last_error = "The sheet returned empty data."

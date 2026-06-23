@@ -14,7 +14,7 @@ BUSINESS RULES (all rates/targets come from config.py):
     - If the employee's plant YTD Maintenance Cost  > 18  → "high cost" rate.
     - SPE rate:   low = Rs 5.0/unit,  high = Rs 2.5/unit
     - Other rate: low = Rs 3.0/unit,  high = Rs 1.5/unit
-    - NA category is eligible exactly like the "other" categories: it needs
+    - Deduction NA category is eligible exactly like the "other" categories: it needs
       Total Quantity >= 1000 and uses the 3.0/1.5 rate (NOT the SPE rate).
       NA has NO deduction (its target is 0).
     - If a plant's YTD Maintenance Cost is missing, treat it as 0 (low-cost

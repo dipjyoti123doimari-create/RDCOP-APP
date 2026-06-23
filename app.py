@@ -603,7 +603,7 @@ CAT_TABS = {
     "SPE":                ["SPE"],
     "TL Employee":        ["TL BPO"],
     "Production Officer": ["Production Officer"],
-    "NA":                 ["NA"],
+    "Deduction NA":       ["Deduction NA"],
 }
 
 
