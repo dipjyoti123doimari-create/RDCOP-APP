@@ -4516,6 +4516,7 @@ def sysconfig_page():
                            categories=config.CATEGORIES,
                            today=str(_date.today()),
                            today_first=str(_date.today().replace(day=1)),
+                           bg_auto=bg_auto(), bg_animate=bg_animate(), bg_theme=bg_theme(),
                            active_page="sysconfig")
 
 

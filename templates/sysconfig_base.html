@@ -71,18 +71,18 @@
           <div class="theme-picker-dropdown" id="theme-dropdown">
             <div class="theme-picker-opts">
               {% for t in ['Daytime','Dusk','Night','Deep Space','Forest','Aurora'] %}
-              <button class="theme-picker-opt {% if current_theme == t %}active{% endif %}"
-                      data-theme="{{ t }}">{{ t }}</button>
+              <button class="theme-picker-opt {% if t == bg_theme %}active{% endif %}"
+                      onclick="selectTheme('{{ t }}')">{{ t }}</button>
               {% endfor %}
             </div>
             <div class="theme-picker-foot">
-              <label class="theme-picker-toggle-row">
-                <input type="checkbox" id="auto-theme-cb" {% if auto_theme %}checked{% endif %}>
-                <span>Auto (time-based)</span>
+              <label class="theme-toggle">
+                <input type="checkbox" id="bg-auto-cb" {% if bg_auto %}checked{% endif %} onchange="toggleBgAuto(this)">
+                Auto (by time of day)
               </label>
-              <label class="theme-picker-toggle-row">
-                <input type="checkbox" id="animate-cb" {% if bg_animate %}checked{% endif %}>
-                <span>Animation</span>
+              <label class="theme-toggle">
+                <input type="checkbox" id="bg-animate-cb" {% if bg_animate %}checked{% endif %} onchange="toggleBgAnimate(this)">
+                Animation
               </label>
             </div>
           </div>
@@ -97,7 +97,9 @@
           {{ current_user.role }}
         </span>
         {% endif %}
-        <a href="{{ url_for('logout') }}" class="btn btn-secondary btn-sm">🚪 Logout</a>
+        <form method="POST" action="{{ url_for('page_logout') }}" style="margin:0">
+          <button type="submit" class="btn btn-secondary btn-sm">🚪 Logout</button>
+        </form>
       </div>
     </div>
 
