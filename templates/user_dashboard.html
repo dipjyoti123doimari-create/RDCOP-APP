@@ -158,6 +158,13 @@
 .row-ded { color: #FF5050; }
 .row-neu { color: var(--text-muted); }
 .tp-bar { display: inline-block; height: 6px; border-radius: 3px; vertical-align: middle; margin-right: 6px; }
+/* BTRTP batcher list inside card */
+.bt-batcher-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 4px; }
+.bt-batcher-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.bt-batcher-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); }
+.bt-batcher-bar-wrap { width: 80px; background: rgba(255,255,255,.07); border-radius: 3px; height: 6px; flex-shrink: 0; }
+.bt-batcher-bar { height: 6px; border-radius: 3px; }
+.bt-batcher-pct { width: 38px; text-align: right; font-weight: 600; flex-shrink: 0; font-size: 11px; }
 </style>
 </head>
 <body>
@@ -409,80 +416,53 @@
   </div>
 
   <!-- ═══ RDC-BTRTP ════════════════════════════════════════════ -->
+  {% macro bt_batcher_rows(rows) %}
+  <div class="bt-batcher-list">
+    {% for r in rows %}
+    {% set above = r.throughput_pct >= 75 %}
+    <div class="bt-batcher-row">
+      <span class="bt-batcher-name" title="{{ r.batcher_name }}">{{ r.batcher_name }}</span>
+      <div class="bt-batcher-bar-wrap">
+        <div class="bt-batcher-bar" style="width:{{ [r.throughput_pct, 100]|min }}%;background:{% if above %}#00C864{% else %}#FF5050{% endif %}"></div>
+      </div>
+      <span class="bt-batcher-pct" style="color:{% if above %}#00C864{% else %}#FF5050{% endif %}">{{ r.throughput_pct }}%</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endmacro %}
+
   <div class="ud-section">
     <div class="ud-section-label">RDC-BTRTP — Batcher Throughput</div>
     <div class="ud-module-row">
 
+      <!-- Previous month — batcher list -->
       <div class="ud-card {% if not bt_last %}no-click{% endif %}" onclick="{% if bt_last %}openModal('modal-bt',0){% endif %}">
         <div class="ud-card-head">
           <span class="ud-mod-badge bt">RDC-BTRTP</span>
-          {% if bt_months|length > 1 %}
-          <div class="ud-month-tabs" onclick="event.stopPropagation()">
-            {% for m in bt_months %}
-            <button class="ud-mtab {% if loop.index0==0 %}bt-active{% endif %}" onclick="switchCardTab('bt',{{ loop.index0 }})">{{ m.month_name[:3] }} {{ m.year }}</button>
-            {% endfor %}
-          </div>
-          {% elif bt_last %}
+          {% if bt_last %}
           <span class="ud-card-tag last">{{ bt_last.month_name }} {{ bt_last.year }}</span>
           {% else %}
           <span class="ud-card-tag last">No Data</span>
           {% endif %}
         </div>
-        {% if bt_last %}
-        {% for m in bt_months %}
-        <div class="ud-tab-panel {% if loop.index0==0 %}active{% endif %}" id="bt-card-tab-{{ loop.index0 }}">
-          <div class="ud-kpi-main">
-            <div class="ud-kpi-val" style="color:#FFB400">{{ m.avg_tp }}%</div>
-            <div class="ud-kpi-lbl">Avg Batcher Throughput</div>
-          </div>
-          <div class="ud-kpi-sub">
-            <div class="ud-sub-item">
-              <div class="ud-sub-val c-inc">{{ m.above_target }}</div>
-              <div class="ud-sub-lbl">Above Target (≥75%)</div>
-            </div>
-            <div class="ud-sub-item">
-              <div class="ud-sub-val c-ded">{{ m.below_target }}</div>
-              <div class="ud-sub-lbl">Below Target</div>
-            </div>
-            <div class="ud-sub-item">
-              <div class="ud-sub-val c-muted">{{ m.batchers }}</div>
-              <div class="ud-sub-lbl">Total Batchers</div>
-            </div>
-          </div>
-        </div>
-        {% endfor %}
-        <div class="ud-hint">Click to view full batcher list →</div>
+        {% if bt_last_rows %}
+          {{ bt_batcher_rows(bt_last_rows) }}
+          <div class="ud-hint">Click to view full details →</div>
         {% else %}
         <div class="ud-nodata">No calculation run yet</div>
         {% endif %}
       </div>
 
+      <!-- Current month — batcher list -->
       <div class="ud-card {% if not bt_cur %}no-click{% endif %}" onclick="{% if bt_cur %}openModal('modal-bt-cur',0){% endif %}">
         <div class="ud-card-head">
           <span class="ud-mod-badge bt">RDC-BTRTP</span>
           <span class="ud-card-tag current">● Current</span>
           <span class="ud-card-period">{{ cur_month_name }} {{ cur_year }}</span>
         </div>
-        {% if bt_cur %}
-        <div class="ud-kpi-main">
-          <div class="ud-kpi-val" style="color:#FFB400">{{ bt_cur.avg_tp }}%</div>
-          <div class="ud-kpi-lbl">Avg Batcher Throughput</div>
-        </div>
-        <div class="ud-kpi-sub">
-          <div class="ud-sub-item">
-            <div class="ud-sub-val c-inc">{{ bt_cur.above_target }}</div>
-            <div class="ud-sub-lbl">Above Target (≥75%)</div>
-          </div>
-          <div class="ud-sub-item">
-            <div class="ud-sub-val c-ded">{{ bt_cur.below_target }}</div>
-            <div class="ud-sub-lbl">Below Target</div>
-          </div>
-          <div class="ud-sub-item">
-            <div class="ud-sub-val c-muted">{{ bt_cur.batchers }}</div>
-            <div class="ud-sub-lbl">Total Batchers</div>
-          </div>
-        </div>
-        <div class="ud-hint">Click to view full batcher list →</div>
+        {% if bt_cur_rows %}
+          {{ bt_batcher_rows(bt_cur_rows) }}
+          <div class="ud-hint">Click to view full details →</div>
         {% else %}
         <div class="ud-nodata">Calculation not run yet for {{ cur_month_name }}</div>
         {% endif %}
@@ -723,7 +703,8 @@
         <table class="ud-dt">
           <thead><tr>
             <th>Batcher</th><th>ID</th><th>Plant</th><th>Location</th>
-            <th class="r">Quantity (m³)</th><th class="r">Throughput %</th><th class="r">Batches</th>
+            <th class="r">Qty (m³)</th><th class="r">Time (hrs)</th>
+            <th class="r">Mixer Cap</th><th class="r">Throughput %</th><th class="r">Batches</th>
           </tr></thead>
           <tbody>
             {% for r in rows %}
@@ -731,7 +712,9 @@
             <tr class="{% if above %}row-inc{% else %}row-ded{% endif %}">
               <td>{{ r.batcher_name }}</td><td>{{ r.batcher_id }}</td>
               <td>{{ r.plant_name }}</td><td>{{ r.exco_location }}</td>
-              <td class="r">{{ "{:,.0f}".format(r.total_quantity or 0) }}</td>
+              <td class="r">{{ "{:,.1f}".format(r.total_quantity or 0) }}</td>
+              <td class="r">{{ "{:,.2f}".format(r.total_time_hrs or 0) }}</td>
+              <td class="r">{{ "{:,.0f}".format(r.mixer_theo_cap or 0) }}</td>
               <td class="r">
                 <span class="tp-bar" style="width:{{ [r.throughput_pct,100]|min }}px;background:{% if above %}#00C864{% else %}#FF5050{% endif %}"></span>
                 {{ r.throughput_pct }}%
@@ -896,7 +879,8 @@
       <table class="ud-dt">
         <thead><tr>
           <th>Batcher</th><th>ID</th><th>Plant</th><th>Location</th>
-          <th class="r">Quantity (m³)</th><th class="r">Throughput %</th><th class="r">Batches</th>
+          <th class="r">Qty (m³)</th><th class="r">Time (hrs)</th>
+          <th class="r">Mixer Cap</th><th class="r">Throughput %</th><th class="r">Batches</th>
         </tr></thead>
         <tbody>
           {% for r in bt_cur_rows %}
@@ -904,7 +888,9 @@
           <tr class="{% if above %}row-inc{% else %}row-ded{% endif %}">
             <td>{{ r.batcher_name }}</td><td>{{ r.batcher_id }}</td>
             <td>{{ r.plant_name }}</td><td>{{ r.exco_location }}</td>
-            <td class="r">{{ "{:,.0f}".format(r.total_quantity or 0) }}</td>
+            <td class="r">{{ "{:,.1f}".format(r.total_quantity or 0) }}</td>
+            <td class="r">{{ "{:,.2f}".format(r.total_time_hrs or 0) }}</td>
+            <td class="r">{{ "{:,.0f}".format(r.mixer_theo_cap or 0) }}</td>
             <td class="r">
               <span class="tp-bar" style="width:{{ [r.throughput_pct,100]|min }}px;background:{% if above %}#00C864{% else %}#FF5050{% endif %}"></span>
               {{ r.throughput_pct }}%

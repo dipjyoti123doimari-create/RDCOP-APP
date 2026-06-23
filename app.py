@@ -1035,7 +1035,7 @@ def page_home():
         bt_months_rows = []
         for m in bt_months:
             cur.execute("""SELECT batcher_name, batcher_id, plant_name, exco_location,
-                total_quantity, throughput_pct, batch_count
+                total_quantity, total_time_hrs, mixer_theo_cap, throughput_pct, batch_count
                 FROM btrtp_results WHERE month=? AND year=?
                 ORDER BY throughput_pct DESC""",
                 (m["month"], m["year"]))
@@ -1067,7 +1067,7 @@ def page_home():
         bt_cur_rows = []
         if bt_cur:
             cur.execute("""SELECT batcher_name, batcher_id, plant_name, exco_location,
-                total_quantity, throughput_pct, batch_count
+                total_quantity, total_time_hrs, mixer_theo_cap, throughput_pct, batch_count
                 FROM btrtp_results WHERE month=? AND year=?
                 ORDER BY throughput_pct DESC""", (now.month, now.year))
             cols = [d[0] for d in cur.description]
