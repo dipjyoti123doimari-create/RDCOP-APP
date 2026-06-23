@@ -864,6 +864,7 @@ def page_home():
               "July","August","September","October","November","December"]
     def _mn(m): return MONTHS[m-1] if m else "—"
 
+    import calendar as _cal
     now       = _today.today()
     cur_ym    = f"{now.year}-{now.month:02d}"
     # previous calendar month
@@ -872,6 +873,16 @@ def page_home():
     else:
         prev_m, prev_y = now.month - 1, now.year
     prev_ym = f"{prev_y}-{prev_m:02d}"
+
+    def _date_range(month, year):
+        """Return (from_str, to_str) for a month. Current month ends today."""
+        fd = f"{year}-{month:02d}-01"
+        if month == now.month and year == now.year:
+            td = now.strftime("%Y-%m-%d")
+        else:
+            last_day = _cal.monthrange(year, month)[1]
+            td = f"{year}-{month:02d}-{last_day:02d}"
+        return fd, td
 
     conn = database.get_connection()
     # defaults — overwritten below as each section runs
@@ -903,8 +914,8 @@ def page_home():
         id_months = []
         for row in cur.fetchall():
             d = dict(row); d["month_name"] = _mn(d["month"])
-            # Left card shows only completed (previous) months — current month goes to right card
             if not (d["month"] == now.month and d["year"] == now.year):
+                d["from_date"], d["to_date"] = _date_range(d["month"], d["year"])
                 id_months.append(d)
         id_last = id_months[0] if id_months else None
 
@@ -941,6 +952,7 @@ def page_home():
             id_cur["month_name"] = _mn(now.month)
             id_cur["month"] = now.month
             id_cur["year"]  = now.year
+            id_cur["from_date"], id_cur["to_date"] = _date_range(now.month, now.year)
         # Detail rows for current month I&D
         id_cur_rows = []
         if id_cur:
@@ -970,6 +982,7 @@ def page_home():
         for row in cur.fetchall():
             d = dict(row); d["month_name"] = _mn(d["month"])
             if not (d["month"] == now.month and d["year"] == now.year):
+                d["from_date"], d["to_date"] = _date_range(d["month"], d["year"])
                 tp_months.append(d)
         tp_last = tp_months[0] if tp_months else None
 
@@ -1003,6 +1016,7 @@ def page_home():
             tp_cur["month_name"] = _mn(now.month)
             tp_cur["month"] = now.month
             tp_cur["year"]  = now.year
+            tp_cur["from_date"], tp_cur["to_date"] = _date_range(now.month, now.year)
         tp_last_known_sync = None
         # Detail rows for current month TP
         tp_cur_rows = []
@@ -1031,6 +1045,7 @@ def page_home():
         for row in cur.fetchall():
             d = dict(row); d["month_name"] = _mn(d["month"])
             if not (d["month"] == now.month and d["year"] == now.year):
+                d["from_date"], d["to_date"] = _date_range(d["month"], d["year"])
                 bt_months.append(d)
         bt_last = bt_months[0] if bt_months else None
 
@@ -1065,6 +1080,7 @@ def page_home():
             bt_cur["month_name"] = _mn(now.month)
             bt_cur["month"] = now.month
             bt_cur["year"]  = now.year
+            bt_cur["from_date"], bt_cur["to_date"] = _date_range(now.month, now.year)
         # Detail rows for current month BTRTP
         bt_cur_rows = []
         if bt_cur:
@@ -1092,6 +1108,7 @@ def page_home():
         for row in cur.fetchall():
             d = dict(row); d["month_name"] = _mn(d["month"])
             if not (d["month"] == now.month and d["year"] == now.year):
+                d["from_date"], d["to_date"] = _date_range(d["month"], d["year"])
                 ec_months.append(d)
         ec_last = ec_months[0] if ec_months else None
 
@@ -1121,6 +1138,7 @@ def page_home():
             ec_cur["month_name"] = _mn(now.month)
             ec_cur["month"] = now.month
             ec_cur["year"]  = now.year
+            ec_cur["from_date"], ec_cur["to_date"] = _date_range(now.month, now.year)
         # Detail rows for current month ECMD
         ec_cur_rows = []
         if ec_cur:

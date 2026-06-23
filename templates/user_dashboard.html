@@ -563,16 +563,17 @@
 <div class="ud-modal-overlay" id="modal-id">
   <div class="ud-modal">
     <div class="ud-modal-head">
-      <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0">
-        <h3 style="margin:0;white-space:nowrap">RDC-I&amp;D — Employee Detail</h3>
-        {% if id_months|length > 1 %}
-        <div class="ud-month-tabs">
-          {% for m in id_months %}
-          <button class="ud-mtab {% if loop.index0==0 %}active{% endif %}" id="id-modal-tab-{{ loop.index0 }}" onclick="switchModalTab('id',{{ loop.index0 }})">{{ m.month_name[:3] }} {{ m.year }}</button>
-          {% endfor %}
+      <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:12px">
+          <h3 style="margin:0;white-space:nowrap">RDC-I&amp;D — Employee Detail</h3>
+          {% if id_last %}
+          <span style="font-size:12px;color:var(--text-faint)">{{ id_last.month_name }} {{ id_last.year }}</span>
+          {% endif %}
         </div>
-        {% elif id_last %}
-        <span style="font-size:12px;color:var(--text-faint)">{{ id_last.month_name }} {{ id_last.year }}</span>
+        {% if id_last %}
+        <div style="font-size:11px;color:var(--text-faint)">
+          📅 <strong style="color:var(--text-muted)">Date Range Taken:</strong> {{ id_last.from_date }} to {{ id_last.to_date }}
+        </div>
         {% endif %}
       </div>
       <button class="ud-modal-close" onclick="closeModal('modal-id')">✕</button>
@@ -620,16 +621,17 @@
 <div class="ud-modal-overlay" id="modal-tp">
   <div class="ud-modal">
     <div class="ud-modal-head">
-      <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0">
-        <h3 style="margin:0;white-space:nowrap">RDC-TP — Plant Throughput</h3>
-        {% if tp_months|length > 1 %}
-        <div class="ud-month-tabs">
-          {% for m in tp_months %}
-          <button class="ud-mtab {% if loop.index0==0 %}tp-active{% endif %}" id="tp-modal-tab-{{ loop.index0 }}" onclick="switchModalTab('tp',{{ loop.index0 }})">{{ m.month_name[:3] }} {{ m.year }}</button>
-          {% endfor %}
+      <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:12px">
+          <h3 style="margin:0;white-space:nowrap">RDC-TP — Plant Throughput</h3>
+          {% if tp_last %}
+          <span style="font-size:12px;color:var(--text-faint)">{{ tp_last.month_name }} {{ tp_last.year }}</span>
+          {% endif %}
         </div>
-        {% elif tp_last %}
-        <span style="font-size:12px;color:var(--text-faint)">{{ tp_last.month_name }} {{ tp_last.year }}</span>
+        {% if tp_last %}
+        <div style="font-size:11px;color:var(--text-faint)">
+          📅 <strong style="color:var(--text-muted)">Date Range Taken:</strong> {{ tp_last.from_date }} to {{ tp_last.to_date }}
+        </div>
         {% endif %}
       </div>
       <button class="ud-modal-close" onclick="closeModal('modal-tp')">✕</button>
@@ -689,16 +691,17 @@
 <div class="ud-modal-overlay" id="modal-bt">
   <div class="ud-modal">
     <div class="ud-modal-head">
-      <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0">
-        <h3 style="margin:0;white-space:nowrap">RDC-BTRTP — Batcher Throughput</h3>
-        {% if bt_months|length > 1 %}
-        <div class="ud-month-tabs">
-          {% for m in bt_months %}
-          <button class="ud-mtab {% if loop.index0==0 %}bt-active{% endif %}" id="bt-modal-tab-{{ loop.index0 }}" onclick="switchModalTab('bt',{{ loop.index0 }})">{{ m.month_name[:3] }} {{ m.year }}</button>
-          {% endfor %}
+      <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:12px">
+          <h3 style="margin:0;white-space:nowrap">RDC-BTRTP — Batcher Throughput</h3>
+          {% if bt_last %}
+          <span style="font-size:12px;color:var(--text-faint)">{{ bt_last.month_name }} {{ bt_last.year }}</span>
+          {% endif %}
         </div>
-        {% elif bt_last %}
-        <span style="font-size:12px;color:var(--text-faint)">{{ bt_last.month_name }} {{ bt_last.year }}</span>
+        {% if bt_last %}
+        <div style="font-size:11px;color:var(--text-faint)">
+          📅 <strong style="color:var(--text-muted)">Date Range Taken:</strong> {{ bt_last.from_date }} to {{ bt_last.to_date }}
+        </div>
         {% endif %}
       </div>
       <button class="ud-modal-close" onclick="closeModal('modal-bt')">✕</button>
@@ -810,9 +813,16 @@
 <div class="ud-modal-overlay" id="modal-id-cur">
   <div class="ud-modal">
     <div class="ud-modal-head">
-      <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0">
-        <h3 style="margin:0;white-space:nowrap">RDC-I&amp;D — {{ cur_month_name }} {{ cur_year }}</h3>
-        <span class="ud-card-tag current" style="font-size:11px">● Current</span>
+      <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:12px">
+          <h3 style="margin:0;white-space:nowrap">RDC-I&amp;D — {{ cur_month_name }} {{ cur_year }}</h3>
+          <span class="ud-card-tag current" style="font-size:11px">● Current</span>
+        </div>
+        {% if id_cur %}
+        <div style="font-size:11px;color:var(--text-faint)">
+          📅 <strong style="color:var(--text-muted)">Date Range Taken:</strong> {{ id_cur.from_date }} to {{ id_cur.to_date }}
+        </div>
+        {% endif %}
       </div>
       <button class="ud-modal-close" onclick="closeModal('modal-id-cur')">✕</button>
     </div>
@@ -854,9 +864,16 @@
 <div class="ud-modal-overlay" id="modal-tp-cur">
   <div class="ud-modal">
     <div class="ud-modal-head">
-      <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0">
-        <h3 style="margin:0;white-space:nowrap">RDC-TP — {{ cur_month_name }} {{ cur_year }}</h3>
-        <span class="ud-card-tag current" style="font-size:11px">● Current</span>
+      <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:12px">
+          <h3 style="margin:0;white-space:nowrap">RDC-TP — {{ cur_month_name }} {{ cur_year }}</h3>
+          <span class="ud-card-tag current" style="font-size:11px">● Current</span>
+        </div>
+        {% if tp_cur %}
+        <div style="font-size:11px;color:var(--text-faint)">
+          📅 <strong style="color:var(--text-muted)">Date Range Taken:</strong> {{ tp_cur.from_date }} to {{ tp_cur.to_date }}
+        </div>
+        {% endif %}
       </div>
       <button class="ud-modal-close" onclick="closeModal('modal-tp-cur')">✕</button>
     </div>
@@ -910,9 +927,16 @@
 <div class="ud-modal-overlay" id="modal-bt-cur">
   <div class="ud-modal">
     <div class="ud-modal-head">
-      <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0">
-        <h3 style="margin:0;white-space:nowrap">RDC-BTRTP — {{ cur_month_name }} {{ cur_year }}</h3>
-        <span class="ud-card-tag current" style="font-size:11px">● Current</span>
+      <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:12px">
+          <h3 style="margin:0;white-space:nowrap">RDC-BTRTP — {{ cur_month_name }} {{ cur_year }}</h3>
+          <span class="ud-card-tag current" style="font-size:11px">● Current</span>
+        </div>
+        {% if bt_cur %}
+        <div style="font-size:11px;color:var(--text-faint)">
+          📅 <strong style="color:var(--text-muted)">Date Range Taken:</strong> {{ bt_cur.from_date }} to {{ bt_cur.to_date }}
+        </div>
+        {% endif %}
       </div>
       <button class="ud-modal-close" onclick="closeModal('modal-bt-cur')">✕</button>
     </div>
@@ -966,9 +990,16 @@
 <div class="ud-modal-overlay" id="modal-ec-cur">
   <div class="ud-modal">
     <div class="ud-modal-head">
-      <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0">
-        <h3 style="margin:0;white-space:nowrap">RDC-ECMD — {{ cur_month_name }} {{ cur_year }}</h3>
-        <span class="ud-card-tag current" style="font-size:11px">● Current</span>
+      <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:12px">
+          <h3 style="margin:0;white-space:nowrap">RDC-ECMD — {{ cur_month_name }} {{ cur_year }}</h3>
+          <span class="ud-card-tag current" style="font-size:11px">● Current</span>
+        </div>
+        {% if ec_cur %}
+        <div style="font-size:11px;color:var(--text-faint)">
+          📅 <strong style="color:var(--text-muted)">Date Range Taken:</strong> {{ ec_cur.from_date }} to {{ ec_cur.to_date }}
+        </div>
+        {% endif %}
       </div>
       <button class="ud-modal-close" onclick="closeModal('modal-ec-cur')">✕</button>
     </div>
