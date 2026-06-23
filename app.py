@@ -1020,7 +1020,7 @@ def page_home():
         # ── BTRTP — fetch up to 2 calculated months ──────────
         cur.execute("""SELECT month, year,
             COUNT(*) as batchers,
-            ROUND(AVG(throughput_pct),1) as avg_tp,
+            ROUND(SUM(throughput_pct * total_quantity) / NULLIF(SUM(total_quantity),0), 1) as avg_tp,
             SUM(CASE WHEN throughput_pct >= 75 THEN 1 ELSE 0 END) as above_target,
             SUM(CASE WHEN throughput_pct <  75 THEN 1 ELSE 0 END) as below_target
             FROM btrtp_results GROUP BY year,month
@@ -1045,14 +1045,15 @@ def page_home():
                 m["batchers"]     = len(rows_f)
                 m["above_target"] = sum(1 for r in rows_f if (r.get("throughput_pct") or 0) >= 75)
                 m["below_target"] = sum(1 for r in rows_f if (r.get("throughput_pct") or 0) < 75)
-                m["avg_tp"]       = round(sum(r.get("throughput_pct") or 0 for r in rows_f) / len(rows_f), 1) if rows_f else 0
+                total_qty_bt = sum(r.get("total_quantity") or 0 for r in rows_f)
+                m["avg_tp"] = round(sum((r.get("throughput_pct") or 0) * (r.get("total_quantity") or 0) for r in rows_f) / total_qty_bt, 1) if total_qty_bt else 0
             bt_months_rows.append(rows_f)
         bt_last_rows = bt_months_rows[0] if bt_months_rows else []
 
         # BTRTP current month — from btrtp_results (same as previous month card)
         bt_last_known_sync = None
         cur.execute("""SELECT COUNT(*) as batchers,
-            ROUND(AVG(throughput_pct),1) as avg_tp,
+            ROUND(SUM(throughput_pct * total_quantity) / NULLIF(SUM(total_quantity),0), 1) as avg_tp,
             SUM(CASE WHEN throughput_pct >= 75 THEN 1 ELSE 0 END) as above_target,
             SUM(CASE WHEN throughput_pct <  75 THEN 1 ELSE 0 END) as below_target
             FROM btrtp_results WHERE month=? AND year=?""", (now.month, now.year))
@@ -1075,7 +1076,8 @@ def page_home():
                 bt_cur["batchers"]     = len(bt_cur_rows)
                 bt_cur["above_target"] = sum(1 for r in bt_cur_rows if (r.get("throughput_pct") or 0) >= 75)
                 bt_cur["below_target"] = sum(1 for r in bt_cur_rows if (r.get("throughput_pct") or 0) < 75)
-                bt_cur["avg_tp"]       = round(sum(r.get("throughput_pct") or 0 for r in bt_cur_rows) / len(bt_cur_rows), 1) if bt_cur_rows else 0
+                total_qty_btc = sum(r.get("total_quantity") or 0 for r in bt_cur_rows)
+                bt_cur["avg_tp"] = round(sum((r.get("throughput_pct") or 0) * (r.get("total_quantity") or 0) for r in bt_cur_rows) / total_qty_btc, 1) if total_qty_btc else 0
 
         # ── ECMD — fetch up to 2 calculated months ───────────
         cur.execute("""SELECT month, year,
