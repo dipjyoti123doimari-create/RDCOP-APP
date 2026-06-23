@@ -382,14 +382,21 @@ def sync_master_data(sheet_id: str, worksheet_name: str) -> dict:
 
         now = datetime.now().isoformat(timespec="seconds")
 
+        import math as _math
+        def _sv(v):
+            if v is None: return ""
+            if isinstance(v, float) and _math.isnan(v): return ""
+            s = str(v).strip()
+            return "" if s.lower() == "nan" else s
+
         rows = [
             {
-                "employee_code": str(row["Employee Code"]),
-                "employee_name": str(row["Employee Name"]),
-                "designation":   str(row["Designation"]),
-                "category":      str(row["Category"]),
-                "plant":         str(row["Plant"]),
-                "plant_code":    str(row["Plant Code"]),
+                "employee_code": _sv(row["Employee Code"]),
+                "employee_name": _sv(row["Employee Name"]),
+                "designation":   _sv(row["Designation"]),
+                "category":      _sv(row["Category"]),
+                "plant":         _sv(row["Plant"]),
+                "plant_code":    _sv(row["Plant Code"]),
                 "updated_at":    now,
             }
             for _, row in df.iterrows()

@@ -3139,12 +3139,20 @@ def sync_gsheet():
         _set_progress(35, "Fetching master data…")
         df_sync  = google_sheets.fetch_master_data(clean_id, worksheet)
         now = _dt.now().isoformat(timespec="seconds")
-        rows = [{"employee_code": str(r["Employee Code"]),
-                 "employee_name": str(r["Employee Name"]),
-                 "designation":   str(r["Designation"]),
-                 "category":      str(r["Category"]),
-                 "plant":         str(r["Plant"]),
-                 "plant_code":    str(r["Plant Code"]),
+        def _sv(v):
+            """Safe string: NaN/None/blank → empty string."""
+            import math
+            if v is None: return ""
+            if isinstance(v, float) and math.isnan(v): return ""
+            s = str(v).strip()
+            return "" if s.lower() == "nan" else s
+
+        rows = [{"employee_code": _sv(r["Employee Code"]),
+                 "employee_name": _sv(r["Employee Name"]),
+                 "designation":   _sv(r["Designation"]),
+                 "category":      _sv(r["Category"]),
+                 "plant":         _sv(r["Plant"]),
+                 "plant_code":    _sv(r["Plant Code"]),
                  "updated_at":    now}
                 for _, r in df_sync.iterrows()]
         _set_progress(70, "Saving employee records…")
