@@ -14,59 +14,66 @@
   <!-- Oracle status (read-only info tile) -->
   <div class="settings-tile">
     <div class="settings-tile-icon">⚙️</div>
-    <div class="settings-tile-title">Oracle</div>
-    <div class="settings-tile-desc">
-      {% if ora_configured %}Configured — volume fetched live{% else %}Not configured{% endif %}
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Oracle</div>
+      <div class="settings-tile-desc">
+        {% if ora_configured %}Configured — volume fetched live{% else %}Not configured{% endif %}
+      </div>
+      <a href="{{ url_for('page_settings') }}" class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="event.stopPropagation()">Configure in I&amp;D Settings</a>
     </div>
-    <a href="{{ url_for('page_settings') }}" class="btn btn-secondary btn-sm" style="margin-top:8px">Configure in I&amp;D Settings</a>
   </div>
 
   <!-- Email Defaults -->
   <div class="settings-tile" onclick="document.getElementById('modal-email').style.display='flex'">
     <div class="settings-tile-icon">📧</div>
-    <div class="settings-tile-title">Email Defaults</div>
-    <div class="settings-tile-desc">
-      {% if ecmd_email_to %}To: {{ ecmd_email_to[:40] }}{% else %}Not configured{% endif %}
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Email Defaults</div>
+      <div class="settings-tile-desc">
+        {% if ecmd_email_to %}To: {{ ecmd_email_to[:40] }}{% else %}Not configured{% endif %}
+      </div>
     </div>
+    <span class="settings-tile-arrow">›</span>
   </div>
 
   <!-- Scheduled Monthly Report -->
   <div class="settings-tile" onclick="document.getElementById('modal-schedule').style.display='flex'">
     <div class="settings-tile-icon">🕐</div>
-    <div class="settings-tile-title">Scheduled Report</div>
-    <div class="settings-tile-desc">
-      {% if sched_enabled %}
-        Enabled — {{ sched_time }} on 1st of month
-      {% else %}
-        Disabled
-      {% endif %}
-      {% if sched_last_status %}
-        <br><small>{{ sched_last_status[:60] }}</small>
-      {% endif %}
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Scheduled Report</div>
+      <div class="settings-tile-desc">
+        {% if sched_enabled %}Enabled — {{ sched_time }} on 1st of month{% else %}Disabled{% endif %}
+        {% if sched_last_status %}<br><small>{{ sched_last_status[:60] }}</small>{% endif %}
+      </div>
     </div>
+    <span class="settings-tile-arrow">›</span>
   </div>
 
   <!-- SMTP status -->
   <div class="settings-tile">
     <div class="settings-tile-icon">📮</div>
-    <div class="settings-tile-title">SMTP</div>
-    <div class="settings-tile-desc">
-      {% if email_configured %}Configured: {{ smtp.host }}{% else %}Not configured{% endif %}
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">SMTP</div>
+      <div class="settings-tile-desc">
+        {% if email_configured %}Configured: {{ smtp.host }}{% else %}Not configured{% endif %}
+      </div>
+      <a href="{{ url_for('page_settings') }}" class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="event.stopPropagation()">Configure in I&amp;D Settings</a>
     </div>
-    <a href="{{ url_for('page_settings') }}" class="btn btn-secondary btn-sm" style="margin-top:8px">Configure in I&amp;D Settings</a>
   </div>
 
   <!-- EB & DG Entry Window -->
   <div class="settings-tile" onclick="document.getElementById('modal-entry-period').style.display='flex'">
     <div class="settings-tile-icon">📅</div>
-    <div class="settings-tile-title">EB &amp; DG Entry Window</div>
-    <div class="settings-tile-desc">
-      {% if entry_open_month and entry_open_year %}
-        Open for {{ entry_open_month_name }} {{ entry_open_year }}
-      {% else %}
-        Closed — click to open an entry period
-      {% endif %}
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">EB &amp; DG Entry Window</div>
+      <div class="settings-tile-desc">
+        {% if entry_open_month and entry_open_year %}
+          Open for {{ entry_open_month_name }} {{ entry_open_year }}
+        {% else %}
+          Closed — click to open an entry period
+        {% endif %}
+      </div>
     </div>
+    <span class="settings-tile-arrow">›</span>
   </div>
 
 </div>
