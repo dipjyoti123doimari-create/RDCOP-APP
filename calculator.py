@@ -83,13 +83,17 @@ def get_available_months() -> list:
 
 def _fetch_backend_for_period(month: int, year: int,
                                start_date: str = None,
-                               end_date: str = None) -> pd.DataFrame:
+                               end_date: str = None) -> tuple:
     """
     Return production rows for the given period for I&D calculation.
 
     Priority: if oracle_raw_data has rows for this period, use ONLY that table.
     Fall back to backend_data (Excel uploads) only when oracle has nothing.
     This prevents double-counting when Oracle data was also manually uploaded.
+
+    Exclusion rule (oracle_raw_data only):
+      time_taken_min = 0  →  diversion/material transfer, not actual production.
+      These rows are excluded from quantity summation, same as TP/BTRTP.
     """
     conn = database.get_connection()
     try:
@@ -101,12 +105,16 @@ def _fetch_backend_for_period(month: int, year: int,
                 conn, params=(start_date, end_date)
             )
             if oracle_check["cnt"].iloc[0] > 0:
+                total_oracle = oracle_check["cnt"].iloc[0]
+                # Exclude time_taken_min = 0: diversion/transfer, not real production
                 df = pd.read_sql_query(
                     "SELECT created_by, quantity, production_date AS date "
                     "FROM oracle_raw_data "
-                    "WHERE production_date >= ? AND production_date <= ?",
+                    "WHERE production_date >= ? AND production_date <= ? "
+                    "AND (time_taken_min IS NULL OR time_taken_min <> 0)",
                     conn, params=(start_date, end_date)
                 )
+                excluded_time0 = int(total_oracle - len(df))
             else:
                 df = pd.read_sql_query(
                     "SELECT created_by, quantity, date "
@@ -114,6 +122,7 @@ def _fetch_backend_for_period(month: int, year: int,
                     "WHERE date >= ? AND date <= ?",
                     conn, params=(start_date, end_date)
                 )
+                excluded_time0 = 0
         else:
             period = f"{year:04d}-{month:02d}"
             oracle_check = pd.read_sql_query(
@@ -122,12 +131,16 @@ def _fetch_backend_for_period(month: int, year: int,
                 conn, params=(period,)
             )
             if oracle_check["cnt"].iloc[0] > 0:
+                total_oracle = oracle_check["cnt"].iloc[0]
+                # Exclude time_taken_min = 0: diversion/transfer, not real production
                 df = pd.read_sql_query(
                     "SELECT created_by, quantity, production_date AS date "
                     "FROM oracle_raw_data "
-                    "WHERE substr(production_date,1,7) = ?",
+                    "WHERE substr(production_date,1,7) = ? "
+                    "AND (time_taken_min IS NULL OR time_taken_min <> 0)",
                     conn, params=(period,)
                 )
+                excluded_time0 = int(total_oracle - len(df))
             else:
                 df = pd.read_sql_query(
                     "SELECT created_by, quantity, date "
@@ -135,9 +148,10 @@ def _fetch_backend_for_period(month: int, year: int,
                     "WHERE substr(date,1,7) = ?",
                     conn, params=(period,)
                 )
+                excluded_time0 = 0
     finally:
         conn.close()
-    return df
+    return df, excluded_time0
 
 
 # ---------------------------------------------------------------------------
@@ -386,7 +400,7 @@ def run_calculation(month: int, year: int,
             }
 
         # ── Step 1: Fetch and aggregate backend data ─────────────────────────
-        backend_df = _fetch_backend_for_period(month, year, start_date, end_date)
+        backend_df, excluded_time0 = _fetch_backend_for_period(month, year, start_date, end_date)
         if backend_df.empty:
             return {
                 "total_employees": 0, "mapped": 0, "unmapped": 0,
@@ -557,6 +571,11 @@ def run_calculation(month: int, year: int,
 
         # ── Data quality warnings ────────────────────────────────────────────
         calc_warnings = []
+        if excluded_time0 > 0:
+            calc_warnings.append(
+                f"ℹ️ {excluded_time0:,} batch row(s) with time = 0 min (diversion/transfer) "
+                f"were excluded from quantity totals. This is expected behaviour."
+            )
         if maint_applied_label == "None (₹0)":
             calc_warnings.append(
                 f"⚠️ No maintenance cost data found — all plants calculated with ₹0 cost. "
