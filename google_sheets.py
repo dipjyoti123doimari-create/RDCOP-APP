@@ -146,9 +146,10 @@ def _fetch_public(sheet_id: str, worksheet_name: str) -> pd.DataFrame:
                 )
                 continue  # try next URL format
 
-            # Parse as CSV — dtype=str keeps numeric codes like "818000000001"
-            # from being converted to scientific notation (8.18E+11).
-            df = pd.read_csv(io.StringIO(content), dtype=str)
+            # dtype=str keeps numeric codes from scientific notation.
+            # keep_default_na=False prevents pandas treating "NA" as NaN —
+            # "NA" is a valid employee category in this app.
+            df = pd.read_csv(io.StringIO(content), dtype=str, keep_default_na=False)
             if df.empty:
                 last_error = "The sheet returned empty data."
                 continue

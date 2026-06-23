@@ -79,13 +79,17 @@ def _validate_master_data(errors: list) -> int:
         for field in required_fields:
             val = str(row.get(field, "")).strip()
             if not val or val.lower() == "nan":
+                emp = row.get('employee_code', '?')
+                name = row.get('employee_name', '?')
                 errors.append({
                     "source": "master_data",
                     "row_number": row_num,
                     "column_name": field,
                     "error_type": "BLANK_FIELD",
-                    "error_message": f"Row {row_num}: '{field}' is blank "
-                                     f"(Employee Code: {row.get('employee_code', '?')}).",
+                    "error_message": (
+                        f"Row {row_num}: '{field}' is blank for Employee '{name}' "
+                        f"(Code: {emp}). Fill this column in the Google Sheet and re-sync."
+                    ),
                     "created_at": _now(),
                 })
                 count += 1
