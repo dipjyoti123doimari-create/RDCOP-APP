@@ -1,20 +1,14 @@
 {% extends "tp_base.html" %}
-{% block title %}Data Uploader{% endblock %}
+{% block title %}Plant Data{% endblock %}
 {% block content %}
 
 <div class="page-header">
-  <h1>Data Uploader</h1>
-  <p>Sync Plant Data from Google Sheets &amp; fetch production data from Oracle</p>
-</div>
-
-<!-- Main Tabs -->
-<div class="tabs">
-  <button class="tab-btn active" data-tabset="main" data-tab="sheets">📊 Plant Data (Sheets)</button>
-  <button class="tab-btn" data-tabset="main" data-tab="oracle">🔌 Oracle (Live)</button>
+  <h1>Plant Data</h1>
+  <p>Sync Plant Data from Google Sheets · Oracle fetch is in <a href="{{ url_for('sysconfig_page') }}" style="color:inherit;text-decoration:underline">System Config</a></p>
 </div>
 
 <!-- ── Plant Data (Google Sheets) ──────────────────── -->
-<div class="tab-panel active" data-tabpanel="main" data-tab="sheets">
+<div>
   <div class="card">
     <div class="section-title">🔄 Sync from Google Sheets</div>
     <p class="caption" style="margin-bottom:14px">
@@ -215,51 +209,6 @@
 
 </div>
 
-<!-- ── Oracle (Live) ───────────────────────────────── -->
-<div class="tab-panel" data-tabpanel="main" data-tab="oracle">
-  <div class="card">
-    <div class="section-title">🔌 Fetch Production Data from Oracle</div>
-    <p class="caption" style="margin-bottom:14px">Pulls batch data directly from APPSREAD.rdc_batch_trx_headers for any date range — no Excel needed.</p>
-
-    {% if ora_ready %}
-    <div class="alert alert-info">⚙️ Oracle is configured. Live connection status is shown by the dot in the top-right corner — fetch works only when it's green (you must be on the office network / VPN).</div>
-    {% else %}
-    <div class="alert alert-warning">❌ Oracle not configured — set it up in <a href="{{ url_for('page_settings') }}">RDC-I&amp;D → Settings → Oracle</a></div>
-    {% endif %}
-
-    <form method="POST" action="{{ url_for('tp_fetch_oracle') }}" id="oracle-form">
-      <div class="date-row">
-        <div class="form-group"><label>From Date</label><input type="date" name="from_date" required></div>
-        <div class="form-group"><label>To Date</label><input type="date" name="to_date" required></div>
-        <div class="form-group"><label>&nbsp;</label>
-          <button type="submit" class="btn btn-primary" {% if not ora_ready %}disabled{% endif %}>🔌 Fetch from Oracle</button>
-        </div>
-      </div>
-    </form>
-    <div class="loading" id="oracle-loading" style="margin-top:10px"><div class="spinner"></div> Fetching from Oracle…</div>
-
-    {% if ora_counts %}
-    <div class="alert alert-info" style="margin-top:14px">
-      <strong>{{ ora_counts | format_int }}</strong> production rows currently in local store.
-      <a href="{{ url_for('tp_validation') }}">View skip log →</a>
-    </div>
-    {% endif %}
-
-    <hr style="margin:18px 0;border-color:#333">
-    <div class="section-title" style="font-size:13px;margin-bottom:8px">🔍 Find Correct Column Names</div>
-    <p class="caption" style="margin-bottom:10px">Not sure which column holds plant data? Click below to see all columns in the Oracle table and then update them in <a href="{{ url_for('tp_settings') }}">Settings → Oracle Column Names</a>.</p>
-    <button class="btn btn-secondary" id="show-cols-btn" onclick="loadTableColumns()" {% if not ora_ready %}disabled{% endif %}>🔍 Show Table Columns</button>
-    <div id="cols-result" style="margin-top:12px;display:none">
-      <div id="cols-loading" class="caption" style="display:none">Loading…</div>
-      <div id="cols-error" class="alert alert-error" style="display:none"></div>
-      <div id="cols-list" style="display:none">
-        <p class="caption" style="margin-bottom:6px">Columns in <strong>rdc_batch_trx_headers</strong>:</p>
-        <div id="cols-tags" style="display:flex;flex-wrap:wrap;gap:6px"></div>
-      </div>
-    </div>
-  </div>
-</div>
-
 {% endblock %}
 {% block scripts %}
 <script>
@@ -268,48 +217,6 @@
     document.getElementById('sync-loading'),
     document.getElementById('sync-btn')
   );
-  submitFormAjax(
-    document.getElementById('oracle-form'),
-    document.getElementById('oracle-loading'),
-    null
-  );
-
-  function loadTableColumns() {
-    var btn = document.getElementById('show-cols-btn');
-    var wrap = document.getElementById('cols-result');
-    var loading = document.getElementById('cols-loading');
-    var errDiv = document.getElementById('cols-error');
-    var listDiv = document.getElementById('cols-list');
-    var tagsDiv = document.getElementById('cols-tags');
-    btn.disabled = true;
-    wrap.style.display = 'block';
-    loading.style.display = 'block';
-    errDiv.style.display = 'none';
-    listDiv.style.display = 'none';
-    fetch('/tp/api/table-columns')
-      .then(r => r.json())
-      .then(data => {
-        loading.style.display = 'none';
-        if (!data.ok) {
-          errDiv.textContent = 'Error: ' + data.error;
-          errDiv.style.display = 'block';
-        } else {
-          tagsDiv.innerHTML = data.columns.map(c =>
-            '<span style="background:#1e2a3a;border:1px solid #334;border-radius:4px;padding:3px 8px;font-size:12px;font-family:monospace;color:#7ec8f7">' + c + '</span>'
-          ).join('');
-          listDiv.style.display = 'block';
-        }
-        btn.disabled = false;
-      })
-      .catch(e => {
-        loading.style.display = 'none';
-        errDiv.textContent = 'Network error: ' + e;
-        errDiv.style.display = 'block';
-        btn.disabled = false;
-      });
-  }
-  var hash = location.hash.replace('#','');
-  if (['sheets','oracle'].includes(hash)) switchTab('main', hash);
 
   function openManageModal(tab) {
     var modal = document.getElementById('manage-plant-modal');

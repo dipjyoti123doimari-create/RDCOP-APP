@@ -62,19 +62,6 @@
     <span class="settings-tile-arrow">›</span>
   </div>
 
-  <!-- Backend Data -->
-  <div class="settings-tile" onclick="openModal('modal-backend')">
-    <div class="settings-tile-icon">📦</div>
-    <div class="settings-tile-info">
-      <div class="settings-tile-title">Backend Data</div>
-      <div class="settings-tile-status {% if b_count > 0 %}status-ok{% else %}status-warn{% endif %}">
-        {% if b_count > 0 %}✅ {{ b_count | format_int }} rows · {{ b_earliest }} → {{ b_latest }}{% else %}⚠️ No data uploaded{% endif %}
-      </div>
-      <div class="settings-tile-desc" style="margin-top:4px;font-size:11px;color:#5a7a9a">Used by: I&amp;D (quantity data for incentive calc)</div>
-    </div>
-    <span class="settings-tile-arrow">›</span>
-  </div>
-
   <!-- Maintenance Cost -->
   <div class="settings-tile" onclick="openModal('modal-maintenance')">
     <div class="settings-tile-icon">🛠️</div>
@@ -283,66 +270,6 @@
           <tbody>
             {% for row in master_rows %}
             <tr>{% for c in master_cols %}<td>{{ row[c] }}</td>{% endfor %}</tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% endif %}
-    </div>
-  </div>
-</div>
-
-
-<!-- ══════════════════════════════════════════════════════
-     MODAL: Backend Data
-══════════════════════════════════════════════════════ -->
-<div id="modal-backend" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-backend')">
-  <div class="modal-box" style="max-width:680px">
-    <div class="modal-header">
-      <span>📦 Backend Data</span>
-      <button class="modal-close" onclick="closeModal('modal-backend')">✕</button>
-    </div>
-    <div class="modal-body">
-      <p class="caption" style="margin-bottom:4px">Production quantity data — upload Excel or fetch live from Oracle.</p>
-      <p class="caption" style="margin-bottom:12px;color:#5a7a9a">📌 Used by: I&amp;D (quantity per employee for incentive calculation)</p>
-
-      <div class="section-title" style="font-size:13px;margin-bottom:10px">📤 Upload Excel File</div>
-      <p class="caption" style="margin-bottom:12px">Required columns: <strong>Created by, Quantity, Date</strong> · Extra columns are ignored.</p>
-      <form method="POST" action="{{ url_for('sysconfig_upload_backend') }}" enctype="multipart/form-data" id="backend-form">
-        <div class="file-drop" id="backend-drop">
-          <input type="file" name="file" id="backend-file" accept=".xlsx">
-          <div class="drop-icon">📂</div>
-          <div class="drop-text">Click or drag &amp; drop the Backend Data Excel file (.xlsx)</div>
-          <div class="drop-sub" id="backend-file-name">No file selected</div>
-        </div>
-        <div class="form-group" style="margin-top:14px">
-          <label>Upload Mode</label>
-          <select name="mode">
-            <option value="replace">Replace existing data</option>
-            <option value="append">Append to existing data</option>
-          </select>
-        </div>
-        <div class="btn-group" style="margin-top:8px">
-          <button type="submit" class="btn btn-primary">💾 Save to Database</button>
-          <div class="loading" id="backend-loading"><div class="spinner"></div> Uploading…</div>
-        </div>
-      </form>
-
-      {% if b_count > 0 %}
-      <hr class="divider">
-      <div class="section-title" style="font-size:13px;margin-bottom:8px">📋 Current Backend Data</div>
-      <div class="metric-grid-3" style="margin-bottom:12px">
-        <div class="metric-mini"><div class="metric-label">Total Rows</div><div class="metric-value">{{ b_count | format_int }}</div></div>
-        <div class="metric-mini"><div class="metric-label">Earliest Date</div><div class="metric-value" style="font-size:16px">{{ b_earliest }}</div></div>
-        <div class="metric-mini"><div class="metric-label">Latest Date</div><div class="metric-value" style="font-size:16px">{{ b_latest }}</div></div>
-      </div>
-      <p class="caption" style="margin-bottom:8px">Showing first 200 rows</p>
-      <div class="table-wrapper" style="max-height:220px">
-        <table>
-          <thead><tr>{% for c in ['created_by','quantity','date','source_file','uploaded_at'] %}<th>{{ c }}</th>{% endfor %}</tr></thead>
-          <tbody>
-            {% for row in backend_preview %}
-            <tr>{% for c in ['created_by','quantity','date','source_file','uploaded_at'] %}<td>{{ row.get(c,'') }}</td>{% endfor %}</tr>
             {% endfor %}
           </tbody>
         </table>
