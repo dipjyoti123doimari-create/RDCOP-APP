@@ -49,6 +49,15 @@
     <div class="module-desc">Calculates LJCB &amp; Loader Diesel Consumption</div>
   </div>
 
+  <!-- System Config — SUPER_ADMIN only -->
+  {% if current_user and current_user.role == 'SUPER_ADMIN' %}
+  <div class="module-card" data-href="{{ url_for('sysconfig_page') }}">
+    <div class="module-badge active" style="background:rgba(99,91,255,.12);color:#8B87FF;border-color:rgba(99,91,255,.25)">⚙️ Config</div>
+    <div class="module-name">System Config</div>
+    <div class="module-desc">SMTP · Oracle DB · Oracle Sync · Master Data · Backend Data · Maintenance Cost</div>
+  </div>
+  {% endif %}
+
   <!-- User Management — SUPER_ADMIN only -->
   {% if current_user and current_user.role == 'SUPER_ADMIN' %}
   <div class="module-card" data-href="{{ url_for('admin_users') }}">

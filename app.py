@@ -3128,6 +3128,8 @@ def add_employee():
             flash(f"⚠️ Saved locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as e:
         flash(str(e), "error")
+    if request.form.get("_next") == "sysconfig":
+        return redirect(url_for("sysconfig_page") + "?open_modal=employee&tab=add")
     return redirect(url_for("page_data_uploader") + "?open_modal=employee&tab=add")
 
 
@@ -3154,6 +3156,8 @@ def update_employee(code):
             flash(f"⚠️ Saved locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as e:
         flash(str(e), "error")
+    if request.form.get("_next") == "sysconfig":
+        return redirect(url_for("sysconfig_page") + "?open_modal=employee&tab=edit")
     return redirect(url_for("page_data_uploader") + "?open_modal=employee&tab=edit")
 
 
@@ -3169,6 +3173,8 @@ def delete_employee(code):
             flash(f"⚠️ Deleted locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as e:
         flash(str(e), "error")
+    if request.form.get("_next") == "sysconfig":
+        return redirect(url_for("sysconfig_page") + "?open_modal=employee&tab=delete")
     return redirect(url_for("page_data_uploader") + "?open_modal=employee&tab=delete")
 
 
@@ -3224,6 +3230,9 @@ def assign_maintenance_month():
         flash(f"✅ Assigned {updated} existing rows to {_cal.month_name[month]} {year}.", "success")
     except Exception as exc:
         flash(f"Assignment failed: {exc}", "error")
+    back = request.form.get("_next", "")
+    if back == "sysconfig":
+        return redirect(url_for("sysconfig_page") + "?m=maintenance")
     return redirect(url_for("page_data_uploader") + "#maintenance")
 
 
@@ -3237,6 +3246,9 @@ def delete_maintenance_month():
         flash(f"Deleted {deleted} maintenance cost rows for {_cal.month_name[month]} {year}.", "success")
     except Exception as exc:
         flash(f"Delete failed: {exc}", "error")
+    back = request.form.get("_next", "")
+    if back == "sysconfig":
+        return redirect(url_for("sysconfig_page") + "?m=maintenance")
     return redirect(url_for("page_data_uploader") + "#maintenance")
 
 
@@ -4406,6 +4418,351 @@ def ecmd_save_email_defaults():
     })
     flash("ECMD email defaults saved.", "success")
     return redirect(url_for("ecmd_settings", m="email"))
+
+
+# ── System Config ─────────────────────────────────────────────────────────────
+
+@app.route("/sysconfig")
+@auth.login_required
+def sysconfig_page():
+    smtp             = email_helper.get_smtp_config()
+    email_configured = bool(smtp["host"] and smtp["sender"] and smtp["password"])
+    ora              = oracle_connector.get_oracle_config()
+    ora_configured   = oracle_connector.is_configured(ora)
+    last_sync        = google_sheets.get_last_sync_info()
+    has_creds        = google_sheets.credentials_exist()
+    auto_sync        = database.get_setting("gsheet_auto_sync", "false") == "true"
+    last_oracle_fetch = database.get_setting("sysconfig_last_oracle_fetch", "")
+
+    m_count = database.get_table_counts().get("master_data", 0)
+    master_cols, master_rows = [], []
+    if m_count > 0:
+        df = database.read_table_limited("master_data", order_by="employee_code", limit=500)
+        df = df.drop(columns=["id"], errors="ignore")
+        master_cols = df.columns.tolist()
+        master_rows = _records(df)
+
+    b_count = database.get_table_counts().get("backend_data", 0)
+    b_earliest = b_latest = ""
+    backend_preview = []
+    if b_count > 0:
+        df_e = database.read_table_limited("backend_data", order_by="date", limit=1)
+        df_l = database.read_table_limited("backend_data", order_by="date DESC", limit=1)
+        b_earliest = df_e["date"].iloc[0] if not df_e.empty else ""
+        b_latest   = df_l["date"].iloc[0] if not df_l.empty else ""
+        df_p = database.read_table_limited("backend_data", order_by="date", limit=200)
+        backend_preview = _records(df_p.drop(columns=["id"], errors="ignore"))
+
+    maint_df = database.read_table("maintenance_cost", order_by="plant_code")
+    maint_month_groups, maint_avg, maint_above, maint_count = [], 0, 0, 0
+    maint_uploaded_keys = set()
+    has_unassigned = False
+    if not maint_df.empty:
+        import calendar as _cal2
+        maint_avg   = round(maint_df["ytd_maintenance_cost"].mean(), 2)
+        maint_above = int((maint_df["ytd_maintenance_cost"] > config.MAINTENANCE_COST_THRESHOLD).sum())
+        maint_months_data = {}
+        for _, r in maint_df.iterrows():
+            m2, y2 = int(r.get("month") or 0), int(r.get("year") or 0)
+            key = (y2, m2)
+            if key not in maint_months_data:
+                label = f"{_cal2.month_name[m2]} {y2}" if m2 else "Unassigned"
+                maint_months_data[key] = {"label": label, "month": m2, "year": y2, "rows": []}
+            maint_months_data[key]["rows"].append({
+                "plant_code":           r["plant_code"],
+                "ytd_maintenance_cost": r["ytd_maintenance_cost"],
+                "uploaded_at":          r.get("uploaded_at", ""),
+            })
+        maint_month_groups = sorted(maint_months_data.values(),
+                                    key=lambda g: (g["year"], g["month"]), reverse=True)
+        maint_count = len(maint_df)
+        maint_uploaded_keys = {(g["month"], g["year"]) for g in maint_month_groups
+                               if g["month"] and g["year"]}
+        has_unassigned = any(g["month"] == 0 for g in maint_month_groups)
+
+    codes_df = database.read_table_limited("master_data", order_by="employee_code", limit=100000)
+    codes    = codes_df["employee_code"].astype(str).tolist() if not codes_df.empty else []
+    log_df   = database.read_table("master_data_change_log", order_by="id DESC")
+    log_rows = _records(log_df.drop(columns=["id"], errors="ignore")) if not log_df.empty else []
+    ora_b_preview = []
+    if b_count > 0:
+        df_ob = database.read_table_limited("backend_data", order_by="date DESC", limit=10)
+        ora_b_preview = _records(df_ob.drop(columns=["id"], errors="ignore"))
+    edit_code = request.args.get("edit_code")
+    del_code  = request.args.get("del_code")
+    edit_emp  = database.get_employee(edit_code) if edit_code else None
+    del_emp   = database.get_employee(del_code)  if del_code  else None
+
+    last_master_sync = last_sync.get("last_sync", "") if last_sync else ""
+
+    return render_template("sysconfig.html",
+                           smtp=smtp, email_configured=email_configured,
+                           ora=ora, ora_configured=ora_configured,
+                           last_oracle_fetch=last_oracle_fetch,
+                           last_sync=last_sync, has_creds=has_creds, auto_sync=auto_sync,
+                           last_master_sync=last_master_sync,
+                           m_count=m_count, master_cols=master_cols, master_rows=master_rows,
+                           b_count=b_count, b_earliest=b_earliest, b_latest=b_latest,
+                           backend_preview=backend_preview, ora_b_preview=ora_b_preview,
+                           maint_month_groups=maint_month_groups,
+                           maint_avg=maint_avg, maint_above=maint_above,
+                           maint_count=maint_count,
+                           current_month=_date.today().month,
+                           current_year=_date.today().year,
+                           maint_uploaded_keys=maint_uploaded_keys,
+                           has_unassigned=has_unassigned,
+                           codes=codes, log_rows=log_rows,
+                           edit_emp=edit_emp, del_emp=del_emp,
+                           categories=config.CATEGORIES,
+                           today=str(_date.today()),
+                           today_first=str(_date.today().replace(day=1)),
+                           active_page="sysconfig")
+
+
+@app.route("/sysconfig/action/save-smtp", methods=["POST"])
+@auth.login_required
+def sysconfig_save_smtp():
+    pwd = request.form.get("password", "").strip()
+    to_save = {
+        "smtp_host":        request.form.get("host", "").strip(),
+        "smtp_port":        request.form.get("port", "587").strip(),
+        "smtp_sender":      request.form.get("sender", "").strip(),
+        "smtp_use_tls":     "true" if "use_tls" in request.form else "false",
+        "email_default_to": request.form.get("default_to", "").strip(),
+        "email_default_cc": request.form.get("default_cc", "").strip(),
+        "email_subject":    request.form.get("subject", "").strip(),
+    }
+    if pwd:
+        to_save["smtp_password"] = pwd
+    database.set_settings_bulk(to_save)
+    flash("Email settings saved.", "success")
+    return redirect(url_for("sysconfig_page") + "?m=smtp")
+
+
+@app.route("/sysconfig/action/test-smtp", methods=["POST"])
+@auth.login_required
+def sysconfig_test_smtp():
+    cfg = email_helper.get_smtp_config()
+    try:
+        res = email_helper.send_report_email(
+            to_emails=cfg["sender"], cc_emails="",
+            subject="Test email — RDC-OPS System Config",
+            body="This is a test email confirming your SMTP settings work.",
+        )
+        if res["success"]:
+            flash(f"Test email sent to {cfg['sender']}. Check the inbox.", "success")
+        else:
+            flash(f"Test failed: {res['error']}", "error")
+    except Exception as exc:
+        flash(f"Test failed: {exc}", "error")
+    return redirect(url_for("sysconfig_page") + "?m=smtp")
+
+
+@app.route("/sysconfig/action/save-oracle", methods=["POST"])
+@auth.login_required
+def sysconfig_save_oracle():
+    pwd = request.form.get("password", "").strip()
+    to_save = {
+        "oracle_host":              request.form.get("host", "").strip(),
+        "oracle_port":              request.form.get("port", "").strip(),
+        "oracle_service":           request.form.get("service", "").strip(),
+        "oracle_user":              request.form.get("user", "").strip(),
+        "oracle_status_filter":     request.form.get("status_filter", "").strip(),
+        "oracle_instantclient_dir": request.form.get("instantclient", "").strip(),
+    }
+    if pwd:
+        to_save["oracle_password"] = pwd
+    database.set_settings_bulk(to_save)
+    flash("Oracle settings saved.", "success")
+    return redirect(url_for("sysconfig_page") + "?m=oracle")
+
+
+@app.route("/sysconfig/action/test-oracle", methods=["POST"])
+@auth.login_required
+def sysconfig_test_oracle():
+    try:
+        result = oracle_connector.test_connection()
+        if result["success"]:
+            flash(f"Connection successful! {result.get('version', '')}", "success")
+        else:
+            flash(f"Connection failed: {result['error']}", "error")
+    except Exception as exc:
+        flash(f"Test failed: {exc}", "error")
+    return redirect(url_for("sysconfig_page") + "?m=oracle")
+
+
+@app.route("/sysconfig/action/fetch-all-oracle", methods=["POST"])
+@auth.login_required
+def sysconfig_fetch_all_oracle():
+    from_s  = request.form.get("from_date", str(_date.today().replace(day=1)))
+    to_s    = request.form.get("to_date",   str(_date.today()))
+    replace = request.form.get("mode", "replace") == "replace"
+    errors  = []
+    success_msgs = []
+    try:
+        fd = _date.fromisoformat(from_s)
+        td = _date.fromisoformat(to_s)
+        _set_progress(5, "Testing Oracle connection…")
+        conn_test = oracle_connector.test_connection()
+        if not conn_test["success"]:
+            flash(f"Oracle connection failed: {conn_test['error']}", "error")
+            _set_progress(100, "Complete")
+            return jsonify({"ok": False, "redirect": url_for("sysconfig_page") + "?m=fetch"})
+
+        # 1. I&D backend data
+        try:
+            _set_progress(20, "Fetching I&D backend data…")
+            df_id, warns_id = oracle_connector.fetch_backend_data(fd, td)
+            for w in warns_id:
+                flash(w, "warning")
+            if df_id.empty:
+                flash("I&D: Oracle returned no rows for the selected date range.", "warning")
+            else:
+                saved = oracle_connector.save_oracle_backend_data(df_id, fd, td, replace=replace)
+                success_msgs.append(f"I&D: {saved:,} rows")
+        except Exception as exc:
+            errors.append(f"I&D fetch failed: {exc}")
+
+        # 2. TP data
+        try:
+            _set_progress(45, "Fetching TP plant data…")
+            raw_tp, warns_tp = oracle_connector.fetch_tp_data(from_s, to_s)
+            for w in warns_tp:
+                flash(w, "warning")
+            parsed_tp, skip_tp = tp_calculator.parse_oracle_df(raw_tp)
+            oracle_connector.save_tp_oracle_data(raw_tp, from_s, to_s, parsed_tp, replace=replace)
+            _mss("tp", "skip_log", skip_tp)
+            _mss("tp", "ora_from", from_s)
+            _mss("tp", "ora_to",   to_s)
+            success_msgs.append(f"TP: {len(parsed_tp)} rows")
+        except Exception as exc:
+            errors.append(f"TP fetch failed: {exc}")
+
+        # 3. BTRTP data
+        try:
+            _set_progress(70, "Fetching BTRTP batcher data…")
+            raw_bt, warns_bt = oracle_connector.fetch_btrtp_data(from_s, to_s)
+            for w in warns_bt:
+                flash(w, "warning")
+            parsed_bt, skip_bt = btrtp_calculator.parse_btrtp_oracle_df(raw_bt)
+            oracle_connector.save_btrtp_oracle_data(parsed_bt, replace=replace)
+            _mss("btrtp", "skip_log", skip_bt)
+            _mss("btrtp", "ora_from", from_s)
+            _mss("btrtp", "ora_to",   to_s)
+            success_msgs.append(f"BTRTP: {len(parsed_bt)} rows")
+        except Exception as exc:
+            errors.append(f"BTRTP fetch failed: {exc}")
+
+        _set_progress(90, "Cleaning old records…")
+        database.purge_old_oracle_data()
+        now_str = _dt.now().strftime("%Y-%m-%d %H:%M")
+        database.set_settings_bulk({"sysconfig_last_oracle_fetch": now_str})
+
+        if success_msgs:
+            flash("✅ Oracle fetch complete — " + " · ".join(success_msgs), "success")
+        for e in errors:
+            flash(e, "error")
+
+    except Exception as exc:
+        flash(f"Oracle fetch failed: {exc}", "error")
+    _set_progress(100, "Complete")
+    return jsonify({"ok": True, "redirect": url_for("sysconfig_page") + "?m=fetch"})
+
+
+@app.route("/sysconfig/action/sync-master", methods=["POST"])
+@auth.login_required
+def sysconfig_sync_master():
+    sheet_id  = request.form.get("sheet_id", "").strip()
+    worksheet = request.form.get("worksheet", "Sheet1").strip()
+    if not sheet_id:
+        flash("Please enter a Google Sheet ID.", "error")
+        return jsonify({"ok": False, "redirect": url_for("sysconfig_page") + "?m=master"})
+    try:
+        _set_progress(15, "Connecting to Google Sheets…")
+        clean_id = google_sheets.extract_sheet_id(sheet_id)
+        _set_progress(35, "Fetching master data…")
+        df_sync  = google_sheets.fetch_master_data(clean_id, worksheet)
+        now = _dt.now().isoformat(timespec="seconds")
+        def _sv(v):
+            import math
+            if v is None: return ""
+            if isinstance(v, float) and math.isnan(v): return ""
+            s = str(v).strip()
+            return "" if s.lower() == "nan" else s
+        rows = [{"employee_code": _sv(r["Employee Code"]),
+                 "employee_name": _sv(r["Employee Name"]),
+                 "designation":   _sv(r["Designation"]),
+                 "category":      _sv(r["Category"]),
+                 "plant":         _sv(r["Plant"]),
+                 "plant_code":    _sv(r["Plant Code"]),
+                 "updated_at":    now}
+                for _, r in df_sync.iterrows()]
+        _set_progress(70, "Saving employee records…")
+        count = google_sheets.save_master_data(rows)
+        _set_progress(85, "Updating sync metadata…")
+        database.set_settings_bulk({
+            "gsheet_id":          clean_id,
+            "gsheet_worksheet":   worksheet,
+            "gsheet_last_sync":   now,
+            "gsheet_last_count":  str(count),
+        })
+        flash(f"✅ {count} employees synced from Google Sheets.", "success")
+    except Exception as exc:
+        flash(f"Sync failed: {exc}", "error")
+    _set_progress(100, "Complete")
+    return jsonify({"ok": True, "redirect": url_for("sysconfig_page") + "?m=master"})
+
+
+@app.route("/sysconfig/action/toggle-auto-sync", methods=["POST"])
+@auth.login_required
+def sysconfig_toggle_auto_sync():
+    enabled = "enabled" in request.form
+    database.set_settings_bulk({"gsheet_auto_sync": "true" if enabled else "false"})
+    return redirect(url_for("sysconfig_page") + "?m=master")
+
+
+@app.route("/sysconfig/action/upload-maintenance", methods=["POST"])
+@auth.login_required
+def sysconfig_upload_maintenance():
+    if "file" not in request.files or request.files["file"].filename == "":
+        flash("No file selected.", "error")
+        return redirect(url_for("sysconfig_page") + "?m=maintenance")
+    f = request.files["file"]
+    try:
+        month = int(request.form.get("maint_month", _date.today().month))
+        year  = int(request.form.get("maint_year",  _date.today().year))
+    except (ValueError, TypeError):
+        flash("Invalid month or year selected.", "error")
+        return redirect(url_for("sysconfig_page") + "?m=maintenance")
+    try:
+        import calendar as _cal3
+        df, warns = data_loader.load_maintenance_cost(f)
+        for w in warns:
+            flash(w, "warning")
+        saved = data_loader.save_maintenance_cost(df, month, year)
+        flash(f"Saved {saved:,} plant maintenance cost rows for {_cal3.month_name[month]} {year}.", "success")
+    except Exception as exc:
+        flash(f"Upload failed: {exc}", "error")
+    return redirect(url_for("sysconfig_page") + "?m=maintenance")
+
+
+@app.route("/sysconfig/action/upload-backend", methods=["POST"])
+@auth.login_required
+def sysconfig_upload_backend():
+    if "file" not in request.files or request.files["file"].filename == "":
+        flash("No file selected.", "error")
+        return redirect(url_for("sysconfig_page") + "?m=backend")
+    f = request.files["file"]
+    replace = request.form.get("mode", "replace") == "replace"
+    try:
+        df, warns = data_loader.load_backend_data(f)
+        for w in warns:
+            flash(w, "warning")
+        saved = data_loader.save_backend_data(df, source_file=f.filename, replace=replace)
+        flash(f"{'Replaced' if replace else 'Appended'} {saved:,} backend rows.", "success")
+    except Exception as exc:
+        flash(f"Upload failed: {exc}", "error")
+    return redirect(url_for("sysconfig_page") + "?m=backend")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

@@ -36,20 +36,23 @@
       <a href="{{ url_for('btrtp_dashboard') }}" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
         <span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span>
       </a>
+      <a href="{{ url_for('btrtp_reports') }}" class="nav-item {% if active_page in ('calculate','reports') %}active{% endif %}">
+        <span class="nav-icon">⚡</span><span class="nav-label">Calculate &amp; Reports</span>
+      </a>
       {% if not current_user or current_user.role == 'SUPER_ADMIN' %}
       <a href="{{ url_for('btrtp_data_uploader') }}" class="nav-item {% if active_page == 'data_uploader' %}active{% endif %}">
         <span class="nav-icon">📤</span><span class="nav-label">Data Uploader</span>
       </a>
       {% endif %}
-      <a href="{{ url_for('btrtp_reports') }}" class="nav-item {% if active_page in ('calculate','reports') %}active{% endif %}">
-        <span class="nav-icon">⚡</span><span class="nav-label">Calculate &amp; Reports</span>
-      </a>
       <a href="{{ url_for('btrtp_validation') }}" class="nav-item {% if active_page == 'validation' %}active{% endif %}">
         <span class="nav-icon">🔍</span><span class="nav-label">Validation / Skip Log</span>
       </a>
       {% if not current_user or current_user.role == 'SUPER_ADMIN' %}
       <a href="{{ url_for('btrtp_settings') }}" class="nav-item {% if active_page == 'settings' %}active{% endif %}">
         <span class="nav-icon">⚙️</span><span class="nav-label">Settings</span>
+      </a>
+      <a href="{{ url_for('sysconfig_page') }}" class="nav-item {% if active_page == 'sysconfig' %}active{% endif %}">
+        <span class="nav-icon">🗄️</span><span class="nav-label">System Config</span>
       </a>
       {% endif %}
     </div>

@@ -1,0 +1,654 @@
+{% extends "sysconfig_base.html" %}
+{% block title %}System Config{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>System Configuration</h1>
+  <p>Shared settings and data for all modules — changes here apply across I&amp;D, TP, BTRTP and ECMD</p>
+</div>
+
+<!-- ── Settings tile grid ─────────────────────────────── -->
+<div class="settings-card-grid">
+
+  <!-- SMTP -->
+  <div class="settings-tile" onclick="openModal('modal-smtp')">
+    <div class="settings-tile-icon">✉️</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Email (SMTP)</div>
+      <div class="settings-tile-status {% if email_configured %}status-ok{% else %}status-warn{% endif %}">
+        {% if email_configured %}✅ Configured — {{ smtp.sender }}{% else %}⚠️ Not configured{% endif %}
+      </div>
+      <div class="settings-tile-desc" style="margin-top:4px;font-size:11px;color:#5a7a9a">Used by: I&amp;D · TP · BTRTP · ECMD</div>
+    </div>
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
+  <!-- Oracle Config -->
+  <div class="settings-tile" onclick="openModal('modal-oracle')">
+    <div class="settings-tile-icon">🔌</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Oracle Database</div>
+      <div class="settings-tile-status {% if ora_configured %}status-ok{% else %}status-warn{% endif %}">
+        {% if ora_configured %}⚙️ Configured · live status top-right{% else %}❌ Not configured{% endif %}
+      </div>
+      <div class="settings-tile-desc" style="margin-top:4px;font-size:11px;color:#5a7a9a">Used by: I&amp;D · TP · BTRTP</div>
+    </div>
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
+  <!-- Oracle Fetch -->
+  <div class="settings-tile" onclick="openModal('modal-fetch')">
+    <div class="settings-tile-icon">🔄</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Oracle Data Sync</div>
+      <div class="settings-tile-status {% if ora_configured %}status-ok{% else %}status-warn{% endif %}">
+        {% if last_oracle_fetch %}Last sync: {{ last_oracle_fetch }}{% else %}No sync yet{% endif %}
+      </div>
+      <div class="settings-tile-desc" style="margin-top:4px;font-size:11px;color:#5a7a9a">Fetches for: I&amp;D · TP · BTRTP in one go</div>
+    </div>
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
+  <!-- Master Data -->
+  <div class="settings-tile" onclick="openModal('modal-master')">
+    <div class="settings-tile-icon">🧑‍💼</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Master Data Sync</div>
+      <div class="settings-tile-status {% if m_count > 0 %}status-ok{% else %}status-warn{% endif %}">
+        {% if last_master_sync %}✅ {{ m_count | format_int }} employees · Last: {{ last_master_sync }}{% else %}⚠️ Not synced yet{% endif %}
+      </div>
+      <div class="settings-tile-desc" style="margin-top:4px;font-size:11px;color:#5a7a9a">Used by: I&amp;D (employee incentive mapping)</div>
+    </div>
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
+  <!-- Backend Data -->
+  <div class="settings-tile" onclick="openModal('modal-backend')">
+    <div class="settings-tile-icon">📦</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Backend Data</div>
+      <div class="settings-tile-status {% if b_count > 0 %}status-ok{% else %}status-warn{% endif %}">
+        {% if b_count > 0 %}✅ {{ b_count | format_int }} rows · {{ b_earliest }} → {{ b_latest }}{% else %}⚠️ No data uploaded{% endif %}
+      </div>
+      <div class="settings-tile-desc" style="margin-top:4px;font-size:11px;color:#5a7a9a">Used by: I&amp;D (quantity data for incentive calc)</div>
+    </div>
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
+  <!-- Maintenance Cost -->
+  <div class="settings-tile" onclick="openModal('modal-maintenance')">
+    <div class="settings-tile-icon">🛠️</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Maintenance Cost</div>
+      <div class="settings-tile-status {% if maint_count > 0 %}status-ok{% else %}status-warn{% endif %}">
+        {% if maint_count > 0 %}✅ {{ maint_count | format_int }} plant-month rows · Avg {{ maint_avg }}{% else %}⚠️ No data uploaded{% endif %}
+      </div>
+      <div class="settings-tile-desc" style="margin-top:4px;font-size:11px;color:#5a7a9a">Used by: I&amp;D (cost threshold for rate selection)</div>
+    </div>
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     MODAL: Email SMTP
+══════════════════════════════════════════════════════ -->
+<div id="modal-smtp" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-smtp')">
+  <div class="modal-box" style="max-width:640px">
+    <div class="modal-header">
+      <span>✉️ Email (SMTP) Settings</span>
+      <button class="modal-close" onclick="closeModal('modal-smtp')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="caption" style="margin-bottom:4px">Used to email reports from all modules. For Gmail use an <strong>App Password</strong>.</p>
+      <p class="caption" style="margin-bottom:12px;color:#5a7a9a">📌 Shared by: I&amp;D · TP · BTRTP · ECMD</p>
+      {% if email_configured %}
+      <div class="alert alert-success" style="margin-bottom:12px">✅ SMTP is configured and ready to send.</div>
+      {% else %}
+      <div class="alert alert-warning" style="margin-bottom:12px">⚠️ SMTP is not fully configured yet.</div>
+      {% endif %}
+      <form method="POST" action="{{ url_for('sysconfig_save_smtp') }}">
+        <div class="form-grid">
+          <div class="form-group"><label>SMTP Host</label><input type="text" name="host" value="{{ smtp.host }}" placeholder="smtp.gmail.com"></div>
+          <div class="form-group"><label>Port</label><input type="number" name="port" value="{{ smtp.port }}" min="1" max="65535"></div>
+          <div class="form-group"><label>Sender Email</label><input type="text" name="sender" value="{{ smtp.sender }}" placeholder="you@company.com"></div>
+          <div class="form-group"><label>Password / App Password</label><input type="password" name="password" value="" placeholder="Leave blank to keep saved password"></div>
+          <div class="form-group"><label>Default To (comma-separated)</label><input type="text" name="default_to" value="{{ smtp.default_to }}"></div>
+          <div class="form-group"><label>Default CC (optional)</label><input type="text" name="default_cc" value="{{ smtp.default_cc }}"></div>
+        </div>
+        <div class="form-group"><label>Default Subject</label><input type="text" name="subject" value="{{ smtp.subject }}"></div>
+        <div class="toggle-row">
+          <input type="checkbox" class="toggle" name="use_tls" {% if smtp.use_tls %}checked{% endif %}>
+          <div class="toggle-text"><span class="toggle-label">Use TLS (recommended)</span></div>
+        </div>
+        <button type="submit" class="btn btn-primary">💾 Save Email Settings</button>
+      </form>
+      {% if email_configured %}
+      <hr class="divider">
+      <form method="POST" action="{{ url_for('sysconfig_test_smtp') }}">
+        <button type="submit" class="btn btn-secondary">✉️ Send test email to {{ smtp.sender }}</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     MODAL: Oracle Database Config
+══════════════════════════════════════════════════════ -->
+<div id="modal-oracle" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-oracle')">
+  <div class="modal-box" style="max-width:640px">
+    <div class="modal-header">
+      <span>🔌 Oracle Database</span>
+      <button class="modal-close" onclick="closeModal('modal-oracle')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="caption" style="margin-bottom:4px">Connection details for the enterprise Oracle database.</p>
+      <p class="caption" style="margin-bottom:12px;color:#5a7a9a">📌 Used by: I&amp;D (backend data) · TP (plant throughput) · BTRTP (batcher throughput)</p>
+      {% if ora_configured %}
+      <div class="alert alert-info" style="margin-bottom:12px">⚙️ Oracle is configured. Use <strong>Test Oracle Connection</strong> below to verify (office network / VPN required).</div>
+      {% else %}
+      <div class="alert alert-warning" style="margin-bottom:12px">❌ Oracle not configured</div>
+      {% endif %}
+      <form method="POST" action="{{ url_for('sysconfig_save_oracle') }}">
+        <div class="form-grid">
+          <div class="form-group"><label>Host (IP)</label><input type="text" name="host" value="{{ ora.host }}" placeholder="192.168.100.11"></div>
+          <div class="form-group"><label>Port</label><input type="text" name="port" value="{{ ora.port }}" placeholder="1528"></div>
+          <div class="form-group"><label>Service Name</label><input type="text" name="service" value="{{ ora.service }}" placeholder="RDCAZPRD"></div>
+          <div class="form-group"><label>Username</label><input type="text" name="user" value="{{ ora.user }}" placeholder="RDCREAD"></div>
+          <div class="form-group"><label>Password</label><input type="password" name="password" value="" placeholder="Leave blank to keep saved password"></div>
+          <div class="form-group"><label>Status Filter</label><input type="text" name="status_filter" value="{{ ora.status_filter }}" placeholder="Processed"></div>
+        </div>
+        <div class="form-group"><label>Oracle Instant Client Path</label><input type="text" name="instantclient" value="{{ ora.instantclient }}" placeholder="D:\AI Project\Incentive Calculator\instantclient"></div>
+        <button type="submit" class="btn btn-primary">💾 Save Oracle Settings</button>
+      </form>
+      {% if ora_configured %}
+      <hr class="divider">
+      <form method="POST" action="{{ url_for('sysconfig_test_oracle') }}">
+        <button type="submit" class="btn btn-secondary">🔌 Test Oracle Connection</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     MODAL: Oracle Data Sync (Fetch All)
+══════════════════════════════════════════════════════ -->
+<div id="modal-fetch" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-fetch')">
+  <div class="modal-box" style="max-width:600px">
+    <div class="modal-header">
+      <span>🔄 Oracle Data Sync</span>
+      <button class="modal-close" onclick="closeModal('modal-fetch')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="caption" style="margin-bottom:4px">Fetches production data from Oracle for all modules in one go.</p>
+      <p class="caption" style="margin-bottom:12px;color:#5a7a9a">📌 Syncs: I&amp;D backend data · TP plant throughput · BTRTP batcher data</p>
+
+      {% if not ora_configured %}
+      <div class="alert alert-warning" style="margin-bottom:14px">❌ Oracle not configured — set it up in the Oracle Database tile first.</div>
+      {% else %}
+      <div class="alert alert-info" style="margin-bottom:14px">⚙️ Oracle is configured. Fetch works only when green dot is visible (office network / VPN required).</div>
+      {% endif %}
+
+      <form method="POST" action="{{ url_for('sysconfig_fetch_all_oracle') }}" id="fetch-form">
+        <div class="date-row">
+          <div class="form-group"><label>From Date</label><input type="date" name="from_date" value="{{ today_first }}"></div>
+          <div class="form-group"><label>To Date</label><input type="date" name="to_date" value="{{ today }}"></div>
+        </div>
+        <div class="form-group" style="margin-top:8px">
+          <label>Load Mode</label>
+          <select name="mode">
+            <option value="replace">Replace existing data</option>
+            <option value="append">Append to existing data</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary" id="fetch-btn" {% if not ora_configured %}disabled{% endif %}>🔄 Fetch All from Oracle</button>
+        <div class="loading" id="fetch-loading" style="margin-top:10px"><div class="spinner"></div> Fetching from Oracle for all modules…</div>
+      </form>
+
+      {% if last_oracle_fetch %}
+      <hr class="divider">
+      <p class="caption">Last sync: <strong>{{ last_oracle_fetch }}</strong></p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     MODAL: Master Data Sync
+══════════════════════════════════════════════════════ -->
+<div id="modal-master" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-master')">
+  <div class="modal-box" style="max-width:680px">
+    <div class="modal-header">
+      <span>🧑‍💼 Master Data Sync</span>
+      <button class="modal-close" onclick="closeModal('modal-master')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="caption" style="margin-bottom:4px">Employee master list used to map Oracle login IDs to names, designations and categories.</p>
+      <p class="caption" style="margin-bottom:12px;color:#5a7a9a">📌 Used by: I&amp;D (incentive/deduction calculation and report)</p>
+
+      {% if has_creds %}
+      <div class="alert alert-success" style="margin-bottom:12px">🔐 <strong>Private mode</strong> — service account credentials found.</div>
+      {% else %}
+      <div class="alert alert-info" style="margin-bottom:12px">🌐 <strong>Public mode</strong> — works for sheets shared as "Anyone with the link can view".</div>
+      {% endif %}
+
+      <form method="POST" action="{{ url_for('sysconfig_sync_master') }}" id="sync-form">
+        <div class="form-group">
+          <label>Google Sheet URL or ID</label>
+          <input type="text" name="sheet_id" value="{{ last_sync.sheet_id or '' }}" placeholder="https://docs.google.com/spreadsheets/d/1BxiMVs0.../edit">
+        </div>
+        <div class="form-group">
+          <label>Worksheet / Tab Name</label>
+          <input type="text" name="worksheet" value="{{ last_sync.worksheet or 'Sheet1' }}" placeholder="Sheet1">
+        </div>
+        <div class="btn-group">
+          <button type="submit" class="btn btn-primary" id="sync-btn">🔄 Sync Now</button>
+          <div class="loading" id="sync-loading"><div class="spinner"></div> Syncing from Google Sheets…</div>
+        </div>
+      </form>
+
+      {% if last_sync.last_sync %}
+      <div class="alert alert-info" style="margin-top:14px">
+        🕐 Last synced: <strong>{{ last_sync.last_sync }}</strong> · <strong>{{ last_sync.last_count }}</strong> rows
+      </div>
+      {% endif %}
+
+      <hr class="divider">
+      <form method="POST" action="{{ url_for('sysconfig_toggle_auto_sync') }}" style="display:inline">
+        <div class="toggle-row">
+          <input type="checkbox" class="toggle" id="auto-sync-toggle" name="enabled"
+                 {% if auto_sync %}checked{% endif %} onchange="this.form.submit()">
+          <div class="toggle-text">
+            <span class="toggle-label">Auto-sync every time the app starts</span>
+            <span class="toggle-sub">Fetches latest data from Google Sheets automatically on startup</span>
+          </div>
+        </div>
+      </form>
+
+      {% if m_count > 0 %}
+      <hr class="divider">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <p class="caption" style="margin:0">Currently <strong>{{ m_count | format_int }}</strong> employees</p>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="openManageModal('add')">✏️ Manage Employees</button>
+      </div>
+      <div class="table-wrapper" style="max-height:220px">
+        <table>
+          <thead><tr>{% for c in master_cols %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+          <tbody>
+            {% for row in master_rows %}
+            <tr>{% for c in master_cols %}<td>{{ row[c] }}</td>{% endfor %}</tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     MODAL: Backend Data
+══════════════════════════════════════════════════════ -->
+<div id="modal-backend" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-backend')">
+  <div class="modal-box" style="max-width:680px">
+    <div class="modal-header">
+      <span>📦 Backend Data</span>
+      <button class="modal-close" onclick="closeModal('modal-backend')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="caption" style="margin-bottom:4px">Production quantity data — upload Excel or fetch live from Oracle.</p>
+      <p class="caption" style="margin-bottom:12px;color:#5a7a9a">📌 Used by: I&amp;D (quantity per employee for incentive calculation)</p>
+
+      <div class="section-title" style="font-size:13px;margin-bottom:10px">📤 Upload Excel File</div>
+      <p class="caption" style="margin-bottom:12px">Required columns: <strong>Created by, Quantity, Date</strong> · Extra columns are ignored.</p>
+      <form method="POST" action="{{ url_for('sysconfig_upload_backend') }}" enctype="multipart/form-data" id="backend-form">
+        <div class="file-drop" id="backend-drop">
+          <input type="file" name="file" id="backend-file" accept=".xlsx">
+          <div class="drop-icon">📂</div>
+          <div class="drop-text">Click or drag &amp; drop the Backend Data Excel file (.xlsx)</div>
+          <div class="drop-sub" id="backend-file-name">No file selected</div>
+        </div>
+        <div class="form-group" style="margin-top:14px">
+          <label>Upload Mode</label>
+          <select name="mode">
+            <option value="replace">Replace existing data</option>
+            <option value="append">Append to existing data</option>
+          </select>
+        </div>
+        <div class="btn-group" style="margin-top:8px">
+          <button type="submit" class="btn btn-primary">💾 Save to Database</button>
+          <div class="loading" id="backend-loading"><div class="spinner"></div> Uploading…</div>
+        </div>
+      </form>
+
+      {% if b_count > 0 %}
+      <hr class="divider">
+      <div class="section-title" style="font-size:13px;margin-bottom:8px">📋 Current Backend Data</div>
+      <div class="metric-grid-3" style="margin-bottom:12px">
+        <div class="metric-mini"><div class="metric-label">Total Rows</div><div class="metric-value">{{ b_count | format_int }}</div></div>
+        <div class="metric-mini"><div class="metric-label">Earliest Date</div><div class="metric-value" style="font-size:16px">{{ b_earliest }}</div></div>
+        <div class="metric-mini"><div class="metric-label">Latest Date</div><div class="metric-value" style="font-size:16px">{{ b_latest }}</div></div>
+      </div>
+      <p class="caption" style="margin-bottom:8px">Showing first 200 rows</p>
+      <div class="table-wrapper" style="max-height:220px">
+        <table>
+          <thead><tr>{% for c in ['created_by','quantity','date','source_file','uploaded_at'] %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+          <tbody>
+            {% for row in backend_preview %}
+            <tr>{% for c in ['created_by','quantity','date','source_file','uploaded_at'] %}<td>{{ row.get(c,'') }}</td>{% endfor %}</tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     MODAL: Maintenance Cost
+══════════════════════════════════════════════════════ -->
+{% set month_names = ['','January','February','March','April','May','June','July','August','September','October','November','December'] %}
+<div id="modal-maintenance" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-maintenance')">
+  <div class="modal-box" style="max-width:700px">
+    <div class="modal-header">
+      <span>🛠️ Maintenance Cost</span>
+      <button class="modal-close" onclick="closeModal('modal-maintenance')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="caption" style="margin-bottom:4px">Plant-wise YTD maintenance cost per month. Determines which SPE rate (low/high cost) applies.</p>
+      <p class="caption" style="margin-bottom:12px;color:#5a7a9a">📌 Used by: I&amp;D (cost threshold &gt; ₹18/cum → high-cost rate)</p>
+
+      <div class="section-title" style="font-size:13px;margin-bottom:8px">📤 Upload Maintenance Cost File</div>
+      <p class="caption" style="margin-bottom:12px">Required columns: <strong>Plant Code, YTD Maintenance Cost</strong>. Select the month this file belongs to.</p>
+      <form method="POST" action="{{ url_for('sysconfig_upload_maintenance') }}" enctype="multipart/form-data" id="maint-upload-form">
+        <div class="form-grid" style="margin-bottom:12px">
+          <div class="form-group">
+            <label>Month</label>
+            <select name="maint_month" id="maint-month-sel" required onchange="checkMaintLock()">
+              {% set months = [('January',1),('February',2),('March',3),('April',4),('May',5),('June',6),('July',7),('August',8),('September',9),('October',10),('November',11),('December',12)] %}
+              {% for name, num in months %}
+              <option value="{{ num }}" {% if num == current_month %}selected{% endif %}>{{ name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Year</label>
+            <select name="maint_year" id="maint-year-sel" required onchange="checkMaintLock()">
+              {% for y in range(current_year, current_year - 4, -1) %}
+              <option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div id="maint-lock-warn" style="display:none" class="alert alert-warning">⚠️ Data for this month is already uploaded. Delete it below before uploading again.</div>
+        <div class="file-drop" id="maint-drop">
+          <input type="file" name="file" id="maint-file" accept=".xlsx">
+          <div class="drop-icon">📂</div>
+          <div class="drop-text">Click or drag &amp; drop the Maintenance Cost Excel file (.xlsx)</div>
+          <div class="drop-sub" id="maint-file-name">No file selected</div>
+        </div>
+        <button type="submit" class="btn btn-primary" id="maint-upload-btn" style="margin-top:12px">💾 Save to Database</button>
+      </form>
+
+      {% if has_unassigned %}
+      <div class="card" style="margin-top:14px;border:1px solid rgba(245,158,11,0.4);background:rgba(245,158,11,0.06)">
+        <div class="section-title" style="color:#f59e0b;font-size:13px">⚠️ Unassigned Maintenance Data</div>
+        <form method="POST" action="{{ url_for('assign_maintenance_month') }}" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-top:8px">
+          <input type="hidden" name="_next" value="sysconfig">
+          <div class="form-group" style="margin:0">
+            <label>Assign to Month</label>
+            <select name="month" required>
+              {% for name, num in months %}
+              <option value="{{ num }}" {% if num == 5 %}selected{% endif %}>{{ name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Year</label>
+            <select name="year" required>
+              {% for y in range(current_year, current_year - 4, -1) %}
+              <option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm">✅ Assign Month</button>
+        </form>
+      </div>
+      {% endif %}
+
+      {% if maint_count > 0 %}
+      <hr class="divider">
+      <div class="section-title" style="font-size:13px;margin-bottom:8px">📋 Months Uploaded</div>
+      <div class="metric-grid-3" style="margin-bottom:12px">
+        <div class="metric-mini"><div class="metric-label">Total Plant-Month Rows</div><div class="metric-value">{{ maint_count | format_int }}</div></div>
+        <div class="metric-mini"><div class="metric-label">Avg Cost (Rs/cum)</div><div class="metric-value" style="font-size:18px">{{ maint_avg }}</div></div>
+        <div class="metric-mini"><div class="metric-label">Above Threshold (&gt;18)</div><div class="metric-value">{{ maint_above }}</div></div>
+      </div>
+      <div style="max-height:280px;overflow-y:auto">
+        {% for g in maint_month_groups %}
+        <div style="margin-bottom:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <span style="font-weight:600;font-size:13px;color:#e2e8f0">
+              {% if g.month %}📅{% else %}⚠️{% endif %} {{ g.label }} · {{ g.rows | length }} plants
+              {% if g.month %}<span style="margin-left:8px;font-size:11px;padding:1px 7px;border-radius:10px;background:rgba(16,185,129,0.15);color:#34d399">🔒 Locked</span>{% endif %}
+            </span>
+            {% if g.month %}
+            <form method="POST" action="{{ url_for('delete_maintenance_month') }}"
+                  onsubmit="return confirm('Delete ALL maintenance cost data for {{ g.label }}?')">
+              <input type="hidden" name="month" value="{{ g.month }}">
+              <input type="hidden" name="year"  value="{{ g.year }}">
+              <input type="hidden" name="_next" value="sysconfig">
+              <button type="submit" class="btn btn-sm" style="background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);padding:3px 10px;font-size:11px">🗑️ Delete</button>
+            </form>
+            {% endif %}
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead><tr><th>Plant Code</th><th>YTD Maint. Cost</th><th>Uploaded At</th></tr></thead>
+              <tbody>
+                {% for row in g.rows %}
+                <tr><td>{{ row.plant_code }}</td><td>{{ row.ytd_maintenance_cost }}</td><td style="font-size:11px;color:#8ea0b4">{{ row.uploaded_at }}</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════
+     MODAL: Manage Employees (nested inside master)
+══════════════════════════════════════════════════════ -->
+<div id="manage-modal" class="modal-overlay" style="display:none;z-index:1100" onclick="if(event.target===this)closeManageModal()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span>✏️ Manage Employees</span>
+      <button type="button" class="modal-close" onclick="closeManageModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="tabs">
+        <button class="tab-btn active" data-tabset="emp" data-tab="add">➕ Add</button>
+        <button class="tab-btn" data-tabset="emp" data-tab="edit">✏️ Edit</button>
+        <button class="tab-btn" data-tabset="emp" data-tab="delete">🗑️ Delete</button>
+        <button class="tab-btn" data-tabset="emp" data-tab="log">📜 Change Log</button>
+      </div>
+      <!-- Add -->
+      <div class="tab-panel active" data-tabpanel="emp" data-tab="add">
+        <form method="POST" action="{{ url_for('add_employee') }}">
+          <input type="hidden" name="_next" value="sysconfig">
+          <div class="form-grid">
+            <div class="form-group"><label>Employee Code *</label><input type="text" name="code" required></div>
+            <div class="form-group"><label>Employee Name</label><input type="text" name="name"></div>
+            <div class="form-group"><label>Designation</label><input type="text" name="designation"></div>
+            <div class="form-group"><label>Category</label><select name="category" data-searchable>{% for c in categories %}<option>{{ c }}</option>{% endfor %}</select></div>
+            <div class="form-group"><label>Plant</label><input type="text" name="plant"></div>
+            <div class="form-group"><label>Plant Code</label><input type="text" name="plant_code"></div>
+          </div>
+          <button type="submit" class="btn btn-primary">➕ Add Employee</button>
+        </form>
+      </div>
+      <!-- Edit -->
+      <div class="tab-panel" data-tabpanel="emp" data-tab="edit">
+        {% if not codes %}
+        <div class="glass-card"><h3>No employees</h3><p>Add or sync employees first.</p></div>
+        {% else %}
+        <form method="GET" action="{{ url_for('sysconfig_page') }}" id="edit-select-form">
+          <div class="form-group">
+            <label>Select Employee Code</label>
+            <select name="edit_code" data-searchable onchange="document.getElementById('edit-select-form').submit()">
+              <option value="">— select —</option>
+              {% for c in codes %}<option value="{{ c }}" {% if edit_emp and edit_emp.employee_code == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+            </select>
+          </div>
+        </form>
+        {% if edit_emp %}
+        <form method="POST" action="{{ url_for('update_employee', code=edit_emp.employee_code) }}" style="margin-top:14px">
+          <input type="hidden" name="_next" value="sysconfig">
+          <div class="form-grid">
+            <div class="form-group"><label>Employee Name</label><input type="text" name="name" value="{{ edit_emp.employee_name or '' }}"></div>
+            <div class="form-group"><label>Designation</label><input type="text" name="designation" value="{{ edit_emp.designation or '' }}"></div>
+            <div class="form-group"><label>Category</label><select name="category" data-searchable>{% for cat in categories %}<option {% if cat == edit_emp.category %}selected{% endif %}>{{ cat }}</option>{% endfor %}</select></div>
+            <div class="form-group"><label>Plant</label><input type="text" name="plant" value="{{ edit_emp.plant or '' }}"></div>
+            <div class="form-group"><label>Plant Code</label><input type="text" name="plant_code" value="{{ edit_emp.plant_code or '' }}"></div>
+          </div>
+          <button type="submit" class="btn btn-primary">💾 Save Changes</button>
+        </form>
+        {% endif %}
+        {% endif %}
+      </div>
+      <!-- Delete -->
+      <div class="tab-panel" data-tabpanel="emp" data-tab="delete">
+        {% if not codes %}
+        <div class="glass-card"><h3>No employees</h3><p>Nothing to delete yet.</p></div>
+        {% else %}
+        <form method="GET" action="{{ url_for('sysconfig_page') }}" id="del-select-form">
+          <div class="form-group">
+            <label>Select Employee Code</label>
+            <select name="del_code" data-searchable onchange="document.getElementById('del-select-form').submit()">
+              <option value="">— select —</option>
+              {% for c in codes %}<option value="{{ c }}" {% if del_emp and del_emp.employee_code == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+            </select>
+          </div>
+        </form>
+        {% if del_emp %}
+        <div class="table-wrapper" style="margin:12px 0">
+          <table>
+            <thead><tr><th>Code</th><th>Name</th><th>Designation</th><th>Category</th><th>Plant</th></tr></thead>
+            <tbody><tr><td>{{ del_emp.employee_code }}</td><td>{{ del_emp.employee_name }}</td><td>{{ del_emp.designation }}</td><td>{{ del_emp.category }}</td><td>{{ del_emp.plant }}</td></tr></tbody>
+          </table>
+        </div>
+        <form method="POST" action="{{ url_for('delete_employee', code=del_emp.employee_code) }}"
+              onsubmit="return confirm('Delete {{ del_emp.employee_code }}? This cannot be undone.')">
+          <input type="hidden" name="_next" value="sysconfig">
+          <button type="submit" class="btn btn-danger">🗑️ Delete Employee</button>
+        </form>
+        {% endif %}
+        {% endif %}
+      </div>
+      <!-- Log -->
+      <div class="tab-panel" data-tabpanel="emp" data-tab="log">
+        {% if not log_rows %}
+        <div class="glass-card"><h3>No changes yet</h3><p>Add, edit or delete an employee to see the log here.</p></div>
+        {% else %}
+        <p class="caption" style="margin-bottom:10px">{{ log_rows | length }} change(s), newest first</p>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Action</th><th>Emp Code</th><th>Old Values</th><th>New Values</th><th>When</th><th>By</th></tr></thead>
+            <tbody>
+              {% for r in log_rows %}
+              <tr>
+                <td>{{ r.action_type }}</td><td>{{ r.employee_code }}</td>
+                <td style="font-size:11px;max-width:140px;word-break:break-all">{{ r.old_value_json }}</td>
+                <td style="font-size:11px;max-width:140px;word-break:break-all">{{ r.new_value_json }}</td>
+                <td>{{ r.changed_at }}</td><td>{{ r.changed_by }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function openModal(id) {
+  var m = document.getElementById(id);
+  if (m) { m.style.display = 'flex'; document.body.style.overflow = 'hidden'; }
+}
+function closeModal(id) {
+  var m = document.getElementById(id);
+  if (m) { m.style.display = 'none'; document.body.style.overflow = ''; }
+}
+function openManageModal(tab) {
+  var m = document.getElementById('manage-modal');
+  if (!m) return;
+  m.style.display = 'flex'; document.body.style.overflow = 'hidden';
+  if (tab) switchTab('emp', tab);
+}
+function closeManageModal() {
+  var m = document.getElementById('manage-modal');
+  if (!m) return;
+  m.style.display = 'none'; document.body.style.overflow = '';
+}
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay').forEach(function(m) { m.style.display = 'none'; });
+    document.body.style.overflow = '';
+  }
+});
+
+var hash = new URLSearchParams(location.search).get('m');
+if (hash) openModal('modal-' + hash);
+
+var params = new URLSearchParams(location.search);
+if (params.get('edit_code'))  { openModal('modal-master'); openManageModal('edit'); }
+if (params.get('del_code'))   { openModal('modal-master'); openManageModal('delete'); }
+
+submitFormAjax(
+  document.getElementById('fetch-form'),
+  document.getElementById('fetch-loading'),
+  document.getElementById('fetch-btn')
+);
+submitFormAjax(
+  document.getElementById('sync-form'),
+  document.getElementById('sync-loading'),
+  document.getElementById('sync-btn')
+);
+
+initDrop('backend-drop', 'backend-file', 'backend-file-name');
+initDrop('maint-drop',   'maint-file',   'maint-file-name');
+document.getElementById('backend-form').addEventListener('submit', function() {
+  document.getElementById('backend-loading').classList.add('active');
+});
+
+var uploadedKeys = {{ maint_uploaded_keys | list | tojson }};
+function checkMaintLock() {
+  var m = parseInt(document.getElementById('maint-month-sel').value);
+  var y = parseInt(document.getElementById('maint-year-sel').value);
+  var locked = uploadedKeys.some(function(k){ return k[0] === m && k[1] === y; });
+  document.getElementById('maint-lock-warn').style.display = locked ? 'block' : 'none';
+  document.getElementById('maint-upload-btn').disabled = locked;
+  document.getElementById('maint-drop').style.opacity = locked ? '0.4' : '1';
+  document.getElementById('maint-drop').style.pointerEvents = locked ? 'none' : '';
+}
+checkMaintLock();
+</script>
+{% endblock %}

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}System Config{% endblock %} — RDC-OPS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Meie+Script&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+<div id="cursor-glow" aria-hidden="true"></div>
+<div id="toast-container"></div>
+
+<div class="app">
+
+  <!-- ── Sidebar ─────────────────────────────────────── -->
+  <nav class="sidebar">
+    <div class="sidebar-header">
+      <a href="{{ url_for('page_home') }}" class="sidebar-back-btn" title="All Modules">⬅ All Modules</a>
+      <div class="sidebar-brand">
+        <img src="{{ url_for('static', filename='img/logo.gif') }}" alt="RDC-OPS" id="app-logo">
+        <div class="sidebar-name">
+          <span class="sidebar-name-main">RDC-OPS</span>
+          <span class="sidebar-name-sub">by Dipjyoti</span>
+        </div>
+        <span class="sidebar-module-badge" style="background:rgba(99,91,255,0.18);color:#8B87FF;border-color:rgba(99,91,255,0.35)">SYS-CFG</span>
+        <span class="sidebar-tagline">System Configuration</span>
+      </div>
+    </div>
+
+    <div class="sidebar-nav">
+      <a href="{{ url_for('sysconfig_page') }}" class="nav-item {% if active_page == 'sysconfig' %}active{% endif %}">
+        <span class="nav-icon">⚙️</span><span class="nav-label">System Config</span>
+      </a>
+    </div>
+
+    <div class="sidebar-footer">
+      {% if current_user %}
+      👤 {{ current_user.full_name }}<br>
+      <span style="font-size:10px;opacity:.7">{{ current_user.role }}</span>
+      {% endif %}
+    </div>
+  </nav>
+
+  <!-- ── Main content ──────────────────────────────────── -->
+  <div class="main">
+
+    <!-- Topbar -->
+    <div class="topbar">
+      <div class="topbar-left">
+        <span class="topbar-label" style="animation-delay:420ms">SYS-CFG</span>
+        <span class="topbar-sep">·</span>
+        <span class="topbar-label" style="animation-delay:520ms">System Configuration</span>
+      </div>
+      <div class="topbar-right">
+        <!-- Oracle live dot -->
+        <div id="oracle-status-wrap" style="display:flex;align-items:center;gap:6px;cursor:pointer"
+             onclick="window.location='{{ url_for('sysconfig_page') }}'">
+          <span id="oracle-dot" class="oracle-dot oracle-dot-checking"></span>
+          <span id="oracle-label" style="font-size:12px;color:var(--text-muted)">Oracle</span>
+        </div>
+        <!-- Theme picker -->
+        <div class="theme-picker-wrap">
+          <button class="theme-picker-btn" id="theme-btn" title="Theme">
+            <span id="theme-icon">🌤</span> Theme
+          </button>
+          <div class="theme-picker-dropdown" id="theme-dropdown">
+            <div class="theme-picker-opts">
+              {% for t in ['Daytime','Dusk','Night','Deep Space','Forest','Aurora'] %}
+              <button class="theme-picker-opt {% if current_theme == t %}active{% endif %}"
+                      data-theme="{{ t }}">{{ t }}</button>
+              {% endfor %}
+            </div>
+            <div class="theme-picker-foot">
+              <label class="theme-picker-toggle-row">
+                <input type="checkbox" id="auto-theme-cb" {% if auto_theme %}checked{% endif %}>
+                <span>Auto (time-based)</span>
+              </label>
+              <label class="theme-picker-toggle-row">
+                <input type="checkbox" id="animate-cb" {% if bg_animate %}checked{% endif %}>
+                <span>Animation</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <!-- User badge -->
+        {% if current_user %}
+        <span style="font-size:12px;color:var(--text-muted)">{{ current_user.full_name }}</span>
+        <span class="sidebar-module-badge" style="font-size:10px;padding:0 5px;margin-left:3px;
+          {% if current_user.role == 'SUPER_ADMIN' %}background:rgba(255,80,80,.12);color:#FF5050;border-color:rgba(255,80,80,.25)
+          {% elif current_user.role == 'ADMIN' %}background:rgba(99,91,255,.12);color:#8B87FF;border-color:rgba(99,91,255,.25)
+          {% else %}background:rgba(16,185,129,.10);color:#34d399;border-color:rgba(16,185,129,.25){% endif %}">
+          {{ current_user.role }}
+        </span>
+        {% endif %}
+        <a href="{{ url_for('logout') }}" class="btn btn-secondary btn-sm">🚪 Logout</a>
+      </div>
+    </div>
+
+    <!-- Flash messages -->
+    {% with messages = get_flashed_messages(with_categories=True) %}
+    {% if messages %}
+    <div style="padding:0 24px;margin-top:8px">
+      {% for cat, msg in messages %}
+      <div class="alert alert-{{ 'success' if cat == 'success' else 'warning' if cat == 'warning' else 'error' if cat == 'error' else 'info' }}"
+           style="margin-bottom:6px">{{ msg }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <div class="content">
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

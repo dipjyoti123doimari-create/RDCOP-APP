@@ -48,6 +48,9 @@
       <a href="{{ url_for('ecmd_settings') }}" class="nav-item {% if active_page == 'settings' %}active{% endif %}">
         <span class="nav-icon">⚙️</span><span class="nav-label">Settings</span>
       </a>
+      <a href="{{ url_for('sysconfig_page') }}" class="nav-item {% if active_page == 'sysconfig' %}active{% endif %}">
+        <span class="nav-icon">🗄️</span><span class="nav-label">System Config</span>
+      </a>
       {% endif %}
     </div>
 
