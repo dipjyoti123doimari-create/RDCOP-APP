@@ -178,6 +178,99 @@ function confirmAction(msg, callback) {
   if (window.confirm(msg)) callback();
 }
 
+/* ---- Combo input: searchable dropdown + free-text entry ----
+   Usage: <input type="text" name="plant" data-combo data-opts-id="my-datalist"
+                 data-sync-target="plant_code-input-id" data-sync-map="byName">
+   data-opts-id  : id of a <datalist> element whose <option value="..."> items are the suggestions
+   data-sync-target : id of the paired input to auto-fill when a known item is picked
+   data-sync-map : "byName" | "byCode" — key in window._plantMap used for lookup
+*/
+function initComboInputs() {
+  document.querySelectorAll('input[data-combo]').forEach(function (inp) {
+    var optsId   = inp.dataset.optsId;
+    var syncId   = inp.dataset.syncTarget;
+    var syncMap  = inp.dataset.syncMap;   /* "byName" or "byCode" */
+    var dl       = optsId ? document.getElementById(optsId) : null;
+    var allOpts  = dl ? Array.from(dl.options).map(function(o){ return o.value; }) : [];
+
+    /* Build panel */
+    var wrap = document.createElement('div');
+    wrap.className = 'ss-wrap';
+    inp.parentNode.insertBefore(wrap, inp);
+    wrap.appendChild(inp);
+
+    var panel = document.createElement('div');
+    panel.className = 'ss-panel';
+    var searchRow = document.createElement('div');
+    searchRow.className = 'ss-search-row';
+    var srch = document.createElement('input');
+    srch.type = 'text'; srch.className = 'ss-search';
+    srch.placeholder = '🔍 Search…'; srch.autocomplete = 'off';
+    searchRow.appendChild(srch);
+    var list = document.createElement('div');
+    list.className = 'ss-list';
+    panel.appendChild(searchRow);
+    panel.appendChild(list);
+
+    var isOpen = false;
+
+    function renderList(q) {
+      q = (q || '').toLowerCase().trim();
+      list.innerHTML = '';
+      var filtered = allOpts.filter(function(v) {
+        return !q || v.toLowerCase().includes(q);
+      });
+      if (!filtered.length) {
+        var empty = document.createElement('div');
+        empty.className = 'ss-item ss-placeholder';
+        empty.textContent = 'No match — type to use custom value';
+        list.appendChild(empty);
+        return;
+      }
+      filtered.forEach(function(v) {
+        var item = document.createElement('div');
+        item.className = 'ss-item' + (v === inp.value ? ' ss-active' : '');
+        item.textContent = v;
+        item.addEventListener('mousedown', function(e) {
+          e.preventDefault();
+          inp.value = v;
+          closePanel();
+          /* sync paired field */
+          if (syncId && syncMap && window._plantMap && window._plantMap[syncMap]) {
+            var paired = document.getElementById(syncId);
+            if (paired) paired.value = window._plantMap[syncMap][v] || '';
+          }
+          inp.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        list.appendChild(item);
+      });
+    }
+
+    function openPanel() {
+      isOpen = true;
+      srch.value = '';
+      renderList('');
+      var r = inp.getBoundingClientRect();
+      panel.style.top   = (r.bottom + 4) + 'px';
+      panel.style.left  = r.left + 'px';
+      panel.style.width = r.width + 'px';
+      document.body.appendChild(panel);
+      srch.focus();
+    }
+    function closePanel() {
+      isOpen = false;
+      if (panel.parentNode) panel.parentNode.removeChild(panel);
+    }
+
+    inp.addEventListener('focus', function() { if (!isOpen) openPanel(); });
+    inp.addEventListener('click', function(e) { e.stopPropagation(); if (!isOpen) openPanel(); });
+    inp.addEventListener('keydown', function(e) { if (e.key === 'Escape') closePanel(); });
+    panel.addEventListener('click', function(e) { e.stopPropagation(); });
+    srch.addEventListener('input', function() { renderList(srch.value); });
+    document.addEventListener('click', function() { if (isOpen) closePanel(); });
+  });
+}
+
 /* ---- Searchable SELECT (LOV combobox) ---- */
 function initSearchableSelects() {
   document.querySelectorAll('select[data-searchable]').forEach(function (sel) {
@@ -380,6 +473,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
   /* Searchable LOV selects */
   initSearchableSelects();
+
+  /* Combo inputs (searchable dropdown + free-text) */
+  initComboInputs();
 
   /* Custom multi-selects */
   msInit();

@@ -116,14 +116,16 @@
               <div class="form-group">
                 <label>Plant</label>
                 <input type="text" name="plant" id="du-add-plant-name" autocomplete="off"
-                       list="du-pl-names" placeholder="Type or select plant"
-                       oninput="syncPlant('du-add','name')">
+                       placeholder="Type or select plant"
+                       data-combo data-opts-id="du-pl-names"
+                       data-sync-target="du-add-plant-code" data-sync-map="byName">
               </div>
               <div class="form-group">
                 <label>Plant Code</label>
                 <input type="text" name="plant_code" id="du-add-plant-code" autocomplete="off"
-                       list="du-pl-codes" placeholder="Type or select code"
-                       oninput="syncPlant('du-add','code')">
+                       placeholder="Type or select code"
+                       data-combo data-opts-id="du-pl-codes"
+                       data-sync-target="du-add-plant-name" data-sync-map="byCode">
               </div>
             </div>
             <button type="submit" class="btn btn-primary">➕ Add Employee</button>
@@ -156,16 +158,18 @@
               <div class="form-group">
                 <label>Plant</label>
                 <input type="text" name="plant" id="du-edit-plant-name" autocomplete="off"
-                       list="du-pl-names" placeholder="Type or select plant"
+                       placeholder="Type or select plant"
                        value="{{ edit_emp.plant or '' }}"
-                       oninput="syncPlant('du-edit','name')">
+                       data-combo data-opts-id="du-pl-names"
+                       data-sync-target="du-edit-plant-code" data-sync-map="byName">
               </div>
               <div class="form-group">
                 <label>Plant Code</label>
                 <input type="text" name="plant_code" id="du-edit-plant-code" autocomplete="off"
-                       list="du-pl-codes" placeholder="Type or select code"
+                       placeholder="Type or select code"
                        value="{{ edit_emp.plant_code or '' }}"
-                       oninput="syncPlant('du-edit','code')">
+                       data-combo data-opts-id="du-pl-codes"
+                       data-sync-target="du-edit-plant-name" data-sync-map="byCode">
               </div>
             </div>
             <button type="submit" class="btn btn-primary">💾 Save Changes</button>
@@ -480,19 +484,12 @@
 {% endblock %}
 {% block scripts %}
 <script>
-/* Plant ↔ Plant Code sync */
-var _plantMap = { byName: {}, byCode: {} };
+/* Plant ↔ Plant Code map (used by initComboInputs in app.js) */
+window._plantMap = { byName: {}, byCode: {} };
 {% for p in plant_list %}
-_plantMap.byName["{{ p.plant_name | replace('"', '\\"') }}"] = "{{ p.plant_code }}";
-_plantMap.byCode["{{ p.plant_code }}"] = "{{ p.plant_name | replace('"', '\\"') }}";
+window._plantMap.byName["{{ p.plant_name | replace('"', '\\"') }}"] = "{{ p.plant_code }}";
+window._plantMap.byCode["{{ p.plant_code }}"] = "{{ p.plant_name | replace('"', '\\"') }}";
 {% endfor %}
-function syncPlant(prefix, changed) {
-  var nameEl = document.getElementById(prefix + '-plant-name');
-  var codeEl = document.getElementById(prefix + '-plant-code');
-  if (!nameEl || !codeEl) return;
-  if (changed === 'name') { codeEl.value = _plantMap.byName[nameEl.value] || ''; }
-  else { nameEl.value = _plantMap.byCode[codeEl.value] || ''; }
-}
 
   initDrop('backend-drop', 'backend-file', 'backend-file-name');
   initDrop('maint-drop',   'maint-file',   'maint-file-name');

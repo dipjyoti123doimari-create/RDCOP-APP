@@ -428,14 +428,16 @@
             <div class="form-group">
               <label>Plant</label>
               <input type="text" name="plant" id="add-plant-name" autocomplete="off"
-                     list="pl-names" placeholder="Type or select plant"
-                     oninput="syncPlant('add','name')">
+                     placeholder="Type or select plant"
+                     data-combo data-opts-id="pl-names"
+                     data-sync-target="add-plant-code" data-sync-map="byName">
             </div>
             <div class="form-group">
               <label>Plant Code</label>
               <input type="text" name="plant_code" id="add-plant-code" autocomplete="off"
-                     list="pl-codes" placeholder="Type or select code"
-                     oninput="syncPlant('add','code')">
+                     placeholder="Type or select code"
+                     data-combo data-opts-id="pl-codes"
+                     data-sync-target="add-plant-name" data-sync-map="byCode">
             </div>
           </div>
           <button type="submit" class="btn btn-primary">➕ Add Employee</button>
@@ -465,16 +467,18 @@
             <div class="form-group">
               <label>Plant</label>
               <input type="text" name="plant" id="edit-plant-name" autocomplete="off"
-                     list="pl-names" placeholder="Type or select plant"
+                     placeholder="Type or select plant"
                      value="{{ edit_emp.plant or '' }}"
-                     oninput="syncPlant('edit','name')">
+                     data-combo data-opts-id="pl-names"
+                     data-sync-target="edit-plant-code" data-sync-map="byName">
             </div>
             <div class="form-group">
               <label>Plant Code</label>
               <input type="text" name="plant_code" id="edit-plant-code" autocomplete="off"
-                     list="pl-codes" placeholder="Type or select code"
+                     placeholder="Type or select code"
                      value="{{ edit_emp.plant_code or '' }}"
-                     oninput="syncPlant('edit','code')">
+                     data-combo data-opts-id="pl-codes"
+                     data-sync-target="edit-plant-name" data-sync-map="byCode">
             </div>
           </div>
           <button type="submit" class="btn btn-primary">💾 Save Changes</button>
@@ -573,28 +577,12 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
-/* Plant ↔ Plant Code sync */
-var _plantMap = {
-  byName: {},
-  byCode: {}
-};
+/* Plant ↔ Plant Code map (used by initComboInputs in app.js) */
+window._plantMap = { byName: {}, byCode: {} };
 {% for p in plant_list %}
-_plantMap.byName["{{ p.plant_name | replace('"', '\\"') }}"] = "{{ p.plant_code }}";
-_plantMap.byCode["{{ p.plant_code }}"] = "{{ p.plant_name | replace('"', '\\"') }}";
+window._plantMap.byName["{{ p.plant_name | replace('"', '\\"') }}"] = "{{ p.plant_code }}";
+window._plantMap.byCode["{{ p.plant_code }}"] = "{{ p.plant_name | replace('"', '\\"') }}";
 {% endfor %}
-
-function syncPlant(prefix, changed) {
-  var nameEl = document.getElementById(prefix + '-plant-name');
-  var codeEl = document.getElementById(prefix + '-plant-code');
-  if (!nameEl || !codeEl) return;
-  if (changed === 'name') {
-    var code = _plantMap.byName[nameEl.value] || '';
-    codeEl.value = code;
-  } else {
-    var name = _plantMap.byCode[codeEl.value] || '';
-    nameEl.value = name;
-  }
-}
 
 var hash = new URLSearchParams(location.search).get('m');
 if (hash) openModal('modal-' + hash);
