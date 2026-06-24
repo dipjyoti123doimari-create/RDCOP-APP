@@ -421,12 +421,24 @@
         <form method="POST" action="{{ url_for('add_employee') }}">
           <input type="hidden" name="_next" value="sysconfig">
           <div class="form-grid">
-            <div class="form-group"><label>Employee Code *</label><input type="text" name="code" required></div>
-            <div class="form-group"><label>Employee Name</label><input type="text" name="name"></div>
-            <div class="form-group"><label>Designation</label><input type="text" name="designation"></div>
+            <div class="form-group"><label>Employee Code *</label><input type="text" name="code" required autocomplete="off"></div>
+            <div class="form-group"><label>Employee Name</label><input type="text" name="name" autocomplete="off"></div>
+            <div class="form-group"><label>Designation</label><input type="text" name="designation" autocomplete="off"></div>
             <div class="form-group"><label>Category</label><select name="category">{% for c in categories %}<option>{{ c }}</option>{% endfor %}</select></div>
-            <div class="form-group"><label>Plant</label><input type="text" name="plant" autocomplete="off"></div>
-            <div class="form-group"><label>Plant Code</label><input type="text" name="plant_code" autocomplete="off"></div>
+            <div class="form-group">
+              <label>Plant</label>
+              <select name="plant" id="add-plant-name" onchange="syncPlant('add','name')">
+                <option value="">— select plant —</option>
+                {% for p in plant_list %}<option value="{{ p.plant_name }}">{{ p.plant_name }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Plant Code</label>
+              <select name="plant_code" id="add-plant-code" onchange="syncPlant('add','code')">
+                <option value="">— select code —</option>
+                {% for p in plant_list %}<option value="{{ p.plant_code }}">{{ p.plant_code }}</option>{% endfor %}
+              </select>
+            </div>
           </div>
           <button type="submit" class="btn btn-primary">➕ Add Employee</button>
         </form>
@@ -452,8 +464,20 @@
             <div class="form-group"><label>Employee Name</label><input type="text" name="name" autocomplete="off" value="{{ edit_emp.employee_name or '' }}"></div>
             <div class="form-group"><label>Designation</label><input type="text" name="designation" autocomplete="off" value="{{ edit_emp.designation or '' }}"></div>
             <div class="form-group"><label>Category</label><select name="category">{% for cat in categories %}<option {% if cat == edit_emp.category %}selected{% endif %}>{{ cat }}</option>{% endfor %}</select></div>
-            <div class="form-group"><label>Plant</label><input type="text" name="plant" autocomplete="off" value="{{ edit_emp.plant or '' }}"></div>
-            <div class="form-group"><label>Plant Code</label><input type="text" name="plant_code" autocomplete="off" value="{{ edit_emp.plant_code or '' }}"></div>
+            <div class="form-group">
+              <label>Plant</label>
+              <select name="plant" id="edit-plant-name" onchange="syncPlant('edit','name')">
+                <option value="">— select plant —</option>
+                {% for p in plant_list %}<option value="{{ p.plant_name }}" {% if p.plant_name == edit_emp.plant %}selected{% endif %}>{{ p.plant_name }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Plant Code</label>
+              <select name="plant_code" id="edit-plant-code" onchange="syncPlant('edit','code')">
+                <option value="">— select code —</option>
+                {% for p in plant_list %}<option value="{{ p.plant_code }}" {% if p.plant_code == edit_emp.plant_code %}selected{% endif %}>{{ p.plant_code }}</option>{% endfor %}
+              </select>
+            </div>
           </div>
           <button type="submit" class="btn btn-primary">💾 Save Changes</button>
         </form>
@@ -546,6 +570,29 @@ document.addEventListener('keydown', function(e) {
     document.body.style.overflow = '';
   }
 });
+
+/* Plant ↔ Plant Code sync */
+var _plantMap = {
+  byName: {},
+  byCode: {}
+};
+{% for p in plant_list %}
+_plantMap.byName["{{ p.plant_name | replace('"', '\\"') }}"] = "{{ p.plant_code }}";
+_plantMap.byCode["{{ p.plant_code }}"] = "{{ p.plant_name | replace('"', '\\"') }}";
+{% endfor %}
+
+function syncPlant(prefix, changed) {
+  var nameEl = document.getElementById(prefix + '-plant-name');
+  var codeEl = document.getElementById(prefix + '-plant-code');
+  if (!nameEl || !codeEl) return;
+  if (changed === 'name') {
+    var code = _plantMap.byName[nameEl.value] || '';
+    codeEl.value = code;
+  } else {
+    var name = _plantMap.byCode[codeEl.value] || '';
+    nameEl.value = name;
+  }
+}
 
 var hash = new URLSearchParams(location.search).get('m');
 if (hash) openModal('modal-' + hash);

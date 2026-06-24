@@ -2679,6 +2679,7 @@ def page_data_uploader():
                            codes=codes, log_rows=log_rows, ora_b_preview=ora_b_preview,
                            edit_emp=edit_emp, del_emp=del_emp,
                            categories=config.CATEGORIES,
+                           plant_list=database.get_tp_plants(),
                            today=str(_date.today()),
                            today_first=str(_date.today().replace(day=1)))
 
@@ -4541,6 +4542,7 @@ def sysconfig_page():
                            codes=codes, log_rows=log_rows,
                            edit_emp=edit_emp, del_emp=del_emp,
                            categories=config.CATEGORIES,
+                           plant_list=database.get_tp_plants(),
                            today=str(_date.today()),
                            today_first=str(_date.today().replace(day=1)),
                            bg_auto=bg_auto(), bg_animate=bg_animate(), bg_theme=bg_theme(),
