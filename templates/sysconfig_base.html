@@ -121,7 +121,11 @@
   </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<script src="{{ url_for('static', filename='js/background.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script>
+  initBackground({ animate: {{ 'true' if bg_animate else 'false' }}, autoTheme: {{ 'true' if bg_auto else 'false' }}, theme: '{{ bg_theme }}' });
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
