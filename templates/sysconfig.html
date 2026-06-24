@@ -404,14 +404,17 @@
   <div class="modal-box">
     <div class="modal-header">
       <span>✏️ Manage Employees</span>
-      <button type="button" class="modal-close" onclick="closeManageModal()">✕</button>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="closeManageModal();openModal('modal-master')">← Back</button>
+        <button type="button" class="modal-close" onclick="closeManageModal()">✕</button>
+      </div>
     </div>
     <div class="modal-body">
       <div class="tabs">
-        <button class="tab-btn active" data-tabset="emp" data-tab="add">➕ Add</button>
-        <button class="tab-btn" data-tabset="emp" data-tab="edit">✏️ Edit</button>
-        <button class="tab-btn" data-tabset="emp" data-tab="delete">🗑️ Delete</button>
-        <button class="tab-btn" data-tabset="emp" data-tab="log">📜 Change Log</button>
+        <button type="button" class="tab-btn active" data-tabset="emp" data-tab="add">➕ Add</button>
+        <button type="button" class="tab-btn" data-tabset="emp" data-tab="edit">✏️ Edit</button>
+        <button type="button" class="tab-btn" data-tabset="emp" data-tab="delete">🗑️ Delete</button>
+        <button type="button" class="tab-btn" data-tabset="emp" data-tab="log">📜 Change Log</button>
       </div>
       <!-- Add -->
       <div class="tab-panel active" data-tabpanel="emp" data-tab="add">
@@ -525,6 +528,8 @@ function closeModal(id) {
   if (m) { m.style.display = 'none'; document.body.style.overflow = ''; }
 }
 function openManageModal(tab) {
+  var master = document.getElementById('modal-master');
+  if (master) master.style.display = 'none';
   var m = document.getElementById('manage-modal');
   if (!m) return;
   m.style.display = 'flex'; document.body.style.overflow = 'hidden';
