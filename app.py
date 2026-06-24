@@ -469,14 +469,20 @@ def _require_login():
         "/tp/action/add-plant", "/tp/action/update-plant", "/tp/action/delete-plant",
         "/btrtp/settings", "/tp/settings",
     )
+    _ecmd_entry_roles = (auth.PLANT_USER, auth.REGIONAL_USER,
+                         auth.HO_VIEWER, auth.FINANCE_VIEWER)
     if role != auth.SUPER_ADMIN:
-        for pattern in _admin_only_patterns:
-            if pattern in path:
-                auth.log_activity(user, "ACCESS_DENIED",
-                                  details={"path": path, "method": request.method})
-                return render_template("access_denied.html",
-                                       current_user=user,
-                                       required_roles=[auth.SUPER_ADMIN]), 403
+        # ECMD data-entry actions are allowed for PLANT_USER / REGIONAL_USER
+        if path.startswith("/ecmd/") and role in _ecmd_entry_roles:
+            pass  # let ECMD routes handle their own auth
+        else:
+            for pattern in _admin_only_patterns:
+                if pattern in path:
+                    auth.log_activity(user, "ACCESS_DENIED",
+                                      details={"path": path, "method": request.method})
+                    return render_template("access_denied.html",
+                                           current_user=user,
+                                           required_roles=[auth.SUPER_ADMIN]), 403
 
     # Email send: PLANT_USER cannot send emails
     if role == auth.PLANT_USER and "/action/send-email" in path:
@@ -485,12 +491,19 @@ def _require_login():
                                required_roles=[auth.SUPER_ADMIN, auth.HO_VIEWER,
                                                auth.FINANCE_VIEWER, auth.REGIONAL_USER]), 403
 
-    # Non-SUPER_ADMIN users must not enter any module page — redirect to user dashboard
-    _module_prefixes = ("/dashboard", "/id", "/tp/", "/btrtp/", "/ecmd/")
+    # Non-SUPER_ADMIN users must not enter I&D / TP / BTRTP module pages
+    # PLANT_USER and REGIONAL_USER ARE allowed into ECMD (data entry + reports)
+    _module_prefixes = ("/dashboard", "/id", "/tp/", "/btrtp/")
+    _ecmd_allowed_roles = (auth.PLANT_USER, auth.REGIONAL_USER,
+                           auth.HO_VIEWER, auth.FINANCE_VIEWER)
     if role != auth.SUPER_ADMIN and request.method == "GET":
-        for pfx in _module_prefixes:
-            if path == pfx.rstrip("/") or path.startswith(pfx):
+        if path.startswith("/ecmd/") or path == "/ecmd":
+            if role not in _ecmd_allowed_roles:
                 return redirect(url_for("page_home"))
+        else:
+            for pfx in _module_prefixes:
+                if path == pfx.rstrip("/") or path.startswith(pfx):
+                    return redirect(url_for("page_home"))
 
 
 # ── Context processor (sidebar active-page + bg settings + auth) ────────────
