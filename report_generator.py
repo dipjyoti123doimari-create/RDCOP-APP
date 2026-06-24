@@ -83,11 +83,16 @@ def _coltype(col: str) -> str:
 
 
 def _sort_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """Deduction rows first (largest first), then incentive rows, then plain."""
+    """Deduction rows first (largest first), then incentive rows, then plain.
+    Waived rows (deduction_amount=0 but remarks contains 'waiv') sort with deduction rows."""
     out = df.copy()
     out["_band"] = 2
     out.loc[out["incentive_amount"] > 0, "_band"] = 1
     out.loc[out["deduction_amount"] > 0, "_band"] = 0
+    # Waived employees — deduction zeroed but should sort/display with red rows
+    if "remarks" in out.columns:
+        waived_mask = out["remarks"].astype(str).str.lower().str.contains("waiv", na=False)
+        out.loc[waived_mask, "_band"] = 0
     out = out.sort_values(
         by=["_band", "deduction_amount", "incentive_amount"],
         ascending=[True, False, False],
