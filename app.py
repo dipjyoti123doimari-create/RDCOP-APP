@@ -3860,12 +3860,14 @@ def _ecmd_mon_tag(month, year):
 
 
 @app.route("/ecmd")
+@auth.login_required
 def page_ecmd():
     return redirect(url_for("ecmd_dashboard"))
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 @app.route("/ecmd/dashboard")
+@auth.login_required
 def ecmd_dashboard():
     all_counts  = database.get_table_counts()
     counts = {
@@ -3883,6 +3885,7 @@ def ecmd_dashboard():
 
 # ── Data Entry ────────────────────────────────────────────────────────────────
 @app.route("/ecmd/data-entry", methods=["GET", "POST"])
+@auth.login_required
 def ecmd_data_entry():
     import calendar as _cal
 
@@ -3910,6 +3913,7 @@ def ecmd_data_entry():
 
 
 @app.route("/ecmd/action/save-reading", methods=["POST"])
+@auth.login_required
 def ecmd_save_reading():
     plant_code = request.form.get("plant_code", "").strip()
     month      = int(request.form.get("month", _date.today().month))
@@ -3952,6 +3956,7 @@ def ecmd_save_reading():
 
 
 @app.route("/ecmd/action/delete-reading", methods=["POST"])
+@auth.login_required
 def ecmd_delete_reading():
     plant_code = request.form.get("plant_code", "").strip()
     month      = int(request.form.get("month", _date.today().month))
@@ -3966,6 +3971,7 @@ def ecmd_delete_reading():
 
 # ── Calculate ─────────────────────────────────────────────────────────────────
 @app.route("/ecmd/calculate", methods=["GET", "POST"])
+@auth.login_required
 def ecmd_calculate():
     # Unified page: calculate → redirect to reports with dates in query params
     today = _date.today()
@@ -3980,6 +3986,7 @@ def ecmd_calculate():
 
 # ── Reports ───────────────────────────────────────────────────────────────────
 @app.route("/ecmd/reports")
+@auth.login_required
 def ecmd_reports():
     import calendar as _cal
 
@@ -4196,6 +4203,7 @@ def _ecmd_build_excel(plant_rows, loc_rows, month, year):
 
 
 @app.route("/ecmd/download-excel")
+@auth.login_required
 def ecmd_download_excel():
     plant_rows = _ms("ecmd", "report_plant_rows", _ms("ecmd", "plant_rows", []))
     loc_rows   = _ms("ecmd", "report_loc_rows",   _ms("ecmd", "loc_rows",   []))
@@ -4211,6 +4219,7 @@ def ecmd_download_excel():
 
 
 @app.route("/ecmd/download-csv")
+@auth.login_required
 def ecmd_download_csv():
     plant_rows = _ms("ecmd", "report_plant_rows", _ms("ecmd", "plant_rows", []))
     month = _ms("ecmd", "calc_month", _date.today().month)
@@ -4225,6 +4234,7 @@ def ecmd_download_csv():
 
 
 @app.route("/ecmd/action/send-email", methods=["POST"])
+@auth.login_required
 def ecmd_send_email():
     plant_rows = _ms("ecmd", "report_plant_rows", _ms("ecmd", "plant_rows", []))
     loc_rows   = _ms("ecmd", "report_loc_rows",   _ms("ecmd", "loc_rows",   []))
@@ -4328,6 +4338,7 @@ def ecmd_send_email():
 
 # ── Settings ──────────────────────────────────────────────────────────────────
 @app.route("/ecmd/settings", methods=["GET"])
+@auth.login_required
 def ecmd_settings():
     smtp             = email_helper.get_smtp_config()
     email_configured = bool(smtp.get("host") and smtp.get("sender"))
@@ -4378,6 +4389,7 @@ def ecmd_set_entry_period():
 
 
 @app.route("/ecmd/settings/save-schedule", methods=["POST"])
+@auth.admin_required
 def ecmd_save_schedule():
     sched_time = request.form.get("sched_time", "08:00").strip()
     database.set_module_settings_bulk("ecmd", {
@@ -4400,6 +4412,7 @@ def ecmd_save_schedule():
 
 
 @app.route("/ecmd/settings/toggle-schedule", methods=["POST"])
+@auth.admin_required
 def ecmd_toggle_schedule():
     current = database.get_module_setting("ecmd", "email_schedule_enabled", "false")
     new_val = "false" if current == "true" else "true"
@@ -4409,6 +4422,7 @@ def ecmd_toggle_schedule():
 
 
 @app.route("/ecmd/settings/save-email-defaults", methods=["POST"])
+@auth.admin_required
 def ecmd_save_email_defaults():
     database.set_module_settings_bulk("ecmd", {
         "email_default_to":      request.form.get("default_to", "").strip(),
