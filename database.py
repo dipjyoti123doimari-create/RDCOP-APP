@@ -1291,7 +1291,7 @@ def delete_ecmd_reading(plant_code: str, month: int, year: int) -> int:
 # ── ECMD entry mode ──────────────────────────────────────────────────────────
 
 def get_ecmd_entry_mode(plant_code: str, month: int, year: int) -> str:
-    """Return 'monthly' or 'daily' for this plant+month+year. Default: 'monthly'."""
+    """Return 'monthly', 'daily', or 'none' for this plant+month+year. Default: 'none'."""
     conn = get_connection()
     try:
         cur = conn.execute(
@@ -1299,7 +1299,7 @@ def get_ecmd_entry_mode(plant_code: str, month: int, year: int) -> str:
             (str(plant_code).strip(), month, year)
         )
         row = cur.fetchone()
-        return row[0] if row else "monthly"
+        return row[0] if row else "none"
     finally:
         conn.close()
 

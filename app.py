@@ -4005,7 +4005,7 @@ def ecmd_set_entry_mode():
     month      = int(request.form.get("month", _date.today().month))
     year       = int(request.form.get("year",  _date.today().year))
     mode       = request.form.get("mode", "monthly")
-    if mode not in ("monthly", "daily"):
+    if mode not in ("monthly", "daily", "none"):
         flash("Invalid mode.", "error")
         return redirect(url_for("ecmd_data_entry", month=month, year=year))
     # Block if data already exists in the OTHER mode

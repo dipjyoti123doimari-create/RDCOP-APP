@@ -40,12 +40,15 @@
   <span class="legend-item" style="background:var(--glass-bg)">No readings yet</span>
 </div>
 
+{% set month_abbrs = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
+{% set day_names   = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}
+
 {% for plant in plant_rows %}
 {% set r         = readings_map.get(plant.plant_code, {}) %}
 {% set has_mth   = r|length > 0 %}
 {% set day_rows  = daily_map.get(plant.plant_code, []) %}
 {% set has_daily = day_rows|length > 0 %}
-{% set mode      = mode_map.get(plant.plant_code, 'monthly') %}
+{% set mode      = mode_map.get(plant.plant_code, 'none') %}
 {% set locked    = (mode == 'daily' and has_daily) or (mode == 'monthly' and has_mth) %}
 
 <div class="card" id="plant-card-{{ plant.plant_code }}"
@@ -87,62 +90,74 @@
     {% endif %}
   </div>
 
-  <!-- Mode toggle -->
-  <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center">
+  <!-- ── Mode toggle ── -->
+  <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
     <span style="font-size:12px;font-weight:600;color:var(--text-muted)">Entry Mode:</span>
+
     {% if locked %}
+      {# Mode is fixed — show label only #}
       {% if mode == 'daily' %}
-      <span class="legend-item" style="background:rgba(99,91,255,0.18);color:#8B87FF;border:1px solid rgba(99,91,255,0.3);font-size:12px;padding:4px 12px;border-radius:6px">📅 Day Wise (locked)</span>
-      <span style="font-size:11px;color:var(--text-faint)">Delete all days to switch to Monthly</span>
+      <span style="background:rgba(99,91,255,0.18);color:#8B87FF;border:1px solid rgba(99,91,255,0.3);
+                   font-size:12px;padding:5px 14px;border-radius:6px;font-weight:600">📅 Day Wise ·
+        <span style="font-weight:400;font-size:11px">locked — delete all days to switch</span></span>
       {% else %}
-      <span class="legend-item" style="background:rgba(99,91,255,0.18);color:#8B87FF;border:1px solid rgba(99,91,255,0.3);font-size:12px;padding:4px 12px;border-radius:6px">📊 Monthly Data (locked)</span>
-      <span style="font-size:11px;color:var(--text-faint)">Delete monthly data to switch to Day Wise</span>
+      <span style="background:rgba(99,91,255,0.18);color:#8B87FF;border:1px solid rgba(99,91,255,0.3);
+                   font-size:12px;padding:5px 14px;border-radius:6px;font-weight:600">📊 Month Data ·
+        <span style="font-weight:400;font-size:11px">locked — delete data to switch</span></span>
       {% endif %}
+
     {% else %}
-    <form method="POST" action="{{ url_for('ecmd_set_entry_mode') }}" style="display:inline-flex;gap:6px;margin:0">
-      <input type="hidden" name="plant_code" value="{{ plant.plant_code }}">
-      <input type="hidden" name="month" value="{{ sel_month }}">
-      <input type="hidden" name="year"  value="{{ sel_year }}">
-      <button type="submit" name="mode" value="monthly"
-              class="btn btn-sm {% if mode == 'monthly' %}btn-primary{% else %}btn-secondary{% endif %}">
-        📊 Month Data
-      </button>
-      <button type="submit" name="mode" value="daily"
-              class="btn btn-sm {% if mode == 'daily' %}btn-primary{% else %}btn-secondary{% endif %}">
-        📅 Day Wise
-      </button>
-    </form>
+      {# Free to choose — show toggle buttons (page-submit to set mode) #}
+      <form method="POST" action="{{ url_for('ecmd_set_entry_mode') }}"
+            style="display:inline-flex;gap:6px;margin:0">
+        <input type="hidden" name="plant_code" value="{{ plant.plant_code }}">
+        <input type="hidden" name="month" value="{{ sel_month }}">
+        <input type="hidden" name="year"  value="{{ sel_year }}">
+        <button type="submit" name="mode" value="monthly"
+                class="btn btn-sm {% if mode == 'monthly' %}btn-primary{% else %}btn-secondary{% endif %}">
+          📊 Month Data
+        </button>
+        <button type="submit" name="mode" value="daily"
+                class="btn btn-sm {% if mode == 'daily' %}btn-primary{% else %}btn-secondary{% endif %}">
+          📅 Day Wise
+        </button>
+      </form>
+      {% if mode == 'none' or not mode %}
+      <span style="font-size:11px;color:var(--text-faint);margin-left:4px">← Select a mode to begin entering data</span>
+      {% endif %}
     {% endif %}
   </div>
 
-  <!-- ════════════════ MONTHLY MODE ════════════════ -->
+  {# ── Show form only once a mode is chosen ── #}
+  {% if mode and mode != 'none' %}
+
+  <!-- ════════ MONTHLY MODE ════════ -->
   {% if mode == 'monthly' %}
   <form method="POST" action="{{ url_for('ecmd_save_reading') }}">
     <input type="hidden" name="plant_code" value="{{ plant.plant_code }}">
     <input type="hidden" name="month"      value="{{ sel_month }}">
     <input type="hidden" name="year"       value="{{ sel_year }}">
-
     {% include 'ecmd_reading_fields.html' with context %}
-
     <div class="btn-group">
       <button type="submit" class="btn btn-primary">💾 Save Readings</button>
     </div>
   </form>
 
-  <!-- ════════════════ DAILY MODE ════════════════ -->
+  <!-- ════════ DAILY MODE ════════ -->
   {% else %}
 
-  {# Build a dict: day → row for quick lookup #}
+  {# Build day → row lookup #}
   {% set day_by_num = {} %}
   {% for dr in day_rows %}{% set _ = day_by_num.update({dr.day: dr}) %}{% endfor %}
 
-  <!-- Diesel & Volume totals (shared across all days) -->
+  <!-- Diesel & Volume totals -->
   <form method="POST" action="{{ url_for('ecmd_save_daily_reading') }}" style="margin-bottom:16px">
     <input type="hidden" name="plant_code" value="{{ plant.plant_code }}">
     <input type="hidden" name="month"      value="{{ sel_month }}">
     <input type="hidden" name="year"       value="{{ sel_year }}">
     <input type="hidden" name="day"        value="0">
-    <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">
+    <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;
+                letter-spacing:.05em;margin-bottom:8px">
       ⛽ Diesel &amp; Production Volume (Month Total)
     </div>
     <div class="form-grid">
@@ -164,98 +179,196 @@
   </form>
 
   <!-- Day-by-day table -->
-  <div style="overflow-x:auto">
-    <table style="width:100%;font-size:12px;border-collapse:collapse">
+  <div style="overflow-x:auto;margin-top:4px">
+    <table style="width:100%;font-size:12px;border-collapse:collapse;min-width:1100px">
       <thead>
-        <tr style="background:rgba(99,91,255,0.12);color:var(--text-muted);font-size:11px;text-transform:uppercase">
-          <th style="padding:8px 6px;text-align:left;width:42px">Day</th>
-          <th style="padding:8px 6px">EB KWh Open</th>
-          <th style="padding:8px 6px">EB KWh Close</th>
-          <th style="padding:8px 6px">EB KVAh Open</th>
-          <th style="padding:8px 6px">EB KVAh Close</th>
-          <th style="padding:8px 6px">MF</th>
-          <th style="padding:8px 6px">DG Hr Open</th>
-          <th style="padding:8px 6px">DG Hr Close</th>
-          <th style="padding:8px 6px">DG KWh Open</th>
-          <th style="padding:8px 6px">DG KWh Close</th>
-          <th style="padding:8px 6px">Mixer DG Open</th>
-          <th style="padding:8px 6px">Mixer DG Close</th>
-          <th style="padding:8px 4px;width:70px">Action</th>
+        <tr style="background:rgba(99,91,255,0.15);color:var(--text-muted);
+                   font-size:10px;text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;z-index:2">
+          <th style="padding:8px 8px;text-align:left;min-width:80px">Date</th>
+          <th style="padding:8px 6px;color:#60a5fa">EB KWh<br>Open</th>
+          <th style="padding:8px 6px;color:#60a5fa">EB KWh<br>Close</th>
+          <th style="padding:8px 6px;color:#34d399;font-weight:700">EB KWh<br>Total</th>
+          <th style="padding:8px 6px;color:#a78bfa">EB KVAh<br>Open</th>
+          <th style="padding:8px 6px;color:#a78bfa">EB KVAh<br>Close</th>
+          <th style="padding:8px 6px;color:#34d399;font-weight:700">EB KVAh<br>Total</th>
+          <th style="padding:8px 6px;min-width:45px">MF</th>
+          <th style="padding:8px 6px;color:#fbbf24">DG Hr<br>Open</th>
+          <th style="padding:8px 6px;color:#fbbf24">DG Hr<br>Close</th>
+          <th style="padding:8px 6px;color:#34d399;font-weight:700">DG Hr<br>Total</th>
+          <th style="padding:8px 6px;color:#f87171">DG KWh<br>Open</th>
+          <th style="padding:8px 6px;color:#f87171">DG KWh<br>Close</th>
+          <th style="padding:8px 6px;color:#34d399;font-weight:700">DG KWh<br>Total</th>
+          <th style="padding:8px 6px;color:#c084fc">Mixer DG<br>Open</th>
+          <th style="padding:8px 6px;color:#c084fc">Mixer DG<br>Close</th>
+          <th style="padding:8px 6px;color:#34d399;font-weight:700">Mixer DG<br>Total</th>
+          <th style="padding:8px 6px;min-width:70px">Action</th>
         </tr>
       </thead>
-      <tbody id="daily-tbody-{{ plant.plant_code }}">
+      <tbody>
       {% for d in range(1, days_in_month + 1) %}
-      {% set dr = day_by_num.get(d, {}) %}
-      {% set has_dr = dr|length > 0 %}
-      {# Auto-fill opening from previous day's closing #}
-      {% set prev = day_by_num.get(d - 1, {}) %}
-      <tr id="day-row-{{ plant.plant_code }}-{{ d }}"
-          style="border-bottom:1px solid var(--border);{% if has_dr %}background:rgba(16,185,129,0.05){% endif %}">
-        <td style="padding:4px 6px;font-weight:600;color:{% if has_dr %}var(--color-green){% else %}var(--text-muted){% endif %}">
-          {{ d }}{% if has_dr %} ✓{% endif %}
+      {% set dr    = day_by_num.get(d, {}) %}
+      {% set has_dr= dr|length > 0 %}
+      {% set prev  = day_by_num.get(d - 1, {}) %}
+      {# Compute day-of-week using Zeller or use namespace #}
+      {% set pc = plant.plant_code | replace('-','_') | replace(' ','_') %}
+      {% set fid = 'df_' ~ pc ~ '_' ~ d %}
+
+      <tr style="border-bottom:1px solid var(--border);
+                 {% if has_dr %}background:rgba(16,185,129,0.06){% elif d is odd %}background:rgba(255,255,255,0.01){% endif %}">
+
+        {# Date cell: real date + day name #}
+        <td style="padding:5px 8px;white-space:nowrap;font-size:11px">
+          <span style="font-weight:700;font-size:13px;color:{% if has_dr %}var(--color-green){% else %}var(--text){% endif %}">
+            {{ '%02d'|format(d) }}</span>
+          <span style="color:var(--text-muted);margin-left:2px">{{ month_abbrs[sel_month] }}</span><br>
+          {# weekday: Python's datetime knows this, pass weekday_map from server or compute via JS #}
+          <span class="ecmd-dow" data-d="{{ d }}" data-m="{{ sel_month }}" data-y="{{ sel_year }}"
+                style="font-size:10px;color:var(--text-faint)"></span>
+          {% if has_dr %}<span style="font-size:9px;color:var(--color-green)">✓ saved</span>{% endif %}
         </td>
-        <form method="POST" action="{{ url_for('ecmd_save_daily_reading') }}"
-              id="day-form-{{ plant.plant_code }}-{{ d }}">
+
+        {# Form hidden fields + inputs wrapped in <form> using form= attribute #}
+        <form method="POST" action="{{ url_for('ecmd_save_daily_reading') }}" id="{{ fid }}">
           <input type="hidden" name="plant_code" value="{{ plant.plant_code }}">
           <input type="hidden" name="month"      value="{{ sel_month }}">
           <input type="hidden" name="year"       value="{{ sel_year }}">
           <input type="hidden" name="day"        value="{{ d }}">
-          <td style="padding:2px 4px"><input type="number" step="any" name="eb_kwh_open"
-              style="width:90px" form="day-form-{{ plant.plant_code }}-{{ d }}"
-              value="{{ dr.eb_kwh_open if has_dr else (prev.eb_kwh_close if prev|length > 0 and prev.eb_kwh_close is not none else '') }}"
-              placeholder="—"></td>
-          <td style="padding:2px 4px"><input type="number" step="any" name="eb_kwh_close"
-              style="width:90px" form="day-form-{{ plant.plant_code }}-{{ d }}"
-              value="{{ dr.eb_kwh_close if has_dr else '' }}"
-              placeholder="—"></td>
-          <td style="padding:2px 4px"><input type="number" step="any" name="eb_kvah_open"
-              style="width:90px" form="day-form-{{ plant.plant_code }}-{{ d }}"
-              value="{{ dr.eb_kvah_open if has_dr else (prev.eb_kvah_close if prev|length > 0 and prev.eb_kvah_close is not none else '') }}"
-              placeholder="—"></td>
-          <td style="padding:2px 4px"><input type="number" step="any" name="eb_kvah_close"
-              style="width:90px" form="day-form-{{ plant.plant_code }}-{{ d }}"
-              value="{{ dr.eb_kvah_close if has_dr else '' }}"
-              placeholder="—"></td>
-          <td style="padding:2px 4px"><input type="number" step="any" name="mf"
-              style="width:50px" form="day-form-{{ plant.plant_code }}-{{ d }}"
-              value="{{ dr.mf if has_dr else '1' }}"
-              placeholder="1"></td>
-          <td style="padding:2px 4px"><input type="number" step="any" name="dg_hr_open"
-              style="width:90px" form="day-form-{{ plant.plant_code }}-{{ d }}"
-              value="{{ dr.dg_hr_open if has_dr else (prev.dg_hr_close if prev|length > 0 and prev.dg_hr_close is not none else '') }}"
-              placeholder="—"></td>
-          <td style="padding:2px 4px"><input type="number" step="any" name="dg_hr_close"
-              style="width:90px" form="day-form-{{ plant.plant_code }}-{{ d }}"
-              value="{{ dr.dg_hr_close if has_dr else '' }}"
-              placeholder="—"></td>
-          <td style="padding:2px 4px"><input type="number" step="any" name="dg_kwh_open"
-              style="width:90px" form="day-form-{{ plant.plant_code }}-{{ d }}"
-              value="{{ dr.dg_kwh_open if has_dr and dr.dg_kwh_open is not none else (prev.dg_kwh_close if prev|length > 0 and prev.dg_kwh_close is not none else '') }}"
-              placeholder="opt"></td>
-          <td style="padding:2px 4px"><input type="number" step="any" name="dg_kwh_close"
-              style="width:90px" form="day-form-{{ plant.plant_code }}-{{ d }}"
-              value="{{ dr.dg_kwh_close if has_dr and dr.dg_kwh_close is not none else '' }}"
-              placeholder="opt"></td>
-          <td style="padding:2px 4px"><input type="number" step="any" name="mixer_dg_hr_open"
-              style="width:90px" form="day-form-{{ plant.plant_code }}-{{ d }}"
-              value="{{ dr.mixer_dg_hr_open if has_dr else (prev.mixer_dg_hr_close if prev|length > 0 and prev.mixer_dg_hr_close is not none else '') }}"
-              placeholder="—"></td>
-          <td style="padding:2px 4px"><input type="number" step="any" name="mixer_dg_hr_close"
-              style="width:90px" form="day-form-{{ plant.plant_code }}-{{ d }}"
-              value="{{ dr.mixer_dg_hr_close if has_dr else '' }}"
-              placeholder="—"></td>
+
+          {# EB KWh #}
+          {% set v_ebkwh_o = dr.eb_kwh_open if has_dr else (prev.eb_kwh_close if prev|length > 0 and prev.eb_kwh_close is not none else '') %}
+          {% set v_ebkwh_c = dr.eb_kwh_close if has_dr else '' %}
+          <td style="padding:2px 3px">
+            <input type="number" step="any" name="eb_kwh_open" form="{{ fid }}"
+                   class="day-inp" data-tot="tot-ebkwh-{{ pc }}-{{ d }}" data-role="open"
+                   data-pair="tot-ebkwh-{{ pc }}-{{ d }}" data-mf="mf-{{ pc }}-{{ d }}"
+                   style="width:80px" value="{{ v_ebkwh_o }}" placeholder="—">
+          </td>
+          <td style="padding:2px 3px">
+            <input type="number" step="any" name="eb_kwh_close" form="{{ fid }}"
+                   class="day-inp" data-tot="tot-ebkwh-{{ pc }}-{{ d }}" data-role="close"
+                   style="width:80px" value="{{ v_ebkwh_c }}" placeholder="—">
+          </td>
+          <td style="padding:2px 6px;font-weight:700;color:#34d399;text-align:right;min-width:70px">
+            <span id="tot-ebkwh-{{ pc }}-{{ d }}"
+                  data-open="{{ v_ebkwh_o }}" data-close="{{ v_ebkwh_c }}"
+                  data-use-mf="1">
+              {% if has_dr and dr.eb_kwh_open is not none and dr.eb_kwh_close is not none %}
+                {{ '%.2f'|format((dr.eb_kwh_close - dr.eb_kwh_open) * (dr.mf or 1)) }}
+              {% else %}—{% endif %}
+            </span>
+          </td>
+
+          {# EB KVAh #}
+          {% set v_ebkvah_o = dr.eb_kvah_open if has_dr else (prev.eb_kvah_close if prev|length > 0 and prev.eb_kvah_close is not none else '') %}
+          {% set v_ebkvah_c = dr.eb_kvah_close if has_dr else '' %}
+          <td style="padding:2px 3px">
+            <input type="number" step="any" name="eb_kvah_open" form="{{ fid }}"
+                   class="day-inp" data-tot="tot-ebkvah-{{ pc }}-{{ d }}"
+                   style="width:80px" value="{{ v_ebkvah_o }}" placeholder="—">
+          </td>
+          <td style="padding:2px 3px">
+            <input type="number" step="any" name="eb_kvah_close" form="{{ fid }}"
+                   class="day-inp" data-tot="tot-ebkvah-{{ pc }}-{{ d }}"
+                   style="width:80px" value="{{ v_ebkvah_c }}" placeholder="—">
+          </td>
+          <td style="padding:2px 6px;font-weight:700;color:#34d399;text-align:right">
+            <span id="tot-ebkvah-{{ pc }}-{{ d }}"
+                  data-open="{{ v_ebkvah_o }}" data-close="{{ v_ebkvah_c }}" data-use-mf="0">
+              {% if has_dr and dr.eb_kvah_open is not none and dr.eb_kvah_close is not none %}
+                {{ '%.2f'|format(dr.eb_kvah_close - dr.eb_kvah_open) }}
+              {% else %}—{% endif %}
+            </span>
+          </td>
+
+          {# MF #}
+          <td style="padding:2px 3px">
+            <input type="number" step="any" name="mf" form="{{ fid }}"
+                   id="mf-{{ pc }}-{{ d }}"
+                   style="width:45px" value="{{ dr.mf if has_dr else '1' }}" placeholder="1"
+                   oninput="recalcMf('{{ pc }}','{{ d }}')">
+          </td>
+
+          {# DG Hr #}
+          {% set v_dghr_o = dr.dg_hr_open if has_dr else (prev.dg_hr_close if prev|length > 0 and prev.dg_hr_close is not none else '') %}
+          {% set v_dghr_c = dr.dg_hr_close if has_dr else '' %}
+          <td style="padding:2px 3px">
+            <input type="number" step="any" name="dg_hr_open" form="{{ fid }}"
+                   class="day-inp" data-tot="tot-dghr-{{ pc }}-{{ d }}"
+                   style="width:80px" value="{{ v_dghr_o }}" placeholder="—">
+          </td>
+          <td style="padding:2px 3px">
+            <input type="number" step="any" name="dg_hr_close" form="{{ fid }}"
+                   class="day-inp" data-tot="tot-dghr-{{ pc }}-{{ d }}"
+                   style="width:80px" value="{{ v_dghr_c }}" placeholder="—">
+          </td>
+          <td style="padding:2px 6px;font-weight:700;color:#34d399;text-align:right">
+            <span id="tot-dghr-{{ pc }}-{{ d }}"
+                  data-open="{{ v_dghr_o }}" data-close="{{ v_dghr_c }}" data-use-mf="0">
+              {% if has_dr and dr.dg_hr_open is not none and dr.dg_hr_close is not none %}
+                {{ '%.2f'|format(dr.dg_hr_close - dr.dg_hr_open) }}
+              {% else %}—{% endif %}
+            </span>
+          </td>
+
+          {# DG KWh #}
+          {% set v_dgkwh_o = dr.dg_kwh_open if has_dr and dr.dg_kwh_open is not none else (prev.dg_kwh_close if prev|length > 0 and prev.dg_kwh_close is not none else '') %}
+          {% set v_dgkwh_c = dr.dg_kwh_close if has_dr and dr.dg_kwh_close is not none else '' %}
+          <td style="padding:2px 3px">
+            <input type="number" step="any" name="dg_kwh_open" form="{{ fid }}"
+                   class="day-inp" data-tot="tot-dgkwh-{{ pc }}-{{ d }}"
+                   style="width:80px" value="{{ v_dgkwh_o }}" placeholder="opt">
+          </td>
+          <td style="padding:2px 3px">
+            <input type="number" step="any" name="dg_kwh_close" form="{{ fid }}"
+                   class="day-inp" data-tot="tot-dgkwh-{{ pc }}-{{ d }}"
+                   style="width:80px" value="{{ v_dgkwh_c }}" placeholder="opt">
+          </td>
+          <td style="padding:2px 6px;font-weight:700;color:#34d399;text-align:right">
+            <span id="tot-dgkwh-{{ pc }}-{{ d }}"
+                  data-open="{{ v_dgkwh_o }}" data-close="{{ v_dgkwh_c }}" data-use-mf="0">
+              {% if has_dr and dr.dg_kwh_open is not none and dr.dg_kwh_close is not none %}
+                {{ '%.2f'|format(dr.dg_kwh_close - dr.dg_kwh_open) }}
+              {% else %}—{% endif %}
+            </span>
+          </td>
+
+          {# Mixer DG #}
+          {% set v_mix_o = dr.mixer_dg_hr_open if has_dr else (prev.mixer_dg_hr_close if prev|length > 0 and prev.mixer_dg_hr_close is not none else '') %}
+          {% set v_mix_c = dr.mixer_dg_hr_close if has_dr else '' %}
+          <td style="padding:2px 3px">
+            <input type="number" step="any" name="mixer_dg_hr_open" form="{{ fid }}"
+                   class="day-inp" data-tot="tot-mix-{{ pc }}-{{ d }}"
+                   style="width:80px" value="{{ v_mix_o }}" placeholder="—">
+          </td>
+          <td style="padding:2px 3px">
+            <input type="number" step="any" name="mixer_dg_hr_close" form="{{ fid }}"
+                   class="day-inp" data-tot="tot-mix-{{ pc }}-{{ d }}"
+                   style="width:80px" value="{{ v_mix_c }}" placeholder="—">
+          </td>
+          <td style="padding:2px 6px;font-weight:700;color:#34d399;text-align:right">
+            <span id="tot-mix-{{ pc }}-{{ d }}"
+                  data-open="{{ v_mix_o }}" data-close="{{ v_mix_c }}" data-use-mf="0">
+              {% if has_dr and dr.mixer_dg_hr_open is not none and dr.mixer_dg_hr_close is not none %}
+                {{ '%.2f'|format(dr.mixer_dg_hr_close - dr.mixer_dg_hr_open) }}
+              {% else %}—{% endif %}
+            </span>
+          </td>
         </form>
+
         <td style="padding:2px 4px;white-space:nowrap">
-          <button type="submit" form="day-form-{{ plant.plant_code }}-{{ d }}"
-                  class="btn btn-primary btn-sm" style="padding:3px 8px;font-size:11px">💾</button>
+          <button type="submit" form="{{ fid }}"
+                  class="btn btn-primary btn-sm" style="padding:3px 8px;font-size:11px"
+                  title="Save day {{ d }}">💾</button>
           {% if has_dr %}
-          <form method="POST" action="{{ url_for('ecmd_delete_daily_reading') }}" style="display:inline"
-                onsubmit="return confirm('Delete day {{ d }} reading?')">
+          <form method="POST" action="{{ url_for('ecmd_delete_daily_reading') }}"
+                style="display:inline"
+                onsubmit="return confirm('Delete day {{ d }} reading for {{ plant.plant_name }}?')">
             <input type="hidden" name="plant_code" value="{{ plant.plant_code }}">
             <input type="hidden" name="month" value="{{ sel_month }}">
             <input type="hidden" name="year"  value="{{ sel_year }}">
             <input type="hidden" name="day"   value="{{ d }}">
-            <button type="submit" class="btn btn-danger btn-sm" style="padding:3px 6px;font-size:11px">🗑</button>
+            <button type="submit" class="btn btn-danger btn-sm"
+                    style="padding:3px 6px;font-size:11px" title="Delete day {{ d }}">🗑</button>
           </form>
           {% endif %}
         </td>
@@ -265,9 +378,19 @@
     </table>
   </div>
   <div class="alert alert-info" style="padding:6px 10px;font-size:12px;margin-top:8px">
-    Opening of each day is auto-filled from the previous day's closing. DG KWh is optional (blank → hrs × 20).
+    ✔ Opening of each day is auto-filled from the previous day's closing &nbsp;·&nbsp;
+    Total = (Close − Open) × MF for EB KWh; (Close − Open) for all others &nbsp;·&nbsp;
+    DG KWh is optional — blank defaults to hrs × 20 in calculation
   </div>
-  {% endif %}
+
+  {% endif %}{# end daily/monthly #}
+
+  {% else %}
+  {# No mode selected yet — show prompt only #}
+  <div class="alert alert-info" style="padding:10px 14px;font-size:13px;margin-top:0">
+    👆 Select <strong>Month Data</strong> or <strong>Day Wise</strong> above to start entering readings.
+  </div>
+  {% endif %}{# end mode check #}
 
 </div><!-- end plant card -->
 {% endfor %}
@@ -283,4 +406,79 @@
 </div>
 {% endif %}
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* ── Day-of-week labels ─────────────────────────────────────────── */
+document.querySelectorAll('.ecmd-dow').forEach(function(el) {
+  var d = parseInt(el.dataset.d),
+      m = parseInt(el.dataset.m) - 1,
+      y = parseInt(el.dataset.y);
+  var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var dow  = new Date(y, m, d).getDay();
+  var names = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  el.textContent = names[dow];
+  if (dow === 0 || dow === 6) el.style.color = '#f87171'; /* weekend red */
+});
+
+/* ── Live total computation ─────────────────────────────────────── */
+function calcTotal(spanId, openVal, closeVal, useMf, mfVal) {
+  var span = document.getElementById(spanId);
+  if (!span) return;
+  var o = parseFloat(openVal), c = parseFloat(closeVal), mf = parseFloat(mfVal) || 1;
+  if (isNaN(o) || isNaN(c)) { span.textContent = '—'; return; }
+  var tot = useMf ? (c - o) * mf : (c - o);
+  span.textContent = tot.toFixed(2);
+  span.style.color = tot < 0 ? '#f87171' : '#34d399';
+}
+
+function recalcFromSpan(span) {
+  var useMf = span.dataset.useMf === '1';
+  var mfEl  = null;
+  if (useMf) {
+    /* find the mf input in same row — id encoded as mf-PC-D */
+    var parts = span.id.split('-');          /* tot-ebkwh-PC-D */
+    var d = parts[parts.length - 1];
+    var pc = parts.slice(2, parts.length - 1).join('-');
+    mfEl = document.getElementById('mf-' + pc + '-' + d);
+  }
+  calcTotal(span.id,
+            span.dataset.open  || '',
+            span.dataset.close || '',
+            useMf,
+            mfEl ? mfEl.value : '1');
+}
+
+/* Wire all .day-inp inputs */
+document.querySelectorAll('.day-inp').forEach(function(inp) {
+  inp.addEventListener('input', function() {
+    var totId = inp.dataset.tot;
+    var span  = document.getElementById(totId);
+    if (!span) return;
+    /* find sibling inputs with same data-tot */
+    var siblings = document.querySelectorAll('[data-tot="' + totId + '"]');
+    var openV = '', closeV = '';
+    siblings.forEach(function(s) {
+      var n = s.getAttribute('name');
+      if (n && n.endsWith('_open'))  openV  = s.value;
+      if (n && n.endsWith('_close')) closeV = s.value;
+    });
+    span.dataset.open  = openV;
+    span.dataset.close = closeV;
+    recalcFromSpan(span);
+  });
+});
+
+/* Recalc on page load for all total spans */
+document.querySelectorAll('[id^="tot-"]').forEach(function(span) {
+  recalcFromSpan(span);
+});
+
+function recalcMf(pc, d) {
+  /* When MF changes, recalc EB KWh total only */
+  var span = document.getElementById('tot-ebkwh-' + pc + '-' + d);
+  if (span) recalcFromSpan(span);
+}
+</script>
 {% endblock %}
