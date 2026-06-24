@@ -79,14 +79,29 @@ def compose_report_subject(month_label) -> str:
             f"(PI/QCI, MO, Teamlease Employee & All Trainees) - {month_label}")
 
 
-def compose_report_body(month_label, sections=None) -> str:
+def compose_report_body(month_label, sections=None, waivers=None) -> str:
     sections = sections or REPORT_SECTIONS
     numbered = "\n".join(f"{i}. {s}" for i, s in enumerate(sections, start=1))
+    waiver_note = ""
+    if waivers:
+        lines = []
+        for w in waivers:
+            reason_map = {
+                "dr_bhoon":       "Waived by Dr. Bhoon",
+                "approved_leave": "Waived, on approved leave",
+            }
+            reason = reason_map.get(w.get("reason", ""), w.get("custom_reason") or w.get("reason", ""))
+            lines.append(f"  - {w.get('employee_code','')} : {reason}")
+        waiver_note = (
+            f"\n\nNote: {len(waivers)} employee(s) have deduction waiver(s) applied this month "
+            f"(deduction shown as ₹0 in red row):\n" + "\n".join(lines)
+        )
     return (
         "Dear Sir,\n\n"
         f"Please find below the compiled report for the month of {month_label}, "
         "covering the following:\n\n"
-        f"{numbered}\n\n"
+        f"{numbered}"
+        f"{waiver_note}\n\n"
         "Kindly review the attached Excel file below and in case of any "
         "clarifications or corrections, please mail me and Kanhaiya sir"
     )
@@ -562,6 +577,7 @@ def create_report_preview_image(df, output_path, max_rows=30, month_label=""):
 
         ded_idx = col_keys.index("Deduction Amount")
         inc_idx = col_keys.index("Incentive Amount")
+        rem_idx = col_keys.index("Remarks") if "Remarks" in col_keys else -1
 
         def _id_color(ri, row):
             try:
@@ -572,7 +588,9 @@ def create_report_preview_image(df, output_path, max_rows=30, month_label=""):
                 inc = float(str(row[inc_idx]).replace(",", "")) if inc_idx < len(row) else 0
             except ValueError:
                 inc = 0
-            if ded > 0: return (_D["red"],   False)
+            remark = str(row[rem_idx]) if rem_idx >= 0 and rem_idx < len(row) else ""
+            is_waived = "waiv" in remark.lower()
+            if ded > 0 or is_waived: return (_D["red"],   False)
             if inc > 0: return (_D["green"], False)
             return (_D["row_odd"] if ri % 2 == 0 else _D["row_even"], False)
 

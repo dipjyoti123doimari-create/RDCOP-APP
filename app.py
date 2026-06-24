@@ -3768,15 +3768,46 @@ def send_email():
     incl_tables = "include_tables" in request.form
 
     try:
+        # Waivers for the report month — append to body and highlight in HTML
+        try:
+            _rpt_mon = int(from_s.split("-")[1])
+            _rpt_yr  = int(from_s.split("-")[0])
+            _waivers = database.get_waivers(_rpt_mon, _rpt_yr)
+        except Exception:
+            _waivers = []
+
+        # If body came from the form pre-filled, append waiver note to it
+        if not body:
+            body = email_helper.compose_report_body(
+                meta.get("date_range", from_s), waivers=_waivers)
+
         fname       = f"incentive_report_{from_s}_to_{to_s}.xlsx"
         xlsx_data   = report_generator.generate_excel_report(df_f, df_u, val_df, meta)
         tables_html = report_generator.build_email_tables_html(df_f)
         import html as _html_mod
         _safe_body  = _html_mod.escape(body or "").replace("\n", "<br>")
         _body_font  = "font-family:Arial,Calibri,sans-serif;font-size:12px;color:#000000;"
+
+        # Build waiver note HTML block
+        _waiver_html = ""
+        if _waivers:
+            _reason_map = {"dr_bhoon": "Waived by Dr. Bhoon", "approved_leave": "Waived, on approved leave"}
+            _items = "".join(
+                f'<li style="margin:2px 0"><strong>{w.get("employee_code","")}</strong> — '
+                f'{_reason_map.get(w.get("reason",""), w.get("custom_reason") or w.get("reason",""))}</li>'
+                for w in _waivers
+            )
+            _waiver_html = (
+                f'<div style="margin:10px 0 4px 0;padding:8px 12px;background:#fff3f3;'
+                f'border-left:3px solid #e55;border-radius:4px;font-size:12px;color:#000">'
+                f'<strong>🛡️ {len(_waivers)} Waiver(s) applied (deduction shown as ₹0, row stays red):</strong>'
+                f'<ul style="margin:4px 0 0 16px;padding:0">{_items}</ul></div>'
+            )
+
         html_body   = (
             f'<html><body style="margin:0;padding:8px 10px;{_body_font}">'
             f'<p style="margin:0 0 3px 0;">{_safe_body}</p>'
+            f'{_waiver_html}'
             f'{tables_html}'
             f'</body></html>'
         )
