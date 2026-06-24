@@ -427,17 +427,15 @@
             <div class="form-group"><label>Category</label><select name="category">{% for c in categories %}<option>{{ c }}</option>{% endfor %}</select></div>
             <div class="form-group">
               <label>Plant</label>
-              <select name="plant" id="add-plant-name" onchange="syncPlant('add','name')">
-                <option value="">— select plant —</option>
-                {% for p in plant_list %}<option value="{{ p.plant_name }}">{{ p.plant_name }}</option>{% endfor %}
-              </select>
+              <input type="text" name="plant" id="add-plant-name" autocomplete="off"
+                     list="pl-names" placeholder="Type or select plant"
+                     oninput="syncPlant('add','name')">
             </div>
             <div class="form-group">
               <label>Plant Code</label>
-              <select name="plant_code" id="add-plant-code" onchange="syncPlant('add','code')">
-                <option value="">— select code —</option>
-                {% for p in plant_list %}<option value="{{ p.plant_code }}">{{ p.plant_code }}</option>{% endfor %}
-              </select>
+              <input type="text" name="plant_code" id="add-plant-code" autocomplete="off"
+                     list="pl-codes" placeholder="Type or select code"
+                     oninput="syncPlant('add','code')">
             </div>
           </div>
           <button type="submit" class="btn btn-primary">➕ Add Employee</button>
@@ -466,17 +464,17 @@
             <div class="form-group"><label>Category</label><select name="category">{% for cat in categories %}<option {% if cat == edit_emp.category %}selected{% endif %}>{{ cat }}</option>{% endfor %}</select></div>
             <div class="form-group">
               <label>Plant</label>
-              <select name="plant" id="edit-plant-name" onchange="syncPlant('edit','name')">
-                <option value="">— select plant —</option>
-                {% for p in plant_list %}<option value="{{ p.plant_name }}" {% if p.plant_name == edit_emp.plant %}selected{% endif %}>{{ p.plant_name }}</option>{% endfor %}
-              </select>
+              <input type="text" name="plant" id="edit-plant-name" autocomplete="off"
+                     list="pl-names" placeholder="Type or select plant"
+                     value="{{ edit_emp.plant or '' }}"
+                     oninput="syncPlant('edit','name')">
             </div>
             <div class="form-group">
               <label>Plant Code</label>
-              <select name="plant_code" id="edit-plant-code" onchange="syncPlant('edit','code')">
-                <option value="">— select code —</option>
-                {% for p in plant_list %}<option value="{{ p.plant_code }}" {% if p.plant_code == edit_emp.plant_code %}selected{% endif %}>{{ p.plant_code }}</option>{% endfor %}
-              </select>
+              <input type="text" name="plant_code" id="edit-plant-code" autocomplete="off"
+                     list="pl-codes" placeholder="Type or select code"
+                     value="{{ edit_emp.plant_code or '' }}"
+                     oninput="syncPlant('edit','code')">
             </div>
           </div>
           <button type="submit" class="btn btn-primary">💾 Save Changes</button>
@@ -539,6 +537,10 @@
     </div>
   </div>
 </div>
+
+<!-- Shared datalists for plant combos -->
+<datalist id="pl-names">{% for p in plant_list %}<option value="{{ p.plant_name }}">{% endfor %}</datalist>
+<datalist id="pl-codes">{% for p in plant_list %}<option value="{{ p.plant_code }}">{% endfor %}</datalist>
 
 {% endblock %}
 {% block scripts %}

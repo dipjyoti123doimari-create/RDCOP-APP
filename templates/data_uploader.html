@@ -115,17 +115,15 @@
               </div>
               <div class="form-group">
                 <label>Plant</label>
-                <select name="plant" id="du-add-plant-name" onchange="syncPlant('du-add','name')">
-                  <option value="">— select plant —</option>
-                  {% for p in plant_list %}<option value="{{ p.plant_name }}">{{ p.plant_name }}</option>{% endfor %}
-                </select>
+                <input type="text" name="plant" id="du-add-plant-name" autocomplete="off"
+                       list="du-pl-names" placeholder="Type or select plant"
+                       oninput="syncPlant('du-add','name')">
               </div>
               <div class="form-group">
                 <label>Plant Code</label>
-                <select name="plant_code" id="du-add-plant-code" onchange="syncPlant('du-add','code')">
-                  <option value="">— select code —</option>
-                  {% for p in plant_list %}<option value="{{ p.plant_code }}">{{ p.plant_code }}</option>{% endfor %}
-                </select>
+                <input type="text" name="plant_code" id="du-add-plant-code" autocomplete="off"
+                       list="du-pl-codes" placeholder="Type or select code"
+                       oninput="syncPlant('du-add','code')">
               </div>
             </div>
             <button type="submit" class="btn btn-primary">➕ Add Employee</button>
@@ -157,17 +155,17 @@
               </div>
               <div class="form-group">
                 <label>Plant</label>
-                <select name="plant" id="du-edit-plant-name" onchange="syncPlant('du-edit','name')">
-                  <option value="">— select plant —</option>
-                  {% for p in plant_list %}<option value="{{ p.plant_name }}" {% if p.plant_name == edit_emp.plant %}selected{% endif %}>{{ p.plant_name }}</option>{% endfor %}
-                </select>
+                <input type="text" name="plant" id="du-edit-plant-name" autocomplete="off"
+                       list="du-pl-names" placeholder="Type or select plant"
+                       value="{{ edit_emp.plant or '' }}"
+                       oninput="syncPlant('du-edit','name')">
               </div>
               <div class="form-group">
                 <label>Plant Code</label>
-                <select name="plant_code" id="du-edit-plant-code" onchange="syncPlant('du-edit','code')">
-                  <option value="">— select code —</option>
-                  {% for p in plant_list %}<option value="{{ p.plant_code }}" {% if p.plant_code == edit_emp.plant_code %}selected{% endif %}>{{ p.plant_code }}</option>{% endfor %}
-                </select>
+                <input type="text" name="plant_code" id="du-edit-plant-code" autocomplete="off"
+                       list="du-pl-codes" placeholder="Type or select code"
+                       value="{{ edit_emp.plant_code or '' }}"
+                       oninput="syncPlant('du-edit','code')">
               </div>
             </div>
             <button type="submit" class="btn btn-primary">💾 Save Changes</button>
@@ -474,6 +472,10 @@
     {% endif %}
   </div>
 </div>
+
+<!-- Shared datalists for plant combos -->
+<datalist id="du-pl-names">{% for p in plant_list %}<option value="{{ p.plant_name }}">{% endfor %}</datalist>
+<datalist id="du-pl-codes">{% for p in plant_list %}<option value="{{ p.plant_code }}">{% endfor %}</datalist>
 
 {% endblock %}
 {% block scripts %}
