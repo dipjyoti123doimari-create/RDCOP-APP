@@ -3908,10 +3908,22 @@ def ecmd_data_entry():
     sel_year  = int(request.args.get("year",  today.year))
 
     all_plant_rows = database.get_tp_plants()
-    # Filter plants by user access (PLANT_USER / REGIONAL_USER see only their plants)
     plant_rows = auth.apply_plant_filter_rows(all_plant_rows, g.current_user)
     readings_map = {r["plant_code"]: r
                     for r in database.get_ecmd_readings_for_month(sel_month, sel_year)}
+
+    # Daily readings: map plant_code → list of day rows
+    daily_rows_all = database.get_ecmd_daily_readings_for_month(sel_month, sel_year)
+    daily_map = {}
+    for dr in daily_rows_all:
+        daily_map.setdefault(dr["plant_code"], []).append(dr)
+
+    # Entry mode per plant
+    mode_map = {p["plant_code"]: database.get_ecmd_entry_mode(p["plant_code"], sel_month, sel_year)
+                for p in plant_rows}
+
+    # Days in the selected month
+    days_in_month = _cal.monthrange(sel_year, sel_month)[1]
 
     months_list = [(m, _cal.month_name[m]) for m in range(1, 13)]
     years_list  = list(range(today.year - 2, today.year + 2))
@@ -3921,6 +3933,9 @@ def ecmd_data_entry():
     return render_template("ecmd_data_entry.html",
                            plant_rows=plant_rows,
                            readings_map=readings_map,
+                           daily_map=daily_map,
+                           mode_map=mode_map,
+                           days_in_month=days_in_month,
                            sel_month=sel_month, sel_year=sel_year,
                            months_list=months_list, years_list=years_list,
                            **ctx)
@@ -3980,6 +3995,109 @@ def ecmd_delete_reading():
         flash(f"✅ Reading for {plant_code} ({month}/{year}) deleted.", "success")
     else:
         flash("Reading not found.", "warning")
+    return redirect(url_for("ecmd_data_entry", month=month, year=year))
+
+
+@app.route("/ecmd/action/set-entry-mode", methods=["POST"])
+@auth.login_required
+def ecmd_set_entry_mode():
+    plant_code = request.form.get("plant_code", "").strip()
+    month      = int(request.form.get("month", _date.today().month))
+    year       = int(request.form.get("year",  _date.today().year))
+    mode       = request.form.get("mode", "monthly")
+    if mode not in ("monthly", "daily"):
+        flash("Invalid mode.", "error")
+        return redirect(url_for("ecmd_data_entry", month=month, year=year))
+    # Block if data already exists in the OTHER mode
+    has_monthly = bool(database.get_ecmd_reading(plant_code, month, year))
+    has_daily   = bool(database.get_ecmd_daily_readings(plant_code, month, year))
+    if mode == "daily" and has_monthly:
+        flash("Monthly data already saved — delete it before switching to Day Wise.", "error")
+        return redirect(url_for("ecmd_data_entry", month=month, year=year))
+    if mode == "monthly" and has_daily:
+        flash("Day-wise data already saved — delete all days before switching to Monthly.", "error")
+        return redirect(url_for("ecmd_data_entry", month=month, year=year))
+    database.set_ecmd_entry_mode(plant_code, month, year, mode)
+    return redirect(url_for("ecmd_data_entry", month=month, year=year))
+
+
+@app.route("/ecmd/action/save-daily-reading", methods=["POST"])
+@auth.login_required
+def ecmd_save_daily_reading():
+    plant_code = request.form.get("plant_code", "").strip()
+    month      = int(request.form.get("month", _date.today().month))
+    year       = int(request.form.get("year",  _date.today().year))
+    day        = int(request.form.get("day", 1))
+    user = g.current_user
+    plant_row = next((p for p in database.get_tp_plants() if p["plant_code"] == plant_code), None)
+    if plant_row and not auth.user_can_access_plant(user, plant_row["plant_name"]):
+        flash("You are not authorised to save readings for this plant.", "error")
+        return redirect(url_for("ecmd_data_entry", month=month, year=year))
+
+    def _fv(key):
+        v = request.form.get(key, "").strip()
+        return float(v) if v != "" else None
+
+    data = {
+        "eb_kwh_open":       _fv("eb_kwh_open"),
+        "eb_kwh_close":      _fv("eb_kwh_close"),
+        "eb_kvah_open":      _fv("eb_kvah_open"),
+        "eb_kvah_close":     _fv("eb_kvah_close"),
+        "mf":                _fv("mf") or 1.0,
+        "dg_hr_open":        _fv("dg_hr_open"),
+        "dg_hr_close":       _fv("dg_hr_close"),
+        "dg_kwh_open":       _fv("dg_kwh_open"),
+        "dg_kwh_close":      _fv("dg_kwh_close"),
+        "mixer_dg_hr_open":  _fv("mixer_dg_hr_open"),
+        "mixer_dg_hr_close": _fv("mixer_dg_hr_close"),
+    }
+    # Diesel & volume totals saved on the monthly row (even in daily mode)
+    diesel = _fv("diesel_issued_ltrs")
+    vol    = _fv("volume_on_dg")
+    if diesel is not None or vol is not None:
+        mf_val = _fv("mf") or 1.0
+        monthly_data = {"diesel_issued_ltrs": diesel, "volume_on_dg": vol,
+                        "mf": mf_val, "eb_kwh_open": None, "eb_kwh_close": None,
+                        "eb_kvah_open": None, "eb_kvah_close": None,
+                        "dg_hr_open": None, "dg_hr_close": None,
+                        "dg_kwh_open": None, "dg_kwh_close": None,
+                        "mixer_dg_hr_open": None, "mixer_dg_hr_close": None}
+        existing = database.get_ecmd_reading(plant_code, month, year)
+        if existing:
+            monthly_data.update({k: existing.get(k) for k in monthly_data if k not in ("diesel_issued_ltrs","volume_on_dg")})
+        database.upsert_ecmd_reading(plant_code, month, year, monthly_data,
+                                     entered_by=user.get("username",""))
+    try:
+        database.upsert_ecmd_daily_reading(plant_code, month, year, day, data,
+                                           entered_by=user.get("username",""))
+        flash(f"✅ Day {day} readings saved for {plant_code}.", "success")
+    except Exception as exc:
+        flash(f"Save failed: {exc}", "error")
+    return redirect(url_for("ecmd_data_entry", month=month, year=year))
+
+
+@app.route("/ecmd/action/delete-daily-reading", methods=["POST"])
+@auth.login_required
+def ecmd_delete_daily_reading():
+    plant_code = request.form.get("plant_code", "").strip()
+    month      = int(request.form.get("month", _date.today().month))
+    year       = int(request.form.get("year",  _date.today().year))
+    day        = int(request.form.get("day", 1))
+    database.delete_ecmd_daily_reading(plant_code, month, year, day)
+    flash(f"Day {day} reading deleted.", "success")
+    return redirect(url_for("ecmd_data_entry", month=month, year=year))
+
+
+@app.route("/ecmd/action/delete-all-daily-readings", methods=["POST"])
+@auth.login_required
+def ecmd_delete_all_daily_readings():
+    plant_code = request.form.get("plant_code", "").strip()
+    month      = int(request.form.get("month", _date.today().month))
+    year       = int(request.form.get("year",  _date.today().year))
+    database.delete_ecmd_all_daily_readings(plant_code, month, year)
+    database.delete_ecmd_reading(plant_code, month, year)
+    database.set_ecmd_entry_mode(plant_code, month, year, "monthly")
+    flash(f"All daily readings deleted for {plant_code} {month}/{year}.", "success")
     return redirect(url_for("ecmd_data_entry", month=month, year=year))
 
 

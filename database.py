@@ -299,6 +299,43 @@ TABLE_SCHEMAS = {
         )
     """,
 
+    # Daily readings — one row per plant per day (alternative to monthly ecmd_readings)
+    "ecmd_daily_readings": """
+        CREATE TABLE IF NOT EXISTS ecmd_daily_readings (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            plant_code            TEXT NOT NULL,
+            month                 INTEGER NOT NULL,
+            year                  INTEGER NOT NULL,
+            day                   INTEGER NOT NULL,
+            eb_kwh_open           REAL,
+            eb_kwh_close          REAL,
+            eb_kvah_open          REAL,
+            eb_kvah_close         REAL,
+            mf                    REAL DEFAULT 1.0,
+            dg_hr_open            REAL,
+            dg_hr_close           REAL,
+            dg_kwh_open           REAL,
+            dg_kwh_close          REAL,
+            mixer_dg_hr_open      REAL,
+            mixer_dg_hr_close     REAL,
+            entered_by            TEXT DEFAULT 'Admin',
+            entered_at            TEXT,
+            UNIQUE(plant_code, month, year, day)
+        )
+    """,
+
+    # Entry mode per plant+month+year: 'monthly' or 'daily'
+    "ecmd_entry_mode": """
+        CREATE TABLE IF NOT EXISTS ecmd_entry_mode (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            plant_code TEXT NOT NULL,
+            month      INTEGER NOT NULL,
+            year       INTEGER NOT NULL,
+            mode       TEXT NOT NULL DEFAULT 'monthly',
+            UNIQUE(plant_code, month, year)
+        )
+    """,
+
     # Calculated ECMD results — one row per plant per month
     "ecmd_results": """
         CREATE TABLE IF NOT EXISTS ecmd_results (
@@ -1243,6 +1280,122 @@ def delete_ecmd_reading(plant_code: str, month: int, year: int) -> int:
         cur = conn.cursor()
         cur.execute(
             "DELETE FROM ecmd_readings WHERE plant_code=? AND month=? AND year=?",
+            (str(plant_code).strip(), month, year)
+        )
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
+# ── ECMD entry mode ──────────────────────────────────────────────────────────
+
+def get_ecmd_entry_mode(plant_code: str, month: int, year: int) -> str:
+    """Return 'monthly' or 'daily' for this plant+month+year. Default: 'monthly'."""
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "SELECT mode FROM ecmd_entry_mode WHERE plant_code=? AND month=? AND year=?",
+            (str(plant_code).strip(), month, year)
+        )
+        row = cur.fetchone()
+        return row[0] if row else "monthly"
+    finally:
+        conn.close()
+
+
+def set_ecmd_entry_mode(plant_code: str, month: int, year: int, mode: str) -> None:
+    """Set entry mode ('monthly' or 'daily') for this plant+month+year."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO ecmd_entry_mode(plant_code, month, year, mode)
+               VALUES(?,?,?,?)
+               ON CONFLICT(plant_code, month, year) DO UPDATE SET mode=excluded.mode""",
+            (str(plant_code).strip(), month, year, mode)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ── ECMD daily readings ───────────────────────────────────────────────────────
+
+def get_ecmd_daily_readings(plant_code: str, month: int, year: int) -> list:
+    """Return all daily reading rows for a plant+month+year, ordered by day."""
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "SELECT * FROM ecmd_daily_readings WHERE plant_code=? AND month=? AND year=? ORDER BY day",
+            (str(plant_code).strip(), month, year)
+        )
+        rows = cur.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_ecmd_daily_readings_for_month(month: int, year: int) -> list:
+    """Return all daily readings for a month/year across all plants."""
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "SELECT * FROM ecmd_daily_readings WHERE month=? AND year=? ORDER BY plant_code, day",
+            (month, year)
+        )
+        rows = cur.fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def upsert_ecmd_daily_reading(plant_code: str, month: int, year: int, day: int,
+                               data: dict, entered_by: str = "Admin") -> None:
+    """Insert or update a single day's reading."""
+    import datetime as _dt
+    fields = ["eb_kwh_open","eb_kwh_close","eb_kvah_open","eb_kvah_close","mf",
+              "dg_hr_open","dg_hr_close","dg_kwh_open","dg_kwh_close",
+              "mixer_dg_hr_open","mixer_dg_hr_close"]
+    cols   = ", ".join(["plant_code","month","year","day","entered_by","entered_at"] + fields)
+    vals   = ", ".join(["?"] * (6 + len(fields)))
+    updates = ", ".join([f"{f}=excluded.{f}" for f in fields] + ["entered_by=excluded.entered_by","entered_at=excluded.entered_at"])
+    row = ([str(plant_code).strip(), month, year, day,
+            entered_by, str(_dt.datetime.now())] +
+           [data.get(f) for f in fields])
+    conn = get_connection()
+    try:
+        conn.execute(
+            f"INSERT INTO ecmd_daily_readings({cols}) VALUES({vals}) "
+            f"ON CONFLICT(plant_code,month,year,day) DO UPDATE SET {updates}",
+            row
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_ecmd_daily_reading(plant_code: str, month: int, year: int, day: int) -> int:
+    """Delete one day's reading. Returns rows deleted."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM ecmd_daily_readings WHERE plant_code=? AND month=? AND year=? AND day=?",
+            (str(plant_code).strip(), month, year, day)
+        )
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
+def delete_ecmd_all_daily_readings(plant_code: str, month: int, year: int) -> int:
+    """Delete all daily readings for a plant+month+year. Returns rows deleted."""
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM ecmd_daily_readings WHERE plant_code=? AND month=? AND year=?",
             (str(plant_code).strip(), month, year)
         )
         conn.commit()
