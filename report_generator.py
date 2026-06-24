@@ -241,8 +241,8 @@ def build_email_tables_html(results_df, sections=None) -> str:
     HDR_BDR  = "border:1px solid #7A7A7A"
     CELL_BDR = "border:1px solid #9E9E9E"
 
-    def _row_bg(inc, ded):
-        if ded > 0: return "#FFB3B3"
+    def _row_bg(inc, ded, remark=""):
+        if ded > 0 or "waiv" in str(remark).lower(): return "#FFB3B3"
         if inc > 0: return "#92D492"
         return "#ffffff"
 
@@ -278,9 +278,10 @@ def build_email_tables_html(results_df, sections=None) -> str:
         else:
             data_headers = list(out.columns)
             for srno, (_, row) in enumerate(out.iterrows(), start=1):
-                inc = row.get("Incentive Amount", 0) or 0
-                ded = row.get("Deduction Amount", 0) or 0
-                bg  = _row_bg(inc, ded)
+                inc    = row.get("Incentive Amount", 0) or 0
+                ded    = row.get("Deduction Amount", 0) or 0
+                remark = row.get("Remarks", "") or ""
+                bg     = _row_bg(inc, ded, remark)
                 # Sr. No. cell
                 sr_s = (f'{F}background:{bg};color:#000;padding:2px 4px;{CELL_BDR};'
                         f'text-align:center;line-height:1.2;vertical-align:middle;white-space:nowrap;')
