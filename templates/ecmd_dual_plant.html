@@ -68,15 +68,15 @@
       <div style="display:flex;gap:10px;font-size:11px;align-items:center">
         <span style="display:flex;align-items:center;gap:4px">
           <span style="width:10px;height:10px;border-radius:50%;background:#34d399;display:inline-block"></span>
-          ≤10% variance
+          ≤10% Utilization Imbalance
         </span>
         <span style="display:flex;align-items:center;gap:4px">
           <span style="width:10px;height:10px;border-radius:50%;background:#fbbf24;display:inline-block"></span>
-          11–30% variance
+          11–30% Utilization Imbalance
         </span>
         <span style="display:flex;align-items:center;gap:4px">
           <span style="width:10px;height:10px;border-radius:50%;background:#f87171;display:inline-block"></span>
-          >30% variance
+          >30% Utilization Imbalance
         </span>
       </div>
       <span style="font-size:12px;color:var(--text-muted)">
@@ -94,10 +94,13 @@
           <th style="padding:10px 12px;text-align:left">Plant Name</th>
           <th style="padding:10px 12px;text-align:left">Code</th>
           <th style="padding:10px 12px;text-align:right">BP1 Qty (MT)</th>
+          <th style="padding:10px 12px;text-align:right">BP1 %</th>
           <th style="padding:10px 12px;text-align:right">BP2 Qty (MT)</th>
+          <th style="padding:10px 12px;text-align:right">BP2 %</th>
           <th style="padding:10px 12px;text-align:right">BP3 Qty (MT)</th>
+          <th style="padding:10px 12px;text-align:right">BP3 %</th>
           <th style="padding:10px 12px;text-align:right">Total (MT)</th>
-          <th style="padding:10px 12px;min-width:140px;text-align:center">Balance</th>
+          <th style="padding:10px 12px;min-width:160px;text-align:center">Utilization Imbalance</th>
         </tr>
       </thead>
       <tbody>
@@ -119,28 +122,31 @@
         <td style="padding:9px 12px;font-weight:600">{{ p.plant_name }}</td>
         <td style="padding:9px 12px;color:var(--text-muted);font-size:12px">{{ p.plant_code }}</td>
 
-        {# BP1 #}
+        {# BP1 qty + % #}
         {% set bp1 = p.mixers.get('BP1') %}
         <td style="padding:9px 12px;text-align:right;color:var(--text-muted)">
-          {% if bp1 %}{{ '{:,.2f}'.format(bp1.qty) }}
-            <span style="font-size:10px;opacity:.7">({{ bp1.pct }}%)</span>
-          {% else %}—{% endif %}
+          {% if bp1 %}{{ '{:,.2f}'.format(bp1.qty) }}{% else %}—{% endif %}
+        </td>
+        <td style="padding:9px 12px;text-align:right;font-weight:600;color:#8B87FF">
+          {% if bp1 %}{{ bp1.pct }}%{% else %}—{% endif %}
         </td>
 
-        {# BP2 #}
+        {# BP2 qty + % #}
         {% set bp2 = p.mixers.get('BP2') %}
         <td style="padding:9px 12px;text-align:right;color:var(--text-muted)">
-          {% if bp2 %}{{ '{:,.2f}'.format(bp2.qty) }}
-            <span style="font-size:10px;opacity:.7">({{ bp2.pct }}%)</span>
-          {% else %}—{% endif %}
+          {% if bp2 %}{{ '{:,.2f}'.format(bp2.qty) }}{% else %}—{% endif %}
+        </td>
+        <td style="padding:9px 12px;text-align:right;font-weight:600;color:#34d399">
+          {% if bp2 %}{{ bp2.pct }}%{% else %}—{% endif %}
         </td>
 
-        {# BP3 #}
+        {# BP3 qty + % #}
         {% set bp3 = p.mixers.get('BP3') %}
         <td style="padding:9px 12px;text-align:right;color:var(--text-muted)">
-          {% if bp3 %}{{ '{:,.2f}'.format(bp3.qty) }}
-            <span style="font-size:10px;opacity:.7">({{ bp3.pct }}%)</span>
-          {% else %}—{% endif %}
+          {% if bp3 %}{{ '{:,.2f}'.format(bp3.qty) }}{% else %}—{% endif %}
+        </td>
+        <td style="padding:9px 12px;text-align:right;font-weight:600;color:#fbbf24">
+          {% if bp3 %}{{ bp3.pct }}%{% else %}—{% endif %}
         </td>
 
         {# Total #}
@@ -162,7 +168,7 @@
             {% endif %}
           </div>
           <div style="font-size:10px;color:{{ row_color }};font-weight:600;margin-top:3px;text-align:center">
-            {{ p.variance }}% variance
+            {{ p.variance }}% Utilization Imbalance
           </div>
         </td>
       </tr>
@@ -180,15 +186,15 @@
     </div>
     <div class="kpi-box" style="border-color:rgba(52,211,153,0.3)">
       <div class="kpi-value" style="color:#34d399">{{ plants | selectattr('balance','eq','green') | list | length }}</div>
-      <div class="kpi-label">≤10% Variance</div>
+      <div class="kpi-label">≤10% Imbalance</div>
     </div>
     <div class="kpi-box" style="border-color:rgba(251,191,36,0.3)">
       <div class="kpi-value" style="color:#fbbf24">{{ plants | selectattr('balance','eq','yellow') | list | length }}</div>
-      <div class="kpi-label">11–30% Variance</div>
+      <div class="kpi-label">11–30% Imbalance</div>
     </div>
     <div class="kpi-box" style="border-color:rgba(248,113,113,0.3)">
       <div class="kpi-value" style="color:#f87171">{{ plants | selectattr('balance','eq','red') | list | length }}</div>
-      <div class="kpi-label">&gt;30% Variance</div>
+      <div class="kpi-label">&gt;30% Imbalance</div>
     </div>
     <div class="kpi-box">
       <div class="kpi-value">{{ '{:,.0f}'.format(plants | sum(attribute='total')) }}</div>
