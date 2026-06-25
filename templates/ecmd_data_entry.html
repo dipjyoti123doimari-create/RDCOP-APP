@@ -50,10 +50,15 @@
         <button type="submit" class="btn btn-primary">Load Plants</button>
       </div>
     </form>
-    {% if month_locked and is_admin %}
+    {% if is_admin and allowed_months %}
     <div style="font-size:11px;color:var(--text-faint);margin-top:6px">
-      🔒 Month lock active — users can only access:
-      {% for m,y in allowed_months %}{{ _MN_FULL[m] }} {{ y }}{% if not loop.last %}, {% endif %}{% endfor %}
+      🔒 Users restricted to: {% for m,y in allowed_months %}{{ _MN_FULL[m] }} {{ y }}{% if not loop.last %}, {% endif %}{% endfor %}
+      — <a href="{{ url_for('ecmd_settings') }}" style="color:var(--text-faint);text-decoration:underline">change in Settings</a>
+    </div>
+    {% elif is_admin %}
+    <div style="font-size:11px;color:var(--text-faint);margin-top:6px">
+      ℹ️ No month lock set — users see current month only by default.
+      <a href="{{ url_for('ecmd_settings') }}" style="color:var(--text-faint);text-decoration:underline">Set in Settings</a>
     </div>
     {% endif %}
   {% endif %}

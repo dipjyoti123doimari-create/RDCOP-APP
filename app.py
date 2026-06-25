@@ -3930,10 +3930,14 @@ def ecmd_data_entry():
 
     is_admin = g.current_user.get("role") == auth.SUPER_ADMIN
 
-    # Allowed months: if admin has locked months, non-admins are restricted
+    # Allowed months: admin sets which months users can enter data for.
+    # If list is empty AND user is not admin → restrict to current month only.
     allowed_months = database.get_ecmd_allowed_months()  # [(month, year), ...]
-    month_locked = bool(allowed_months)
-    month_allowed = is_admin or not month_locked or (sel_month, sel_year) in allowed_months
+    if not is_admin and not allowed_months:
+        # Default restriction: only current month accessible for non-admins
+        allowed_months = [(today.month, today.year)]
+    month_locked   = not is_admin  # non-admins always see restricted selector
+    month_allowed  = is_admin or (sel_month, sel_year) in allowed_months
 
     months_list = [(m, _cal.month_name[m]) for m in range(1, 13)]
     years_list  = list(range(today.year - 2, today.year + 2))
