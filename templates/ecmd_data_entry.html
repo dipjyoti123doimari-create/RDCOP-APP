@@ -111,23 +111,25 @@
       </div>
     </div>
 
-    <!-- Delete buttons -->
-    {% if mode == 'daily' and has_daily %}
-    <form method="POST" action="{{ url_for('ecmd_delete_all_daily_readings') }}"
-          onsubmit="return confirm('Delete ALL daily readings for {{ plant.plant_name }}? This will also reset the mode.')">
-      <input type="hidden" name="plant_code" value="{{ plant.plant_code }}">
-      <input type="hidden" name="month" value="{{ sel_month }}">
-      <input type="hidden" name="year"  value="{{ sel_year }}">
-      <button type="submit" class="btn btn-danger btn-sm">🗑 Delete All Days</button>
-    </form>
-    {% elif mode == 'monthly' and has_mth %}
-    <form method="POST" action="{{ url_for('ecmd_delete_reading') }}"
-          onsubmit="return confirm('Delete monthly readings for {{ plant.plant_name }}?')">
-      <input type="hidden" name="plant_code" value="{{ plant.plant_code }}">
-      <input type="hidden" name="month" value="{{ sel_month }}">
-      <input type="hidden" name="year"  value="{{ sel_year }}">
-      <button type="submit" class="btn btn-danger btn-sm">🗑 Delete</button>
-    </form>
+    <!-- Delete buttons — admin only -->
+    {% if is_admin %}
+      {% if mode == 'daily' and has_daily %}
+      <form method="POST" action="{{ url_for('ecmd_delete_all_daily_readings') }}"
+            onsubmit="return confirm('Delete ALL daily readings for {{ plant.plant_name }}? This will also reset the mode.')">
+        <input type="hidden" name="plant_code" value="{{ plant.plant_code }}">
+        <input type="hidden" name="month" value="{{ sel_month }}">
+        <input type="hidden" name="year"  value="{{ sel_year }}">
+        <button type="submit" class="btn btn-danger btn-sm">🗑 Delete All Days</button>
+      </form>
+      {% elif mode == 'monthly' and has_mth %}
+      <form method="POST" action="{{ url_for('ecmd_delete_reading') }}"
+            onsubmit="return confirm('Delete monthly readings for {{ plant.plant_name }}?')">
+        <input type="hidden" name="plant_code" value="{{ plant.plant_code }}">
+        <input type="hidden" name="month" value="{{ sel_month }}">
+        <input type="hidden" name="year"  value="{{ sel_year }}">
+        <button type="submit" class="btn btn-danger btn-sm">🗑 Delete</button>
+      </form>
+      {% endif %}
     {% endif %}
   </div>
 
@@ -136,19 +138,21 @@
     <span style="font-size:12px;font-weight:600;color:var(--text-muted)">Entry Mode:</span>
 
     {% if locked %}
-      {# Mode is fixed — show label only #}
-      {% if mode == 'daily' %}
-      <span style="background:rgba(99,91,255,0.18);color:#8B87FF;border:1px solid rgba(99,91,255,0.3);
-                   font-size:12px;padding:5px 14px;border-radius:6px;font-weight:600">📅 Day Wise ·
-        <span style="font-weight:400;font-size:11px">locked — delete all days to switch</span></span>
-      {% else %}
-      <span style="background:rgba(99,91,255,0.18);color:#8B87FF;border:1px solid rgba(99,91,255,0.3);
-                   font-size:12px;padding:5px 14px;border-radius:6px;font-weight:600">📊 Month Data ·
-        <span style="font-weight:400;font-size:11px">locked — delete data to switch</span></span>
-      {% endif %}
+      {# Mode active with data — show both buttons, active one highlighted, inactive disabled #}
+      <button class="btn btn-sm {% if mode == 'monthly' %}btn-primary{% else %}btn-secondary{% endif %}"
+              disabled style="opacity:{% if mode == 'monthly' %}1{% else %}0.35{% endif %};cursor:default">
+        📊 Month Data
+      </button>
+      <button class="btn btn-sm {% if mode == 'daily' %}btn-primary{% else %}btn-secondary{% endif %}"
+              disabled style="opacity:{% if mode == 'daily' %}1{% else %}0.35{% endif %};cursor:default">
+        📅 Day Wise
+      </button>
+      <span style="font-size:11px;color:var(--text-faint);margin-left:4px">
+        🔒 locked — delete saved data to switch mode
+      </span>
 
     {% else %}
-      {# Free to choose — show toggle buttons (page-submit to set mode) #}
+      {# Free to choose — both buttons active #}
       <form method="POST" action="{{ url_for('ecmd_set_entry_mode') }}"
             style="display:inline-flex;gap:6px;margin:0">
         <input type="hidden" name="plant_code" value="{{ plant.plant_code }}">
@@ -396,6 +400,7 @@
                 style="font-size:10px;color:var(--text-faint)">
             {% if has_dr %}✓{% endif %}
           </span>
+          {% if is_admin %}
           <form method="POST" action="{{ url_for('ecmd_delete_daily_reading') }}"
                 style="display:inline;margin-left:2px"
                 onsubmit="return confirm('Delete day {{ d }} reading for {{ plant.plant_name }}?')">
@@ -406,6 +411,7 @@
             <button type="submit" class="btn btn-danger btn-sm"
                     style="padding:2px 5px;font-size:11px" title="Delete day {{ d }}">🗑</button>
           </form>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
