@@ -4782,9 +4782,9 @@ def ecmd_dual_plant():
         mx_qty = max(bp1_qty, bp2_qty)
         mn_qty = min(bp1_qty, bp2_qty)
         variance = round((mx_qty - mn_qty) / mx_qty * 100) if mx_qty else 100
-        if variance <= 10:
+        if variance <= 30:
             balance = "green"
-        elif variance <= 30:
+        elif variance <= 60:
             balance = "yellow"
         else:
             balance = "red"
