@@ -4569,7 +4569,7 @@ def ecmd_settings():
 
 
 @app.route("/ecmd/settings/set-entry-period", methods=["POST"])
-@auth.admin_required
+@auth.uep_admin_required
 def ecmd_set_entry_period():
     month = request.form.get("entry_month", "").strip()
     year  = request.form.get("entry_year",  "").strip()
@@ -4583,7 +4583,7 @@ def ecmd_set_entry_period():
 
 
 @app.route("/ecmd/settings/set-allowed-months", methods=["POST"])
-@auth.admin_required
+@auth.uep_admin_required
 def ecmd_set_allowed_months():
     """Admin sets which month(s) users can enter data for. Empty = allow all."""
     action     = request.form.get("action", "add")
@@ -4607,7 +4607,7 @@ def ecmd_set_allowed_months():
 
 
 @app.route("/ecmd/settings/save-schedule", methods=["POST"])
-@auth.admin_required
+@auth.uep_admin_required
 def ecmd_save_schedule():
     sched_time = request.form.get("sched_time", "08:00").strip()
     database.set_module_settings_bulk("ecmd", {
@@ -4630,7 +4630,7 @@ def ecmd_save_schedule():
 
 
 @app.route("/ecmd/settings/toggle-schedule", methods=["POST"])
-@auth.admin_required
+@auth.uep_admin_required
 def ecmd_toggle_schedule():
     current = database.get_module_setting("ecmd", "email_schedule_enabled", "false")
     new_val = "false" if current == "true" else "true"
@@ -4640,7 +4640,7 @@ def ecmd_toggle_schedule():
 
 
 @app.route("/ecmd/settings/save-email-defaults", methods=["POST"])
-@auth.admin_required
+@auth.uep_admin_required
 def ecmd_save_email_defaults():
     database.set_module_settings_bulk("ecmd", {
         "email_default_to":      request.form.get("default_to", "").strip(),
@@ -4653,7 +4653,7 @@ def ecmd_save_email_defaults():
 
 
 @app.route("/ecmd/settings/save-uep-smtp", methods=["POST"])
-@auth.admin_required
+@auth.uep_admin_required
 def ecmd_save_uep_smtp():
     pwd = request.form.get("password", "").strip()
     data = {
@@ -4670,7 +4670,7 @@ def ecmd_save_uep_smtp():
 
 
 @app.route("/ecmd/settings/test-uep-smtp", methods=["POST"])
-@auth.admin_required
+@auth.uep_admin_required
 def ecmd_test_uep_smtp():
     try:
         email_helper.send_uep_email(
@@ -4961,8 +4961,7 @@ def ecmd_invoice_pending_fetch():
 # ── UEP Mail Scheduler ────────────────────────────────────────────────────────
 
 @app.route("/ecmd/mail-scheduler", methods=["GET"])
-@auth.login_required
-@auth.role_required("SUPER_ADMIN")
+@auth.uep_admin_required
 def ecmd_mail_scheduler():
     def _ms(key, default=""):
         return database.get_module_setting("ecmd", key, default)
@@ -5015,8 +5014,7 @@ def ecmd_mail_scheduler():
 
 
 @app.route("/ecmd/mail-scheduler/save", methods=["POST"])
-@auth.login_required
-@auth.role_required("SUPER_ADMIN")
+@auth.uep_admin_required
 def ecmd_mail_scheduler_save():
     module = request.form.get("module", "")  # ecmd | dpu | pfs
     prefix = {"ecmd": "email_schedule", "dpu": "dpu_mail", "pfs": "pfs_mail"}.get(module)
@@ -5061,8 +5059,7 @@ def ecmd_mail_scheduler_save():
 
 
 @app.route("/ecmd/mail-scheduler/send-now", methods=["POST"])
-@auth.login_required
-@auth.role_required("SUPER_ADMIN")
+@auth.uep_admin_required
 def ecmd_mail_scheduler_send_now():
     module = request.form.get("module", "")
     try:
@@ -5082,8 +5079,7 @@ def ecmd_mail_scheduler_send_now():
 
 
 @app.route("/ecmd/mail-scheduler/manual-send", methods=["POST"])
-@auth.login_required
-@auth.role_required("SUPER_ADMIN")
+@auth.uep_admin_required
 def ecmd_mail_scheduler_manual_send():
     module    = request.form.get("module", "").strip()
     to_addr   = request.form.get("to", "").strip()

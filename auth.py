@@ -29,24 +29,28 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 # ── Role constants ─────────────────────────────────────────────────────────────
 SUPER_ADMIN     = "SUPER_ADMIN"
+UEP_ADMIN       = "UEP_ADMIN"       # admin for UEP/ECMD module only
 HO_VIEWER       = "HO_VIEWER"
 FINANCE_VIEWER  = "FINANCE_VIEWER"
 REGIONAL_USER   = "REGIONAL_USER"
 PLANT_USER      = "PLANT_USER"
 
-ALLOWED_ROLES = [SUPER_ADMIN, HO_VIEWER, FINANCE_VIEWER, REGIONAL_USER, PLANT_USER]
+ALLOWED_ROLES = [SUPER_ADMIN, UEP_ADMIN, HO_VIEWER, FINANCE_VIEWER, REGIONAL_USER, PLANT_USER]
 
 # Roles that may write / mutate any data
 WRITE_ROLES = [SUPER_ADMIN]
 
 # Roles that can see all plants without a filter
-GLOBAL_VIEW_ROLES = [SUPER_ADMIN, HO_VIEWER, FINANCE_VIEWER]
+GLOBAL_VIEW_ROLES = [SUPER_ADMIN, UEP_ADMIN, HO_VIEWER, FINANCE_VIEWER]
 
 # Roles whose plant access is restricted to user_plant_access rows
 RESTRICTED_ROLES = [REGIONAL_USER, PLANT_USER]
 
 # Roles that can enter ECMD readings for their own plant
-ECMD_ENTRY_ROLES = [SUPER_ADMIN, PLANT_USER]
+ECMD_ENTRY_ROLES = [SUPER_ADMIN, UEP_ADMIN, PLANT_USER]
+
+# Roles that can administer the UEP/ECMD module (settings, SMTP, scheduler)
+UEP_ADMIN_ROLES = [SUPER_ADMIN, UEP_ADMIN]
 
 SESSION_TIMEOUT_MINUTES = 20
 
@@ -303,6 +307,11 @@ def admin_required(f):
     return role_required(SUPER_ADMIN)(f)
 
 
+def uep_admin_required(f):
+    """Shorthand: SUPER_ADMIN or UEP_ADMIN."""
+    return role_required(SUPER_ADMIN, UEP_ADMIN)(f)
+
+
 def viewer_or_above(f):
     """Any logged-in user — but must be logged in."""
     return login_required(f)
@@ -328,6 +337,14 @@ def check_page_permission(user: dict, page_name: str) -> bool:
     }
     if role == SUPER_ADMIN:
         return True
+    if role == UEP_ADMIN:
+        # UEP_ADMIN can access UEP/ECMD settings and write pages, but not global admin
+        uep_write_pages = {"settings", "data_entry_write", "oracle_fetch"}
+        if page_name in uep_write_pages:
+            return True
+        if page_name in {"user_management", "audit_log"}:
+            return False
+        return True
     if page_name in write_pages:
         return False
     return True  # read pages open to all authenticated roles
@@ -335,7 +352,7 @@ def check_page_permission(user: dict, page_name: str) -> bool:
 
 def can_do_ecmd_entry(user: dict, plant_name: str) -> bool:
     """True if this user can save/view ECMD readings for the given plant."""
-    if user["role"] == SUPER_ADMIN:
+    if user["role"] in (SUPER_ADMIN, UEP_ADMIN):
         return True
     if user["role"] == PLANT_USER:
         return user_can_access_plant(user, plant_name)
@@ -454,10 +471,12 @@ def inject_auth_context():
         current_user=user,
         allowed_plants=allowed_plants,
         SUPER_ADMIN=SUPER_ADMIN,
+        UEP_ADMIN=UEP_ADMIN,
         HO_VIEWER=HO_VIEWER,
         FINANCE_VIEWER=FINANCE_VIEWER,
         REGIONAL_USER=REGIONAL_USER,
         PLANT_USER=PLANT_USER,
+        UEP_ADMIN_ROLES=UEP_ADMIN_ROLES,
         GLOBAL_VIEW_ROLES=GLOBAL_VIEW_ROLES,
         RESTRICTED_ROLES=RESTRICTED_ROLES,
         WRITE_ROLES=WRITE_ROLES,
