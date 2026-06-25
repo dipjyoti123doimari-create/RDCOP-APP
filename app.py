@@ -4706,7 +4706,7 @@ def _run_dual_plant_fetch(from_date: str, to_date: str, label: str) -> tuple:
             "plant_name": plant_map.get(pc, pc),
             "mixer":      mx,
             "quantity":   round(qty, 2),
-            "pct_share":  round(qty / total * 100),
+            "pct_share":  round(qty / total * 100, 1),
             "fetched_at": now_str,
         })
 
@@ -4772,7 +4772,9 @@ def ecmd_dual_plant():
         # Recalculate pct shares now that zeros are filled in
         total = entry["total"] or 1
         for mx in mixers:
-            mixers[mx]["pct"] = round(mixers[mx]["qty"] / total * 100)
+            raw_pct = mixers[mx]["qty"] / total * 100
+            # Use 1 decimal so small values like 0.1% don't collapse to 0%
+            mixers[mx]["pct"] = round(raw_pct, 1)
 
         # Variance uses BP1 vs BP2 only (primary comparison)
         bp1_qty = mixers.get("BP1", {}).get("qty", 0)
