@@ -94,10 +94,10 @@
           <th style="padding:10px 12px;text-align:left">Plant Name</th>
           <th style="padding:10px 12px;text-align:left">Code</th>
           <th style="padding:10px 12px;text-align:right">BP1 Qty (MT)</th>
-          <th style="padding:10px 12px;text-align:right">BP1 %</th>
           <th style="padding:10px 12px;text-align:right">BP2 Qty (MT)</th>
-          <th style="padding:10px 12px;text-align:right">BP2 %</th>
           <th style="padding:10px 12px;text-align:right">BP3 Qty (MT)</th>
+          <th style="padding:10px 12px;text-align:right">BP1 %</th>
+          <th style="padding:10px 12px;text-align:right">BP2 %</th>
           <th style="padding:10px 12px;text-align:right">BP3 %</th>
           <th style="padding:10px 12px;text-align:right">Total (MT)</th>
           <th style="padding:10px 12px;min-width:160px;text-align:center">Utilization Imbalance</th>
@@ -122,28 +122,26 @@
         <td style="padding:9px 12px;font-weight:600">{{ p.plant_name }}</td>
         <td style="padding:9px 12px;color:var(--text-muted);font-size:12px">{{ p.plant_code }}</td>
 
-        {# BP1 qty + % #}
+        {# All Qty columns first #}
         {% set bp1 = p.mixers.get('BP1') %}
+        {% set bp2 = p.mixers.get('BP2') %}
+        {% set bp3 = p.mixers.get('BP3') %}
         <td style="padding:9px 12px;text-align:right;color:var(--text-muted)">
           {% if bp1 %}{{ '{:,.2f}'.format(bp1.qty) }}{% else %}—{% endif %}
         </td>
-        <td style="padding:9px 12px;text-align:right;font-weight:600;color:#8B87FF">
-          {% if bp1 %}{{ bp1.pct }}%{% else %}—{% endif %}
-        </td>
-
-        {# BP2 qty + % #}
-        {% set bp2 = p.mixers.get('BP2') %}
         <td style="padding:9px 12px;text-align:right;color:var(--text-muted)">
           {% if bp2 %}{{ '{:,.2f}'.format(bp2.qty) }}{% else %}—{% endif %}
         </td>
-        <td style="padding:9px 12px;text-align:right;font-weight:600;color:#34d399">
-          {% if bp2 %}{{ bp2.pct }}%{% else %}—{% endif %}
-        </td>
-
-        {# BP3 qty + % #}
-        {% set bp3 = p.mixers.get('BP3') %}
         <td style="padding:9px 12px;text-align:right;color:var(--text-muted)">
           {% if bp3 %}{{ '{:,.2f}'.format(bp3.qty) }}{% else %}—{% endif %}
+        </td>
+
+        {# All % columns together #}
+        <td style="padding:9px 12px;text-align:right;font-weight:600;color:#8B87FF">
+          {% if bp1 %}{{ bp1.pct }}%{% else %}—{% endif %}
+        </td>
+        <td style="padding:9px 12px;text-align:right;font-weight:600;color:#34d399">
+          {% if bp2 %}{{ bp2.pct }}%{% else %}—{% endif %}
         </td>
         <td style="padding:9px 12px;text-align:right;font-weight:600;color:#fbbf24">
           {% if bp3 %}{{ bp3.pct }}%{% else %}—{% endif %}
