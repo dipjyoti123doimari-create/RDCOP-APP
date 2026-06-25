@@ -93,13 +93,13 @@
           <th style="padding:10px 12px;text-align:left;width:36px">Sr.</th>
           <th style="padding:10px 12px;text-align:left">Plant Name</th>
           <th style="padding:10px 12px;text-align:left">Code</th>
-          <th style="padding:10px 12px;text-align:right">BP1 Qty (MT)</th>
-          <th style="padding:10px 12px;text-align:right">BP2 Qty (MT)</th>
-          <th style="padding:10px 12px;text-align:right">BP3 Qty (MT)</th>
+          <th style="padding:10px 12px;text-align:right">BP1 Qty (m³)</th>
+          <th style="padding:10px 12px;text-align:right">BP2 Qty (m³)</th>
+          <th style="padding:10px 12px;text-align:right">BP3 Qty (m³)</th>
           <th style="padding:10px 12px;text-align:right">BP1 %</th>
           <th style="padding:10px 12px;text-align:right">BP2 %</th>
           <th style="padding:10px 12px;text-align:right">BP3 %</th>
-          <th style="padding:10px 12px;text-align:right">Total (MT)</th>
+          <th style="padding:10px 12px;text-align:right">Total (m³)</th>
           <th style="padding:10px 12px;min-width:160px;text-align:center">Utilization Imbalance</th>
         </tr>
       </thead>
@@ -196,7 +196,7 @@
     </div>
     <div class="kpi-box">
       <div class="kpi-value">{{ '{:,.0f}'.format(plants | sum(attribute='total')) }}</div>
-      <div class="kpi-label">Total Qty (MT)</div>
+      <div class="kpi-label">Total Qty (m³)</div>
     </div>
   </div>
 </div>
