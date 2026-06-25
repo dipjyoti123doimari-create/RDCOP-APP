@@ -663,9 +663,13 @@ def page_change_password():
 # ── Admin / User Management routes (SUPER_ADMIN only) ─────────────────────────
 
 @app.route("/admin/users")
-@auth.admin_required
+@auth.uep_admin_required
 def admin_users():
+    caller = auth.get_current_user()
     users = database.get_all_users()
+    # UEP_ADMIN sees only PLANT_USER accounts
+    if caller and caller["role"] == auth.UEP_ADMIN:
+        users = [u for u in users if u["role"] == auth.PLANT_USER]
     plant_map = {u["id"]: database.get_user_plant_access(u["id"]) for u in users}
     return render_template("admin/users.html",
                            active_page="users",
@@ -674,8 +678,12 @@ def admin_users():
 
 
 @app.route("/admin/users/create", methods=["GET", "POST"])
-@auth.admin_required
+@auth.uep_admin_required
 def admin_create_user():
+    caller = auth.get_current_user()
+    is_uep_admin = caller and caller["role"] == auth.UEP_ADMIN
+    # UEP_ADMIN can only create PLANT_USER accounts
+    allowed_roles = [auth.PLANT_USER] if is_uep_admin else auth.ALLOWED_ROLES
     all_plants = database.get_tp_plants()
     if request.method == "GET":
         return render_template("admin/user_form.html",
@@ -685,7 +693,7 @@ def admin_create_user():
                                all_plants=all_plants,
                                assigned_plants=[],
                                assigned_plant_names=[],
-                               allowed_roles=auth.ALLOWED_ROLES)
+                               allowed_roles=allowed_roles)
     # POST
     from werkzeug.security import generate_password_hash as _hash
     full_name  = request.form.get("full_name", "").strip()
@@ -697,6 +705,11 @@ def admin_create_user():
     must_chg   = request.form.get("must_change_password", "1") == "1"
     plant_names = request.form.getlist("plant_names")
 
+    # Enforce UEP_ADMIN can only assign PLANT_USER role
+    if is_uep_admin and role != auth.PLANT_USER:
+        flash("You can only create PLANT_USER accounts.", "error")
+        role = auth.PLANT_USER
+
     if not all([full_name, username, email, password]):
         flash("All required fields must be filled.", "error")
         return render_template("admin/user_form.html",
@@ -706,7 +719,7 @@ def admin_create_user():
                                all_plants=all_plants,
                                assigned_plants=[],
                                assigned_plant_names=[],
-                               allowed_roles=auth.ALLOWED_ROLES), 400
+                               allowed_roles=allowed_roles), 400
     if len(password) < 8:
         flash("Password must be at least 8 characters.", "error")
         return render_template("admin/user_form.html",
@@ -716,7 +729,7 @@ def admin_create_user():
                                all_plants=all_plants,
                                assigned_plants=[],
                                assigned_plant_names=[],
-                               allowed_roles=auth.ALLOWED_ROLES), 400
+                               allowed_roles=allowed_roles), 400
     try:
         user_id = database.create_user(
             full_name=full_name, email=email, username=username,
@@ -727,7 +740,7 @@ def admin_create_user():
             code_map = {p["plant_name"]: p["plant_code"] for p in all_plants}
             plant_list = [{"plant_name": n, "plant_code": code_map.get(n, "")} for n in plant_names]
             database.set_user_plants(user_id, plant_list)
-        auth.log_activity(auth.get_current_user(), "CREATE_USER",
+        auth.log_activity(caller, "CREATE_USER",
                           details={"username": username, "role": role})
         flash(f"User '{username}' created successfully.", "success")
         return redirect(url_for("admin_users"))
@@ -740,17 +753,24 @@ def admin_create_user():
                                all_plants=all_plants,
                                assigned_plants=[],
                                assigned_plant_names=[],
-                               allowed_roles=auth.ALLOWED_ROLES), 400
+                               allowed_roles=allowed_roles), 400
 
 
 @app.route("/admin/users/<int:user_id>/edit", methods=["GET", "POST"])
-@auth.admin_required
+@auth.uep_admin_required
 def admin_edit_user(user_id):
     from werkzeug.security import generate_password_hash as _hash
+    caller = auth.get_current_user()
+    is_uep_admin = caller and caller["role"] == auth.UEP_ADMIN
     user = database.get_user_by_id(user_id)
     if not user:
         flash("User not found.", "error")
         return redirect(url_for("admin_users"))
+    # UEP_ADMIN may only edit PLANT_USER accounts
+    if is_uep_admin and user["role"] != auth.PLANT_USER:
+        flash("You can only edit PLANT_USER accounts.", "error")
+        return redirect(url_for("admin_users"))
+    allowed_roles   = [auth.PLANT_USER] if is_uep_admin else auth.ALLOWED_ROLES
     all_plants      = database.get_tp_plants()
     assigned_plants = database.get_user_plant_access(user_id)
     assigned_names  = [p["plant_name"] for p in assigned_plants]
@@ -763,7 +783,7 @@ def admin_edit_user(user_id):
                                all_plants=all_plants,
                                assigned_plants=assigned_plants,
                                assigned_plant_names=assigned_names,
-                               allowed_roles=auth.ALLOWED_ROLES)
+                               allowed_roles=allowed_roles)
     # POST
     full_name  = request.form.get("full_name", "").strip()
     email      = request.form.get("email", "").strip()
@@ -772,6 +792,10 @@ def admin_edit_user(user_id):
     must_chg   = request.form.get("must_change_password", "0") == "1"
     password   = request.form.get("password", "").strip()
     plant_names = request.form.getlist("plant_names")
+
+    # Enforce UEP_ADMIN cannot change role away from PLANT_USER
+    if is_uep_admin:
+        role = auth.PLANT_USER
 
     database.update_user(user_id, full_name=full_name, email=email, role=role,
                          is_active=is_active, must_change_password=must_chg)
@@ -785,22 +809,26 @@ def admin_edit_user(user_id):
     plant_list = [{"plant_name": n, "plant_code": code_map.get(n, "")} for n in plant_names]
     database.set_user_plants(user_id, plant_list)
 
-    auth.log_activity(auth.get_current_user(), "EDIT_USER",
+    auth.log_activity(caller, "EDIT_USER",
                       details={"user_id": user_id, "role": role})
     flash(f"User '{user['username']}' updated.", "success")
     return redirect(url_for("admin_users"))
 
 
 @app.route("/admin/users/<int:user_id>/toggle", methods=["POST"])
-@auth.admin_required
+@auth.uep_admin_required
 def admin_toggle_user(user_id):
     current = auth.get_current_user()
+    is_uep_admin = current and current["role"] == auth.UEP_ADMIN
     if current and current["id"] == user_id:
         flash("You cannot deactivate your own account.", "error")
         return redirect(url_for("admin_users"))
     user = database.get_user_by_id(user_id)
     if not user:
         flash("User not found.", "error")
+        return redirect(url_for("admin_users"))
+    if is_uep_admin and user["role"] != auth.PLANT_USER:
+        flash("You can only manage PLANT_USER accounts.", "error")
         return redirect(url_for("admin_users"))
     database.update_user(user_id,
                          full_name=user["full_name"], email=user["email"],
@@ -815,12 +843,17 @@ def admin_toggle_user(user_id):
 
 
 @app.route("/admin/users/<int:user_id>/reset-password", methods=["GET", "POST"])
-@auth.admin_required
+@auth.uep_admin_required
 def admin_reset_password(user_id):
     from werkzeug.security import generate_password_hash as _hash
+    caller = auth.get_current_user()
+    is_uep_admin = caller and caller["role"] == auth.UEP_ADMIN
     target_user = database.get_user_by_id(user_id)
     if not target_user:
         flash("User not found.", "error")
+        return redirect(url_for("admin_users"))
+    if is_uep_admin and target_user["role"] != auth.PLANT_USER:
+        flash("You can only reset passwords for PLANT_USER accounts.", "error")
         return redirect(url_for("admin_users"))
     if request.method == "GET":
         return render_template("admin/reset_password.html",
