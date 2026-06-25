@@ -4718,15 +4718,59 @@ def _run_dual_plant_fetch(from_date: str, to_date: str, label: str) -> tuple:
 @app.route("/ecmd/dual-plant")
 @auth.login_required
 def ecmd_dual_plant():
+    import re as _re
     today  = _date.today()
     fortnights = _ecmd_fortnights(today.year, today.month)
     periods    = database.get_dual_plant_periods()
     sel_label  = request.args.get("period", periods[0]["period_label"] if periods else "")
-    rows       = database.get_dual_plant_report(sel_label) if sel_label else []
+    raw_rows   = database.get_dual_plant_report(sel_label) if sel_label else []
+
+    # Live plant name resolution — same pattern as PFS
+    _pm = {}
+    for p in database.get_tp_plants():
+        _pm[p["plant_code"]] = p["plant_name"]
+        base = _re.sub(r'_BP\d+$', '', p["plant_code"])
+        if base != p["plant_code"] and base not in _pm:
+            _pm[base] = _re.sub(r'_BP\d+$', '', p["plant_name"])
+
+    # Group raw rows (one per mixer) into one dict per plant
+    plant_order = []
+    plant_map_rows = {}
+    for r in raw_rows:
+        pc = r["plant_code"]
+        name = _pm.get(pc) or r.get("plant_name") or pc
+        if pc not in plant_map_rows:
+            plant_order.append(pc)
+            plant_map_rows[pc] = {"plant_code": pc, "plant_name": name,
+                                  "mixers": {}, "total": 0, "fetched_at": r.get("fetched_at","")}
+        plant_map_rows[pc]["mixers"][r["mixer"]] = {
+            "qty": r["quantity"], "pct": r["pct_share"]}
+        plant_map_rows[pc]["total"] += r["quantity"]
+
+    # Compute balance color: green if within 10% of equal split, else dominant mixer color
+    plants = []
+    for pc in plant_order:
+        entry = plant_map_rows[pc]
+        mixers = entry["mixers"]
+        qtys = [v["qty"] for v in mixers.values()]
+        if len(qtys) >= 2:
+            mx_qty = max(qtys)
+            mn_qty = min(qtys)
+            ratio = mn_qty / mx_qty if mx_qty else 1
+            if ratio >= 0.9:           # within 10% → balanced → green
+                balance = "green"
+            else:
+                dominant = max(mixers, key=lambda k: mixers[k]["qty"])
+                balance = "bp1" if dominant == "BP1" else "bp2" if dominant == "BP2" else "bp3"
+        else:
+            balance = "single"
+        entry["balance"] = balance
+        plants.append(entry)
+
     ctx = _ecmd_ctx()
     ctx["active_page"] = "dual_plant"
     return render_template("ecmd_dual_plant.html",
-                           rows=rows, periods=periods, sel_label=sel_label,
+                           plants=plants, periods=periods, sel_label=sel_label,
                            fortnights=fortnights, **ctx)
 
 
