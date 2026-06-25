@@ -1,6 +1,7 @@
 {% extends "ecmd_base.html" %}
 {% block title %}Data Entry{% endblock %}
 {% block content %}
+{% set month_abbrs = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
 
 <div class="page-header">
   <h1>Data Entry</h1>
@@ -86,8 +87,7 @@
   <span class="legend-item" style="background:var(--glass-bg)">No readings yet</span>
 </div>
 
-{% set month_abbrs = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
-{% set day_names   = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}
+{% set day_names = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}
 
 {% for plant in plant_rows %}
 {% set r         = readings_map.get(plant.plant_code, {}) %}
