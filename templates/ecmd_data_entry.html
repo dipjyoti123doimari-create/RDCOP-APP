@@ -16,16 +16,15 @@
   {% if month_locked and not is_admin %}
     {# Non-admin: show only allowed months as buttons #}
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-      <span style="font-size:12px;color:var(--text-muted);font-weight:600">Allowed periods:</span>
       {% for m, y in allowed_months %}
-      <a href="{{ url_for('ecmd_data_entry', month=m, year=y) }}"
-         class="btn btn-sm {% if m == sel_month and y == sel_year %}btn-primary{% else %}btn-secondary{% endif %}">
+      <span style="background:rgba(99,91,255,0.2);color:#8B87FF;border:1px solid rgba(99,91,255,0.35);
+                   border-radius:8px;padding:5px 16px;font-size:13px;font-weight:600">
         {{ _MN_FULL[m] }} {{ y }}
-      </a>
+      </span>
       {% endfor %}
     </div>
     <div style="font-size:11px;color:var(--text-faint);margin-top:6px">
-      🔒 Month selection is locked by admin. Contact admin to change the open period.
+      🔒 Entry period set by admin.
     </div>
   {% else %}
     {# Admin or no lock: free selector #}
