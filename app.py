@@ -4706,7 +4706,7 @@ def _run_dual_plant_fetch(from_date: str, to_date: str, label: str) -> tuple:
             "plant_name": plant_map.get(pc, pc),
             "mixer":      mx,
             "quantity":   round(qty, 2),
-            "pct_share":  round(qty / total * 100, 1),
+            "pct_share":  round(qty / total * 100),
             "fetched_at": now_str,
         })
 
@@ -4747,7 +4747,8 @@ def ecmd_dual_plant():
             "qty": r["quantity"], "pct": r["pct_share"]}
         plant_map_rows[pc]["total"] += r["quantity"]
 
-    # Compute balance color: green if within 10% of equal split, else dominant mixer color
+    # Compute balance color based on variance: (max-min)/max*100
+    # green ≤10%, yellow ≤30%, red >30%
     plants = []
     for pc in plant_order:
         entry = plant_map_rows[pc]
@@ -4756,16 +4757,23 @@ def ecmd_dual_plant():
         if len(qtys) >= 2:
             mx_qty = max(qtys)
             mn_qty = min(qtys)
-            ratio = mn_qty / mx_qty if mx_qty else 1
-            if ratio >= 0.9:           # within 10% → balanced → green
+            variance = round((mx_qty - mn_qty) / mx_qty * 100) if mx_qty else 0
+            if variance <= 10:
                 balance = "green"
+            elif variance <= 30:
+                balance = "yellow"
             else:
-                dominant = max(mixers, key=lambda k: mixers[k]["qty"])
-                balance = "bp1" if dominant == "BP1" else "bp2" if dominant == "BP2" else "bp3"
+                balance = "red"
         else:
+            variance = 0
             balance = "single"
         entry["balance"] = balance
+        entry["variance"] = variance
         plants.append(entry)
+
+    # Sort: red first, then yellow, then green; within same color sort by variance desc
+    _order = {"red": 0, "yellow": 1, "green": 2, "single": 3}
+    plants.sort(key=lambda p: (_order.get(p["balance"], 3), -p["variance"]))
 
     ctx = _ecmd_ctx()
     ctx["active_page"] = "dual_plant"

@@ -68,15 +68,15 @@
       <div style="display:flex;gap:10px;font-size:11px;align-items:center">
         <span style="display:flex;align-items:center;gap:4px">
           <span style="width:10px;height:10px;border-radius:50%;background:#34d399;display:inline-block"></span>
-          Balanced (≤10% diff)
+          ≤10% variance
         </span>
         <span style="display:flex;align-items:center;gap:4px">
-          <span style="width:10px;height:10px;border-radius:50%;background:#8B87FF;display:inline-block"></span>
-          BP1 dominant
+          <span style="width:10px;height:10px;border-radius:50%;background:#fbbf24;display:inline-block"></span>
+          11–30% variance
         </span>
         <span style="display:flex;align-items:center;gap:4px">
           <span style="width:10px;height:10px;border-radius:50%;background:#f87171;display:inline-block"></span>
-          BP2/BP3 dominant
+          >30% variance
         </span>
       </div>
       <span style="font-size:12px;color:var(--text-muted)">
@@ -102,13 +102,13 @@
       </thead>
       <tbody>
       {% for p in plants %}
-      {# Determine row accent color based on balance #}
+      {# Determine row accent color based on variance #}
       {% if p.balance == 'green' %}
         {% set row_color = '#34d399' %}
         {% set row_bg = 'rgba(52,211,153,0.05)' %}
-      {% elif p.balance == 'bp1' %}
-        {% set row_color = '#8B87FF' %}
-        {% set row_bg = 'rgba(99,91,255,0.05)' %}
+      {% elif p.balance == 'yellow' %}
+        {% set row_color = '#fbbf24' %}
+        {% set row_bg = 'rgba(251,191,36,0.05)' %}
       {% else %}
         {% set row_color = '#f87171' %}
         {% set row_bg = 'rgba(248,113,113,0.05)' %}
@@ -121,8 +121,7 @@
 
         {# BP1 #}
         {% set bp1 = p.mixers.get('BP1') %}
-        <td style="padding:9px 12px;text-align:right;
-                   {% if p.balance == 'bp1' %}font-weight:700;color:#8B87FF{% else %}color:var(--text-muted){% endif %}">
+        <td style="padding:9px 12px;text-align:right;color:var(--text-muted)">
           {% if bp1 %}{{ '{:,.2f}'.format(bp1.qty) }}
             <span style="font-size:10px;opacity:.7">({{ bp1.pct }}%)</span>
           {% else %}—{% endif %}
@@ -130,8 +129,7 @@
 
         {# BP2 #}
         {% set bp2 = p.mixers.get('BP2') %}
-        <td style="padding:9px 12px;text-align:right;
-                   {% if p.balance == 'bp2' %}font-weight:700;color:#f87171{% else %}color:var(--text-muted){% endif %}">
+        <td style="padding:9px 12px;text-align:right;color:var(--text-muted)">
           {% if bp2 %}{{ '{:,.2f}'.format(bp2.qty) }}
             <span style="font-size:10px;opacity:.7">({{ bp2.pct }}%)</span>
           {% else %}—{% endif %}
@@ -139,8 +137,7 @@
 
         {# BP3 #}
         {% set bp3 = p.mixers.get('BP3') %}
-        <td style="padding:9px 12px;text-align:right;
-                   {% if p.balance == 'bp3' %}font-weight:700;color:#f87171{% else %}color:var(--text-muted){% endif %}">
+        <td style="padding:9px 12px;text-align:right;color:var(--text-muted)">
           {% if bp3 %}{{ '{:,.2f}'.format(bp3.qty) }}
             <span style="font-size:10px;opacity:.7">({{ bp3.pct }}%)</span>
           {% else %}—{% endif %}
@@ -165,10 +162,7 @@
             {% endif %}
           </div>
           <div style="font-size:10px;color:{{ row_color }};font-weight:600;margin-top:3px;text-align:center">
-            {% if p.balance == 'green' %}✓ Balanced
-            {% elif p.balance == 'bp1' %}BP1 Leading
-            {% elif p.balance == 'bp2' %}BP2 Leading
-            {% else %}BP3 Leading{% endif %}
+            {{ p.variance }}% variance
           </div>
         </td>
       </tr>
@@ -184,14 +178,17 @@
       <div class="kpi-value">{{ plants | length }}</div>
       <div class="kpi-label">Dual Plants</div>
     </div>
-    {% set balanced = plants | selectattr('balance','eq','green') | list %}
     <div class="kpi-box" style="border-color:rgba(52,211,153,0.3)">
-      <div class="kpi-value" style="color:#34d399">{{ balanced | length }}</div>
-      <div class="kpi-label">Balanced</div>
+      <div class="kpi-value" style="color:#34d399">{{ plants | selectattr('balance','eq','green') | list | length }}</div>
+      <div class="kpi-label">≤10% Variance</div>
+    </div>
+    <div class="kpi-box" style="border-color:rgba(251,191,36,0.3)">
+      <div class="kpi-value" style="color:#fbbf24">{{ plants | selectattr('balance','eq','yellow') | list | length }}</div>
+      <div class="kpi-label">11–30% Variance</div>
     </div>
     <div class="kpi-box" style="border-color:rgba(248,113,113,0.3)">
-      <div class="kpi-value" style="color:#f87171">{{ plants | length - balanced | length }}</div>
-      <div class="kpi-label">Imbalanced</div>
+      <div class="kpi-value" style="color:#f87171">{{ plants | selectattr('balance','eq','red') | list | length }}</div>
+      <div class="kpi-label">&gt;30% Variance</div>
     </div>
     <div class="kpi-box">
       <div class="kpi-value">{{ '{:,.0f}'.format(plants | sum(attribute='total')) }}</div>
