@@ -4769,20 +4769,21 @@ def _run_invoice_pending_fetch(from_date: str, to_date: str, label: str) -> tupl
             # strip _BP suffix from name too (e.g. 'MUM-Sakinaka_BP1' -> 'MUM-Sakinaka')
             plant_map[base] = _re.sub(r'_BP\d+$', '', name)
 
-    grouped = df.groupby("plant_code")["quantity"].sum().reset_index()
     results = []
-    for _, row in grouped.iterrows():
+    for _, row in df.iterrows():
         pc = str(row["plant_code"]).strip()
         if not pc:
             continue
         results.append({
-            "plant_code": pc,
-            "plant_name": plant_map.get(pc, pc),
-            "quantity":   round(float(row["quantity"]), 2),
-            "fetched_at": now_str,
+            "plant_code":  pc,
+            "plant_name":  plant_map.get(pc, pc),
+            "sales_order": str(row.get("sales_order", "") or ""),
+            "line_number": str(row.get("line_number", "") or ""),
+            "quantity":    round(float(row["quantity"]), 2),
+            "fetched_at":  now_str,
         })
-    # Sort descending by quantity
-    results.sort(key=lambda r: r["quantity"], reverse=True)
+    # Sort by plant name then descending quantity
+    results.sort(key=lambda r: (r["plant_name"], -r["quantity"]))
     database.save_invoice_pending_report(label, from_date, to_date, results)
     return results, warns
 

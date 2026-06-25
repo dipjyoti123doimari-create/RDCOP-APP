@@ -572,13 +572,15 @@ def fetch_invoice_pending_data(from_date, to_date) -> tuple:
         sql = f"""
             SELECT
                 {cols['plant']}       AS plant_code,
+                SALESORDER            AS sales_order,
+                LINENUMBER            AS line_number,
                 PRODUCED_QUANTITY     AS quantity
             FROM {_TABLE}
             WHERE PRODDATE >= :from_date
               AND PRODDATE <= :to_date
               AND STATUS = 'NEW'
               AND EXCISE_NUMBER IS NULL
-            ORDER BY {cols['plant']}
+            ORDER BY {cols['plant']}, SALESORDER, LINENUMBER
         """
         cur.execute(sql, {"from_date": fd, "to_date": td})
         rows = cur.fetchall()
@@ -586,11 +588,13 @@ def fetch_invoice_pending_data(from_date, to_date) -> tuple:
 
         if not rows:
             warnings.append(f"No invoice-pending rows found for {from_date} to {to_date}.")
-            return pd.DataFrame(columns=["plant_code","quantity"]), warnings
+            return pd.DataFrame(columns=["plant_code","sales_order","line_number","quantity"]), warnings
 
         df = pd.DataFrame(rows, columns=col_names)
-        df["quantity"]   = pd.to_numeric(df["quantity"],   errors="coerce").fillna(0)
-        df["plant_code"] = df["plant_code"].fillna("").astype(str).str.strip()
+        df["quantity"]    = pd.to_numeric(df["quantity"],    errors="coerce").fillna(0)
+        df["plant_code"]  = df["plant_code"].fillna("").astype(str).str.strip()
+        df["sales_order"] = df["sales_order"].fillna("").astype(str).str.strip()
+        df["line_number"] = df["line_number"].fillna("").astype(str).str.strip()
         return df, warnings
     finally:
         conn.close()

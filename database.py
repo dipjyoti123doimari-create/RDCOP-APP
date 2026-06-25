@@ -361,6 +361,8 @@ TABLE_SCHEMAS = {
             to_date      TEXT NOT NULL,
             plant_code   TEXT NOT NULL,
             plant_name   TEXT,
+            sales_order  TEXT,
+            line_number  TEXT,
             quantity     REAL DEFAULT 0,
             fetched_at   TEXT
         )
@@ -1542,14 +1544,23 @@ def save_invoice_pending_report(period_label: str, from_date: str, to_date: str,
     """Replace cached invoice-pending rows for a given period_label."""
     conn = get_connection()
     try:
+        # Add new columns to existing DB if missing (migration)
+        for col, coltype in [("sales_order", "TEXT"), ("line_number", "TEXT")]:
+            try:
+                conn.execute(f"ALTER TABLE ecmd_invoice_pending ADD COLUMN {col} {coltype}")
+                conn.commit()
+            except Exception:
+                pass
         conn.execute("DELETE FROM ecmd_invoice_pending WHERE period_label=?", (period_label,))
         for r in rows:
             conn.execute(
                 """INSERT INTO ecmd_invoice_pending
-                   (period_label,from_date,to_date,plant_code,plant_name,quantity,fetched_at)
-                   VALUES(?,?,?,?,?,?,?)""",
+                   (period_label,from_date,to_date,plant_code,plant_name,sales_order,line_number,quantity,fetched_at)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
                 (period_label, from_date, to_date,
-                 r["plant_code"], r.get("plant_name",""), r["quantity"], r.get("fetched_at",""))
+                 r["plant_code"], r.get("plant_name",""),
+                 r.get("sales_order",""), r.get("line_number",""),
+                 r["quantity"], r.get("fetched_at",""))
             )
         conn.commit()
     finally:
