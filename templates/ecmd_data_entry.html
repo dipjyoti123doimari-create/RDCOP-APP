@@ -10,28 +10,53 @@
 <!-- Month / Year selector -->
 <div class="card">
   <div class="section-title">📅 Select Period</div>
-  <form method="GET" action="{{ url_for('ecmd_data_entry') }}" class="form-grid" style="align-items:flex-end">
-    <div class="form-group">
-      <label>Month</label>
-      <select name="month">
-        {% for m, mname in months_list %}
-        <option value="{{ m }}" {% if m == sel_month %}selected{% endif %}>{{ mname }}</option>
-        {% endfor %}
-      </select>
+  {% set _MN_FULL = ['','January','February','March','April','May','June','July','August','September','October','November','December'] %}
+
+  {% if month_locked and not is_admin %}
+    {# Non-admin: show only allowed months as buttons #}
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+      <span style="font-size:12px;color:var(--text-muted);font-weight:600">Allowed periods:</span>
+      {% for m, y in allowed_months %}
+      <a href="{{ url_for('ecmd_data_entry', month=m, year=y) }}"
+         class="btn btn-sm {% if m == sel_month and y == sel_year %}btn-primary{% else %}btn-secondary{% endif %}">
+        {{ _MN_FULL[m] }} {{ y }}
+      </a>
+      {% endfor %}
     </div>
-    <div class="form-group">
-      <label>Year</label>
-      <select name="year">
-        {% for y in years_list %}
-        <option value="{{ y }}" {% if y == sel_year %}selected{% endif %}>{{ y }}</option>
-        {% endfor %}
-      </select>
+    <div style="font-size:11px;color:var(--text-faint);margin-top:6px">
+      🔒 Month selection is locked by admin. Contact admin to change the open period.
     </div>
-    <div class="form-group">
-      <label>&nbsp;</label>
-      <button type="submit" class="btn btn-primary">Load Plants</button>
+  {% else %}
+    {# Admin or no lock: free selector #}
+    <form method="GET" action="{{ url_for('ecmd_data_entry') }}" class="form-grid" style="align-items:flex-end">
+      <div class="form-group">
+        <label>Month</label>
+        <select name="month">
+          {% for m, mname in months_list %}
+          <option value="{{ m }}" {% if m == sel_month %}selected{% endif %}>{{ mname }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Year</label>
+        <select name="year">
+          {% for y in years_list %}
+          <option value="{{ y }}" {% if y == sel_year %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <button type="submit" class="btn btn-primary">Load Plants</button>
+      </div>
+    </form>
+    {% if month_locked and is_admin %}
+    <div style="font-size:11px;color:var(--text-faint);margin-top:6px">
+      🔒 Month lock active — users can only access:
+      {% for m,y in allowed_months %}{{ _MN_FULL[m] }} {{ y }}{% if not loop.last %}, {% endif %}{% endfor %}
     </div>
-  </form>
+    {% endif %}
+  {% endif %}
 </div>
 
 {% if month_locked and not month_allowed %}
@@ -166,40 +191,7 @@
   {% set day_by_num = {} %}
   {% for dr in day_rows %}{% set _ = day_by_num.update({dr.day: dr}) %}{% endfor %}
 
-  <!-- Diesel & Volume totals -->
   {% set dpc = plant.plant_code | replace('-','_') | replace(' ','_') %}
-  <form method="POST" action="{{ url_for('ecmd_save_daily_reading') }}"
-        id="df-diesel-{{ dpc }}" style="margin-bottom:16px">
-    <input type="hidden" name="plant_code" value="{{ plant.plant_code }}">
-    <input type="hidden" name="month"      value="{{ sel_month }}">
-    <input type="hidden" name="year"       value="{{ sel_year }}">
-    <input type="hidden" name="day"        value="0">
-    <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;
-                letter-spacing:.05em;margin-bottom:8px">
-      ⛽ Diesel &amp; Production Volume (Month Total)
-    </div>
-    <div class="form-grid">
-      <div class="form-group">
-        <label>Diesel Issued to DG (Litres) — Total</label>
-        <input type="number" step="any" name="diesel_issued_ltrs"
-               value="{{ r.diesel_issued_ltrs if has_mth and r.diesel_issued_ltrs is not none else '' }}"
-               placeholder="Total litres for the month">
-        <span style="font-size:11px;color:var(--text-faint)">L/Hr = Diesel / DG Run Hrs</span>
-      </div>
-      <div class="form-group">
-        <label>Volume Done on DG (MT) — Total</label>
-        <input type="number" step="any" name="volume_on_dg"
-               value="{{ r.volume_on_dg if has_mth and r.volume_on_dg is not none else '' }}"
-               placeholder="Total MT produced while DG was running">
-      </div>
-    </div>
-    <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
-      <span id="st-diesel-{{ plant.plant_code | replace('-','_') | replace(' ','_') }}"
-            style="font-size:11px;color:var(--text-faint)">
-        {% if has_mth and (r.diesel_issued_ltrs is not none or r.volume_on_dg is not none) %}✓ saved{% endif %}
-      </span>
-    </div>
-  </form>
 
   <!-- Day-by-day table -->
   <div style="overflow-x:auto;margin-top:4px">
@@ -406,6 +398,42 @@
     ✔ Opening of each day is auto-filled from the previous day's closing &nbsp;·&nbsp;
     Total = (Close − Open) × MF for EB KWh; (Close − Open) for all others &nbsp;·&nbsp;
     DG KWh is optional — blank defaults to hrs × 20 in calculation
+  </div>
+
+  <!-- Diesel & Volume totals — below the table -->
+  <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px">
+    <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;
+                letter-spacing:.05em;margin-bottom:10px">
+      ⛽ Diesel &amp; Production Volume (Month Total)
+    </div>
+    <form method="POST" action="{{ url_for('ecmd_save_daily_reading') }}"
+          id="df-diesel-{{ dpc }}">
+      <input type="hidden" name="plant_code" value="{{ plant.plant_code }}">
+      <input type="hidden" name="month"      value="{{ sel_month }}">
+      <input type="hidden" name="year"       value="{{ sel_year }}">
+      <input type="hidden" name="day"        value="0">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Diesel Issued to DG (Litres) — Total</label>
+          <input type="number" step="any" name="diesel_issued_ltrs"
+                 value="{{ r.diesel_issued_ltrs if has_mth and r.diesel_issued_ltrs is not none else '' }}"
+                 placeholder="Total litres for the month">
+          <span style="font-size:11px;color:var(--text-faint)">L/Hr = Diesel ÷ DG Run Hrs</span>
+        </div>
+        <div class="form-group">
+          <label>Volume Done on DG (MT) — Total</label>
+          <input type="number" step="any" name="volume_on_dg"
+                 value="{{ r.volume_on_dg if has_mth and r.volume_on_dg is not none else '' }}"
+                 placeholder="Total MT produced while DG was running">
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+        <span id="st-diesel-{{ dpc }}" style="font-size:11px;color:var(--text-faint)">
+          {% if has_mth and (r.diesel_issued_ltrs is not none or r.volume_on_dg is not none) %}✓ saved{% endif %}
+        </span>
+        <span style="font-size:11px;color:var(--text-faint)">← auto-saves when you leave the field</span>
+      </div>
+    </form>
   </div>
 
   {% endif %}{# end daily/monthly #}
