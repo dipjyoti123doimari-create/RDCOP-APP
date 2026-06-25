@@ -501,6 +501,101 @@ def save_oracle_raw_data(df: pd.DataFrame, replace: bool = True) -> int:
     return database.insert_rows("oracle_raw_data", rows)
 
 
+def fetch_dual_plant_data(from_date, to_date) -> tuple:
+    """
+    Fetch batching rows for Dual Plant Utilisation report.
+    Only rows whose BATCHCODE contains a BP segment (BP1/BP2/BP3) are useful.
+    Returns (DataFrame, warnings).
+    Columns: production_date, plant_code, batch_ref, quantity
+    """
+    cfg  = get_oracle_config()
+    cols = get_tp_oracle_cols()
+    warnings = []
+
+    _init_thick(cfg["instantclient"])
+    conn = oracledb.connect(user=cfg["user"], password=cfg["password"], dsn=_dsn(cfg))
+    try:
+        cur = conn.cursor()
+        fd, td = str(from_date), str(to_date)
+        params = {"from_date": fd, "to_date": td}
+        status_clause = ""
+        if cfg["status_filter"]:
+            status_clause = "AND STATUS = :status"
+            params["status"] = cfg["status_filter"]
+
+        sql = f"""
+            SELECT
+                PRODDATE              AS production_date,
+                {cols['plant']}       AS plant_code,
+                {cols['batch']}       AS batch_ref,
+                PRODUCED_QUANTITY     AS quantity
+            FROM {_TABLE}
+            WHERE PRODDATE >= :from_date
+              AND PRODDATE <= :to_date
+              {status_clause}
+            ORDER BY PRODDATE, {cols['plant']}
+        """
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+        col_names = [d[0].lower() for d in cur.description]
+
+        if not rows:
+            warnings.append(f"No rows found for dual-plant report {from_date} to {to_date}.")
+            return pd.DataFrame(columns=["production_date","plant_code","batch_ref","quantity"]), warnings
+
+        df = pd.DataFrame(rows, columns=col_names)
+        df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0)
+        df["batch_ref"] = df["batch_ref"].fillna("").astype(str).str.strip()
+        df["plant_code"] = df["plant_code"].fillna("").astype(str).str.strip()
+        return df, warnings
+    finally:
+        conn.close()
+
+
+def fetch_invoice_pending_data(from_date, to_date) -> tuple:
+    """
+    Fetch rows where STATUS='New' AND EXCISE_NUMBER IS NULL — these are
+    final-submission-pending invoices.
+    Returns (DataFrame, warnings).
+    Columns: plant_code, quantity
+    """
+    cfg  = get_oracle_config()
+    cols = get_tp_oracle_cols()
+    warnings = []
+
+    _init_thick(cfg["instantclient"])
+    conn = oracledb.connect(user=cfg["user"], password=cfg["password"], dsn=_dsn(cfg))
+    try:
+        cur = conn.cursor()
+        fd, td = str(from_date), str(to_date)
+
+        sql = f"""
+            SELECT
+                {cols['plant']}       AS plant_code,
+                PRODUCED_QUANTITY     AS quantity
+            FROM {_TABLE}
+            WHERE PRODDATE >= :from_date
+              AND PRODDATE <= :to_date
+              AND STATUS = 'New'
+              AND (EXCISE_NUMBER IS NULL OR TRIM(EXCISE_NUMBER) = ' ')
+            ORDER BY {cols['plant']}
+        """
+        cur.execute(sql, {"from_date": fd, "to_date": td})
+        rows = cur.fetchall()
+        col_names = [d[0].lower() for d in cur.description]
+
+        if not rows:
+            warnings.append(f"No invoice-pending rows found for {from_date} to {to_date}.")
+            return pd.DataFrame(columns=["plant_code","quantity"]), warnings
+
+        df = pd.DataFrame(rows, columns=col_names)
+        df["quantity"]   = pd.to_numeric(df["quantity"],   errors="coerce").fillna(0)
+        df["plant_code"] = df["plant_code"].fillna("").astype(str).str.strip()
+        return df, warnings
+    finally:
+        conn.close()
+
+
 def save_oracle_backend_data(df: pd.DataFrame, from_date, to_date,
                               replace: bool = True) -> int:
     """

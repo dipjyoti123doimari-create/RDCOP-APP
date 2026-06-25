@@ -44,6 +44,12 @@
       <a href="{{ url_for('ecmd_reports') }}" class="nav-item {% if active_page in ('calculate','reports') %}active{% endif %}">
         <span class="nav-icon">⚡</span><span class="nav-label">Calculate &amp; Reports</span>
       </a>
+      <a href="{{ url_for('ecmd_dual_plant') }}" class="nav-item {% if active_page == 'dual_plant' %}active{% endif %}">
+        <span class="nav-icon">🏭</span><span class="nav-label">Dual Plant Utilisation</span>
+      </a>
+      <a href="{{ url_for('ecmd_invoice_pending') }}" class="nav-item {% if active_page == 'invoice_pending' %}active{% endif %}">
+        <span class="nav-icon">📋</span><span class="nav-label">Invoice Pending</span>
+      </a>
       {% if not current_user or current_user.role == 'SUPER_ADMIN' %}
       <a href="{{ url_for('ecmd_settings') }}" class="nav-item {% if active_page == 'settings' %}active{% endif %}">
         <span class="nav-icon">⚙️</span><span class="nav-label">Settings</span>

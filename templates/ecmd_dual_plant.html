@@ -1,0 +1,170 @@
+{% extends "ecmd_base.html" %}
+{% block title %}Dual Plant Utilisation{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Dual Plant Utilisation</h1>
+  <p>Mixer-wise quantity and utilisation % for plants with multiple mixers (BP1/BP2/BP3)</p>
+</div>
+
+<!-- Fetch panel (admin only) -->
+{% if current_user and current_user.role == 'SUPER_ADMIN' %}
+<div class="card">
+  <div class="section-title">🔄 Fetch Data from Oracle</div>
+  <form method="POST" action="{{ url_for('ecmd_dual_plant_fetch') }}" class="form-grid" style="align-items:flex-end">
+    <div class="form-group">
+      <label>Period Label</label>
+      <input type="text" name="label" placeholder="e.g. 1-15 Jun 2026" style="min-width:180px">
+    </div>
+    <div class="form-group">
+      <label>From Date</label>
+      <input type="date" name="from_date">
+    </div>
+    <div class="form-group">
+      <label>To Date</label>
+      <input type="date" name="to_date">
+    </div>
+    <div class="form-group">
+      <label>&nbsp;</label>
+      <button type="submit" class="btn btn-primary">Fetch</button>
+    </div>
+  </form>
+  <!-- Quick fortnight buttons -->
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+    <span style="font-size:11px;color:var(--text-muted);align-self:center">Quick:</span>
+    {% for lbl, fd, td in fortnights %}
+    <form method="POST" action="{{ url_for('ecmd_dual_plant_fetch') }}" style="margin:0">
+      <input type="hidden" name="label"     value="{{ lbl }}">
+      <input type="hidden" name="from_date" value="{{ fd }}">
+      <input type="hidden" name="to_date"   value="{{ td }}">
+      <button type="submit" class="btn btn-secondary btn-sm">{{ lbl }}</button>
+    </form>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Period selector -->
+{% if periods %}
+<div class="card" style="padding:12px 18px">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <span style="font-size:12px;font-weight:600;color:var(--text-muted)">Period:</span>
+    {% for p in periods %}
+    <a href="{{ url_for('ecmd_dual_plant', period=p.period_label) }}"
+       class="btn btn-sm {% if p.period_label == sel_label %}btn-primary{% else %}btn-secondary{% endif %}">
+      {{ p.period_label }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Report table -->
+{% if rows %}
+{% set plants_done = [] %}
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+    <div class="section-title" style="margin:0">📊 {{ sel_label }}</div>
+    <span style="font-size:12px;color:var(--text-muted)">
+      Fetched {{ rows[0].fetched_at if rows else '' }}
+    </span>
+  </div>
+
+  <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr style="background:rgba(99,91,255,0.15);font-size:11px;text-transform:uppercase;
+                   letter-spacing:.05em;color:var(--text-muted)">
+          <th style="padding:10px 12px;text-align:left">Sr.</th>
+          <th style="padding:10px 12px;text-align:left">Plant Name</th>
+          <th style="padding:10px 12px;text-align:left">Plant Code</th>
+          <th style="padding:10px 12px;text-align:center">Mixer</th>
+          <th style="padding:10px 12px;text-align:right">Qty (MT)</th>
+          <th style="padding:10px 12px;text-align:right">% Share</th>
+          <th style="padding:10px 12px;min-width:120px">Utilisation</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% set sr = namespace(n=0) %}
+      {% set prev_plant = namespace(code='') %}
+      {% for row in rows %}
+      {% if row.plant_code != prev_plant.code %}
+        {% set sr.n = sr.n + 1 %}
+        {% set prev_plant.code = row.plant_code %}
+      {% endif %}
+      <tr style="border-bottom:1px solid var(--border);
+                 {% if loop.index is odd %}background:rgba(255,255,255,0.01){% endif %}">
+        <td style="padding:8px 12px;color:var(--text-muted)">
+          {% if row.plant_code != rows[loop.index0 - 1].plant_code if loop.index0 > 0 else True %}
+            {{ sr.n }}
+          {% endif %}
+        </td>
+        <td style="padding:8px 12px;font-weight:600">{{ row.plant_name or row.plant_code }}</td>
+        <td style="padding:8px 12px;color:var(--text-muted)">{{ row.plant_code }}</td>
+        <td style="padding:8px 12px;text-align:center">
+          <span style="background:{% if row.mixer == 'BP1' %}rgba(99,91,255,0.2);color:#8B87FF
+                       {% elif row.mixer == 'BP2' %}rgba(16,185,129,0.15);color:#34d399
+                       {% else %}rgba(251,191,36,0.15);color:#fbbf24{% endif %};
+                       border-radius:5px;padding:2px 10px;font-size:12px;font-weight:600">
+            {{ row.mixer }}
+          </span>
+        </td>
+        <td style="padding:8px 12px;text-align:right;font-weight:600">
+          {{ '{:,.2f}'.format(row.quantity) }}
+        </td>
+        <td style="padding:8px 12px;text-align:right;font-weight:700;
+                   color:{% if row.pct_share >= 50 %}var(--color-green){% else %}var(--text-muted){% endif %}">
+          {{ row.pct_share }}%
+        </td>
+        <td style="padding:8px 12px">
+          <div style="background:var(--border);border-radius:4px;height:8px;overflow:hidden">
+            <div style="width:{{ [row.pct_share, 100]|min }}%;height:100%;border-radius:4px;
+                        background:{% if row.pct_share >= 50 %}#34d399{% elif row.pct_share >= 25 %}#fbbf24{% else %}#f87171{% endif %}">
+            </div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Summary stats -->
+  {% set plant_codes = rows | map(attribute='plant_code') | unique | list %}
+  <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);
+              display:flex;gap:20px;flex-wrap:wrap">
+    <div class="kpi-box">
+      <div class="kpi-value">{{ plant_codes | length }}</div>
+      <div class="kpi-label">Dual Plants</div>
+    </div>
+    <div class="kpi-box">
+      <div class="kpi-value">{{ rows | length }}</div>
+      <div class="kpi-label">Mixer Entries</div>
+    </div>
+    <div class="kpi-box">
+      <div class="kpi-value">{{ '{:,.0f}'.format(rows | sum(attribute='quantity')) }}</div>
+      <div class="kpi-label">Total Qty (MT)</div>
+    </div>
+  </div>
+</div>
+
+{% elif sel_label %}
+<div class="glass-card" style="text-align:center;padding:40px">
+  <div style="font-size:36px;margin-bottom:10px">🏭</div>
+  <div style="font-weight:600;margin-bottom:6px">No data for {{ sel_label }}</div>
+  <div style="color:var(--text-muted);font-size:13px">
+    Either no plants with BP mixer variants were found, or data hasn't been fetched yet.
+  </div>
+</div>
+
+{% else %}
+<div class="glass-card" style="text-align:center;padding:40px">
+  <div style="font-size:36px;margin-bottom:10px">🏭</div>
+  <div style="font-weight:600;margin-bottom:6px">No reports yet</div>
+  <div style="color:var(--text-muted);font-size:13px">
+    Use the Fetch panel above to pull Oracle data for a fortnight period.
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

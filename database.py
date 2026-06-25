@@ -336,6 +336,36 @@ TABLE_SCHEMAS = {
         )
     """,
 
+    # Dual Plant Utilisation — cached fortnightly report rows
+    "ecmd_dual_plant": """
+        CREATE TABLE IF NOT EXISTS ecmd_dual_plant (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            period_label TEXT NOT NULL,
+            from_date    TEXT NOT NULL,
+            to_date      TEXT NOT NULL,
+            plant_code   TEXT NOT NULL,
+            plant_name   TEXT,
+            mixer        TEXT NOT NULL,
+            quantity     REAL DEFAULT 0,
+            pct_share    REAL DEFAULT 0,
+            fetched_at   TEXT
+        )
+    """,
+
+    # Invoice Final Submission Pending — cached fortnightly report rows
+    "ecmd_invoice_pending": """
+        CREATE TABLE IF NOT EXISTS ecmd_invoice_pending (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            period_label TEXT NOT NULL,
+            from_date    TEXT NOT NULL,
+            to_date      TEXT NOT NULL,
+            plant_code   TEXT NOT NULL,
+            plant_name   TEXT,
+            quantity     REAL DEFAULT 0,
+            fetched_at   TEXT
+        )
+    """,
+
     # Calculated ECMD results — one row per plant per month
     "ecmd_results": """
         CREATE TABLE IF NOT EXISTS ecmd_results (
@@ -1459,6 +1489,92 @@ def get_ecmd_mf(plant_code: str) -> float:
         )
         row = cur.fetchone()
         return float(row[0]) if row and row[0] else 1.0
+    finally:
+        conn.close()
+
+
+def save_dual_plant_report(period_label: str, from_date: str, to_date: str, rows: list):
+    """Replace cached dual-plant rows for a given period_label."""
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM ecmd_dual_plant WHERE period_label=?", (period_label,))
+        for r in rows:
+            conn.execute(
+                """INSERT INTO ecmd_dual_plant
+                   (period_label,from_date,to_date,plant_code,plant_name,mixer,quantity,pct_share,fetched_at)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                (period_label, from_date, to_date,
+                 r["plant_code"], r.get("plant_name",""), r["mixer"],
+                 r["quantity"], r["pct_share"], r.get("fetched_at",""))
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_dual_plant_report(period_label: str) -> list:
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "SELECT * FROM ecmd_dual_plant WHERE period_label=? ORDER BY plant_code, mixer",
+            (period_label,)
+        )
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_dual_plant_periods() -> list:
+    """Return distinct period_labels available, newest first."""
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "SELECT DISTINCT period_label, from_date, to_date, fetched_at "
+            "FROM ecmd_dual_plant ORDER BY from_date DESC"
+        )
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def save_invoice_pending_report(period_label: str, from_date: str, to_date: str, rows: list):
+    """Replace cached invoice-pending rows for a given period_label."""
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM ecmd_invoice_pending WHERE period_label=?", (period_label,))
+        for r in rows:
+            conn.execute(
+                """INSERT INTO ecmd_invoice_pending
+                   (period_label,from_date,to_date,plant_code,plant_name,quantity,fetched_at)
+                   VALUES(?,?,?,?,?,?,?)""",
+                (period_label, from_date, to_date,
+                 r["plant_code"], r.get("plant_name",""), r["quantity"], r.get("fetched_at",""))
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_invoice_pending_report(period_label: str) -> list:
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "SELECT * FROM ecmd_invoice_pending WHERE period_label=? ORDER BY plant_code",
+            (period_label,)
+        )
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_invoice_pending_periods() -> list:
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "SELECT DISTINCT period_label, from_date, to_date, fetched_at "
+            "FROM ecmd_invoice_pending ORDER BY from_date DESC"
+        )
+        return [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()
 

@@ -4647,6 +4647,163 @@ def ecmd_save_email_defaults():
     return redirect(url_for("ecmd_settings", m="email"))
 
 
+# ── ECMD Dual Plant Utilisation ───────────────────────────────────────────────
+
+def _ecmd_fortnights(year: int, month: int):
+    """Return [(label, from_date, to_date)] for both fortnights of a month."""
+    import calendar as _cal
+    last = _cal.monthrange(year, month)[1]
+    mn   = f"{year}-{month:02d}"
+    return [
+        (f"1–15 {_cal.month_abbr[month]} {year}", f"{mn}-01", f"{mn}-15"),
+        (f"16–{last} {_cal.month_abbr[month]} {year}", f"{mn}-16", f"{mn}-{last:02d}"),
+    ]
+
+
+def _run_dual_plant_fetch(from_date: str, to_date: str, label: str) -> tuple:
+    """Fetch + process dual-plant data for one fortnight. Returns (rows, warnings)."""
+    import tp_calculator as _tpc
+    df, warns = oracle_connector.fetch_dual_plant_data(from_date, to_date)
+    if df.empty:
+        return [], warns
+
+    # Parse BP mixer from batch_ref using same logic as TP module
+    results = []
+    now_str = _date.today().isoformat()
+    plant_map = {p["plant_code"]: p["plant_name"] for p in database.get_tp_plants()}
+
+    # Group by plant_code + mixer variant derived from batch_ref
+    rows_parsed = []
+    for _, row in df.iterrows():
+        parsed = _tpc._parse_batch(str(row["batch_ref"]))
+        if parsed and len(parsed) == 3:
+            _, mixer_variant, _ = parsed
+            if mixer_variant:
+                rows_parsed.append({
+                    "plant_code": row["plant_code"],
+                    "mixer":      mixer_variant,  # BP1, BP2, BP3
+                    "quantity":   float(row["quantity"]),
+                })
+
+    if not rows_parsed:
+        warns.append("No rows with BP mixer variant found in batch references.")
+        return [], warns
+
+    import pandas as _pd
+    pf = _pd.DataFrame(rows_parsed)
+    # Only plants that have BP1 (dual plant indicator)
+    has_bp1 = set(pf[pf["mixer"] == "BP1"]["plant_code"].unique())
+    pf = pf[pf["plant_code"].isin(has_bp1)]
+
+    plant_totals = pf.groupby("plant_code")["quantity"].sum()
+    for (pc, mx), grp in pf.groupby(["plant_code", "mixer"]):
+        qty    = grp["quantity"].sum()
+        total  = plant_totals.get(pc, 1) or 1
+        results.append({
+            "plant_code": pc,
+            "plant_name": plant_map.get(pc, pc),
+            "mixer":      mx,
+            "quantity":   round(qty, 2),
+            "pct_share":  round(qty / total * 100, 1),
+            "fetched_at": now_str,
+        })
+
+    results.sort(key=lambda r: (r["plant_code"], r["mixer"]))
+    database.save_dual_plant_report(label, from_date, to_date, results)
+    return results, warns
+
+
+@app.route("/ecmd/dual-plant")
+@auth.login_required
+def ecmd_dual_plant():
+    today  = _date.today()
+    fortnights = _ecmd_fortnights(today.year, today.month)
+    periods    = database.get_dual_plant_periods()
+    sel_label  = request.args.get("period", periods[0]["period_label"] if periods else "")
+    rows       = database.get_dual_plant_report(sel_label) if sel_label else []
+    ctx = _ecmd_ctx()
+    ctx["active_page"] = "dual_plant"
+    return render_template("ecmd_dual_plant.html",
+                           rows=rows, periods=periods, sel_label=sel_label,
+                           fortnights=fortnights, **ctx)
+
+
+@app.route("/ecmd/dual-plant/fetch", methods=["POST"])
+@auth.admin_required
+def ecmd_dual_plant_fetch():
+    from_date = request.form.get("from_date", "").strip()
+    to_date   = request.form.get("to_date",   "").strip()
+    label     = request.form.get("label",     "").strip()
+    if not from_date or not to_date or not label:
+        flash("From date, to date and label are required.", "error")
+        return redirect(url_for("ecmd_dual_plant"))
+    _, warns = _run_dual_plant_fetch(from_date, to_date, label)
+    for w in warns:
+        flash(w, "warning")
+    flash(f"Dual-plant data fetched for {label}.", "success")
+    return redirect(url_for("ecmd_dual_plant", period=label))
+
+
+# ── ECMD Invoice Pending ───────────────────────────────────────────────────────
+
+def _run_invoice_pending_fetch(from_date: str, to_date: str, label: str) -> tuple:
+    """Fetch + process invoice-pending data. Returns (rows, warnings)."""
+    df, warns = oracle_connector.fetch_invoice_pending_data(from_date, to_date)
+    if df.empty:
+        return [], warns
+
+    now_str   = _date.today().isoformat()
+    plant_map = {p["plant_code"]: p["plant_name"] for p in database.get_tp_plants()}
+
+    import pandas as _pd
+    grouped = df.groupby("plant_code")["quantity"].sum().reset_index()
+    results = []
+    for _, row in grouped.iterrows():
+        pc = str(row["plant_code"]).strip()
+        if not pc:
+            continue
+        results.append({
+            "plant_code": pc,
+            "plant_name": plant_map.get(pc, pc),
+            "quantity":   round(float(row["quantity"]), 2),
+            "fetched_at": now_str,
+        })
+    results.sort(key=lambda r: r["plant_code"])
+    database.save_invoice_pending_report(label, from_date, to_date, results)
+    return results, warns
+
+
+@app.route("/ecmd/invoice-pending")
+@auth.login_required
+def ecmd_invoice_pending():
+    today   = _date.today()
+    fortnights = _ecmd_fortnights(today.year, today.month)
+    periods    = database.get_invoice_pending_periods()
+    sel_label  = request.args.get("period", periods[0]["period_label"] if periods else "")
+    rows       = database.get_invoice_pending_report(sel_label) if sel_label else []
+    ctx = _ecmd_ctx()
+    ctx["active_page"] = "invoice_pending"
+    return render_template("ecmd_invoice_pending.html",
+                           rows=rows, periods=periods, sel_label=sel_label,
+                           fortnights=fortnights, **ctx)
+
+
+@app.route("/ecmd/invoice-pending/fetch", methods=["POST"])
+@auth.admin_required
+def ecmd_invoice_pending_fetch():
+    from_date = request.form.get("from_date", "").strip()
+    to_date   = request.form.get("to_date",   "").strip()
+    label     = request.form.get("label",     "").strip()
+    if not from_date or not to_date or not label:
+        flash("From date, to date and label are required.", "error")
+        return redirect(url_for("ecmd_invoice_pending"))
+    _, warns = _run_invoice_pending_fetch(from_date, to_date, label)
+    for w in warns:
+        flash(w, "warning")
+    flash(f"Invoice-pending data fetched for {label}.", "success")
+    return redirect(url_for("ecmd_invoice_pending", period=label))
+
+
 # ── System Config ─────────────────────────────────────────────────────────────
 
 @app.route("/sysconfig")
