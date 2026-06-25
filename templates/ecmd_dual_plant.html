@@ -88,23 +88,23 @@
       {% set sr = namespace(n=0) %}
       {% set prev_plant = namespace(code='') %}
       {% for row in rows %}
-      {% if row.plant_code != prev_plant.code %}
+      {% set is_new_plant = (row.plant_code != prev_plant.code) %}
+      {% if is_new_plant %}
         {% set sr.n = sr.n + 1 %}
         {% set prev_plant.code = row.plant_code %}
       {% endif %}
       <tr style="border-bottom:1px solid var(--border);
                  {% if loop.index is odd %}background:rgba(255,255,255,0.01){% endif %}">
         <td style="padding:8px 12px;color:var(--text-muted)">
-          {% if row.plant_code != rows[loop.index0 - 1].plant_code if loop.index0 > 0 else True %}
-            {{ sr.n }}
-          {% endif %}
+          {% if is_new_plant %}{{ sr.n }}{% endif %}
         </td>
         <td style="padding:8px 12px;font-weight:600">{{ row.plant_name or row.plant_code }}</td>
         <td style="padding:8px 12px;color:var(--text-muted)">{{ row.plant_code }}</td>
         <td style="padding:8px 12px;text-align:center">
-          <span style="background:{% if row.mixer == 'BP1' %}rgba(99,91,255,0.2);color:#8B87FF
-                       {% elif row.mixer == 'BP2' %}rgba(16,185,129,0.15);color:#34d399
-                       {% else %}rgba(251,191,36,0.15);color:#fbbf24{% endif %};
+          {% if row.mixer == 'BP1' %}{% set mx_bg = 'rgba(99,91,255,0.2);color:#8B87FF' %}
+          {% elif row.mixer == 'BP2' %}{% set mx_bg = 'rgba(16,185,129,0.15);color:#34d399' %}
+          {% else %}{% set mx_bg = 'rgba(251,191,36,0.15);color:#fbbf24' %}{% endif %}
+          <span style="background:{{ mx_bg }};
                        border-radius:5px;padding:2px 10px;font-size:12px;font-weight:600">
             {{ row.mixer }}
           </span>
