@@ -708,14 +708,28 @@ checkMaintLock();
         {% endif %}
       </div>
 
+      {# exco_opts and bh_opts passed from sysconfig_page route — pulled from tp_plant_data #}
+
       <!-- Add -->
       <div class="tab-panel" data-tabpanel="sc-plant" data-tab="add">
         <form method="POST" action="{{ url_for('tp_add_plant') }}">
           <div class="form-grid">
             <div class="form-group"><label>Plant Code *</label><input type="text" name="plant_code" required></div>
-            <div class="form-group"><label>Exco Location</label><input type="text" name="exco_location"></div>
+            <div class="form-group">
+              <label>Exco Location</label>
+              <select name="exco_location">
+                <option value="">— select —</option>
+                {% for o in exco_opts %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
+              </select>
+            </div>
             <div class="form-group"><label>Plant Name</label><input type="text" name="plant_name"></div>
-            <div class="form-group"><label>Business Head</label><input type="text" name="business_head"></div>
+            <div class="form-group">
+              <label>Business Head</label>
+              <select name="business_head">
+                <option value="">— select —</option>
+                {% for o in bh_opts %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
+              </select>
+            </div>
             <div class="form-group"><label>Plant Manager</label><input type="text" name="plant_manager"></div>
             <div class="form-group"><label>Mixer Theo. Capacity</label><input type="number" step="0.01" name="mixer_theo_cap" placeholder="0.00"></div>
           </div>
@@ -741,9 +755,21 @@ checkMaintLock();
         {% if edit_plant %}
         <form method="POST" action="{{ url_for('tp_update_plant', code=edit_plant.plant_code) }}" style="margin-top:14px">
           <div class="form-grid">
-            <div class="form-group"><label>Exco Location</label><input type="text" name="exco_location" value="{{ edit_plant.exco_location or '' }}"></div>
+            <div class="form-group">
+              <label>Exco Location</label>
+              <select name="exco_location">
+                <option value="">— select —</option>
+                {% for o in exco_opts %}<option value="{{ o }}" {% if edit_plant.exco_location == o %}selected{% endif %}>{{ o }}</option>{% endfor %}
+              </select>
+            </div>
             <div class="form-group"><label>Plant Name</label><input type="text" name="plant_name" value="{{ edit_plant.plant_name or '' }}"></div>
-            <div class="form-group"><label>Business Head</label><input type="text" name="business_head" value="{{ edit_plant.business_head or '' }}"></div>
+            <div class="form-group">
+              <label>Business Head</label>
+              <select name="business_head">
+                <option value="">— select —</option>
+                {% for o in bh_opts %}<option value="{{ o }}" {% if edit_plant.business_head == o %}selected{% endif %}>{{ o }}</option>{% endfor %}
+              </select>
+            </div>
             <div class="form-group"><label>Plant Manager</label><input type="text" name="plant_manager" value="{{ edit_plant.plant_manager or '' }}"></div>
             <div class="form-group"><label>Mixer Theo. Capacity</label><input type="number" step="0.01" name="mixer_theo_cap" value="{{ edit_plant.mixer_theo_cap or '' }}"></div>
           </div>

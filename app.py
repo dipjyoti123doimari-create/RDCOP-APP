@@ -5233,6 +5233,9 @@ def sysconfig_page():
     tp_worksheet = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
     edit_plant   = database.get_tp_plant(edit_code) if edit_code else None
     del_plant    = database.get_tp_plant(del_code)  if del_code  else None
+    # Dynamic dropdown options — pulled from existing plant data
+    exco_opts = sorted({p["exco_location"] for p in plant_rows if p.get("exco_location")})
+    bh_opts   = sorted({p["business_head"]  for p in plant_rows if p.get("business_head")})
 
     return render_template("sysconfig.html",
                            smtp=smtp, email_configured=email_configured,
@@ -5259,6 +5262,7 @@ def sysconfig_page():
                            tp_last_sync=tp_last_sync, tp_sheet_id=tp_sheet_id,
                            tp_worksheet=tp_worksheet,
                            edit_plant=edit_plant, del_plant=del_plant,
+                           exco_opts=exco_opts, bh_opts=bh_opts,
                            today=str(_date.today()),
                            today_first=str(_date.today().replace(day=1)),
                            bg_auto=bg_auto(), bg_animate=bg_animate(), bg_theme=bg_theme(),
