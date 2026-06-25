@@ -1,19 +1,21 @@
 @echo off
-title RDC Incentive Calculator - Watchdog
+title RDC-OPS Server — DO NOT CLOSE THIS WINDOW
+color 0A
 
-set APP_DIR=d:\Dipjyoti Doimari\AI\Incentive_Calculator
-
-echo.
 echo ============================================================
-echo   RDC Batching Incentive Calculator
-echo   Starting watchdog on http://localhost:2001
-echo   Crash log: %APP_DIR%\server_crash.log
-echo   App log:   %APP_DIR%\server.log
+echo   RDC-OPS Server
+echo   Running on http://localhost:2001
+echo   DO NOT CLOSE THIS WINDOW — closing it stops the server
 echo ============================================================
-
-cd /d "%APP_DIR%"
-python watchdog.py
-
 echo.
-echo Watchdog exited. Press any key to close.
-pause
+
+cd /d "d:\Dipjyoti Doimari\AI\Incentive_Calculator"
+set PYTHONIOENCODING=utf-8
+
+:restart
+echo [%date% %time%] Starting server...
+"C:\Users\Dipjyoti Doimari\AppData\Local\Programs\Python\Python312\python.exe" app.py
+echo.
+echo [%date% %time%] Server stopped. Restarting in 3 seconds...
+timeout /t 3 /nobreak >nul
+goto restart

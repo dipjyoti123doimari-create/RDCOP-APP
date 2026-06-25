@@ -33,10 +33,16 @@
              placeholder="Closing reading (KVAh)">
     </div>
     <div class="form-group">
-      <label>Multiplying Factor (MF)</label>
+      <label>Multiplying Factor (MF)
+        {% if not is_admin %}<span style="font-size:10px;color:var(--text-faint)">(admin only)</span>{% endif %}
+      </label>
       <input type="number" step="any" name="mf"
-             value="{{ r.mf if has_reading else '' }}"
-             placeholder="e.g. 1, 2, 5 …">
+             value="{{ r.mf if has_reading else mf_map.get(plant.plant_code, 1) }}"
+             placeholder="e.g. 1, 2, 5 …"
+             {% if not is_admin %}readonly
+               style="background:rgba(255,255,255,0.03);color:var(--text-muted);cursor:not-allowed"
+               title="MF is set by admin only"
+             {% endif %}>
       <span style="font-size:11px;color:var(--text-faint)">EB KWh = (Close − Open) × MF</span>
     </div>
   </div>
