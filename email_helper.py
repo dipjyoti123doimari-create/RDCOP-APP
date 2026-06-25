@@ -63,6 +63,62 @@ def is_configured() -> bool:
     return bool(c["host"] and c["sender"] and c["password"])
 
 
+def get_uep_smtp_config() -> dict:
+    """Read UEP-specific SMTP settings stored in module_settings (prefix: uep_smtp_)."""
+    def _ms(key, default=""):
+        return database.get_module_setting("ecmd", key, default) or default
+
+    raw_port = _ms("uep_smtp_port", str(_DEFAULT_PORT))
+    try:
+        port = int(raw_port)
+    except (TypeError, ValueError):
+        port = _DEFAULT_PORT
+
+    return {
+        "host":     _ms("uep_smtp_host",   "").strip(),
+        "port":     port,
+        "sender":   _ms("uep_smtp_sender", "").strip(),
+        "password": _ms("uep_smtp_password", ""),
+        "use_tls":  _ms("uep_smtp_use_tls", "true") == "true",
+    }
+
+
+def uep_is_configured() -> bool:
+    c = get_uep_smtp_config()
+    return bool(c["host"] and c["sender"] and c["password"])
+
+
+def send_uep_email(to, cc, subject, body, html=False):
+    """Send a plain email using the UEP-specific SMTP config."""
+    cfg = get_uep_smtp_config()
+    if not (cfg["host"] and cfg["sender"] and cfg["password"]):
+        raise RuntimeError("UEP SMTP is not configured. Add settings in UEP Settings.")
+
+    to_list = _split_emails(to)
+    cc_list  = _split_emails(cc)
+    if not to_list:
+        raise RuntimeError("No recipient address provided.")
+
+    msg = EmailMessage()
+    msg["From"]    = cfg["sender"]
+    msg["To"]      = ", ".join(to_list)
+    if cc_list:
+        msg["Cc"] = ", ".join(cc_list)
+    msg["Subject"] = subject
+    if html:
+        msg.set_content("Please view this email in an HTML-capable client.")
+        msg.add_alternative(body, subtype="html")
+    else:
+        msg.set_content(body)
+
+    recipients = to_list + cc_list
+    with smtplib.SMTP(cfg["host"], cfg["port"], timeout=30) as server:
+        if cfg["use_tls"]:
+            server.starttls()
+        server.login(cfg["sender"], cfg["password"])
+        server.send_message(msg, to_addrs=recipients)
+
+
 REPORT_SECTIONS = [
     "Production report of all Trainees",
     "Production report of PM/API",

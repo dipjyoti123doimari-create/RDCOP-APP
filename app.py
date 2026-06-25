@@ -4531,6 +4531,8 @@ def ecmd_send_email():
 def ecmd_settings():
     smtp             = email_helper.get_smtp_config()
     email_configured = bool(smtp.get("host") and smtp.get("sender"))
+    uep_smtp         = email_helper.get_uep_smtp_config()
+    uep_smtp_configured = email_helper.uep_is_configured()
     ora_configured   = oracle_connector.is_configured()
     sched_enabled    = database.get_module_setting("ecmd", "email_schedule_enabled", "false") == "true"
     sched_time       = database.get_module_setting("ecmd", "email_schedule_time", "08:00")
@@ -4551,6 +4553,7 @@ def ecmd_settings():
     ctx["active_page"] = "settings"
     return render_template("ecmd_settings.html",
                            smtp=smtp, email_configured=email_configured,
+                           uep_smtp=uep_smtp, uep_smtp_configured=uep_smtp_configured,
                            ora_configured=ora_configured,
                            sched_enabled=sched_enabled, sched_time=sched_time,
                            sched_to=sched_to, sched_cc=sched_cc,
@@ -4647,6 +4650,40 @@ def ecmd_save_email_defaults():
     })
     flash("ECMD email defaults saved.", "success")
     return redirect(url_for("ecmd_settings", m="email"))
+
+
+@app.route("/ecmd/settings/save-uep-smtp", methods=["POST"])
+@auth.admin_required
+def ecmd_save_uep_smtp():
+    pwd = request.form.get("password", "").strip()
+    data = {
+        "uep_smtp_host":    request.form.get("host", "").strip(),
+        "uep_smtp_port":    request.form.get("port", "587").strip(),
+        "uep_smtp_sender":  request.form.get("sender", "").strip(),
+        "uep_smtp_use_tls": "true" if "use_tls" in request.form else "false",
+    }
+    if pwd:
+        data["uep_smtp_password"] = pwd
+    database.set_module_settings_bulk("ecmd", data)
+    flash("UEP SMTP settings saved.", "success")
+    return redirect(url_for("ecmd_settings", m="uep-smtp"))
+
+
+@app.route("/ecmd/settings/test-uep-smtp", methods=["POST"])
+@auth.admin_required
+def ecmd_test_uep_smtp():
+    try:
+        email_helper.send_uep_email(
+            to=request.form.get("test_to", "").strip(),
+            cc="",
+            subject="UEP SMTP Test",
+            body="This is a test email confirming your UEP SMTP settings work.",
+            html=False,
+        )
+        flash("Test email sent successfully.", "success")
+    except Exception as e:
+        flash(f"Test failed: {e}", "error")
+    return redirect(url_for("ecmd_settings", m="uep-smtp"))
 
 
 # ── ECMD Dual Plant Utilisation ───────────────────────────────────────────────
@@ -4930,8 +4967,7 @@ def ecmd_mail_scheduler():
     def _ms(key, default=""):
         return database.get_module_setting("ecmd", key, default)
 
-    smtp = email_helper.get_smtp_config()
-    email_configured = bool(smtp.get("host") and smtp.get("sender") and smtp.get("password"))
+    email_configured = email_helper.uep_is_configured()
 
     # ECMD monthly report scheduler
     ecmd_sched = {
@@ -5107,7 +5143,7 @@ def _send_dpu_email(rows, label, to_addr, cc_addr):
                 f"<table border='1' cellpadding='5' style='border-collapse:collapse'>"
                 f"<tr><th>Plant</th><th>Code</th><th>Mixer</th><th>Qty (MT)</th><th>% Share</th></tr>"
                 f"{rows_html}</table>")
-    email_helper.send_email(to=to_addr, cc=cc_addr,
+    email_helper.send_uep_email(to=to_addr, cc=cc_addr,
                             subject=f"RDC-UEP DPU Report — {label}",
                             body=body, html=True)
 
@@ -5127,7 +5163,7 @@ def _send_pfs_email(rows, label, to_addr, cc_addr):
                 f"<table border='1' cellpadding='5' style='border-collapse:collapse'>"
                 f"<tr><th>Sr.</th><th>Plant</th><th>Code</th><th>Qty (MT)</th></tr>"
                 f"{rows_html}</table>")
-    email_helper.send_email(to=to_addr, cc=cc_addr,
+    email_helper.send_uep_email(to=to_addr, cc=cc_addr,
                             subject=f"RDC-UEP PFS Report — {label}",
                             body=body, html=True)
 
@@ -5136,7 +5172,7 @@ def _send_ecmd_report_email(month, year, to_addr, cc_addr):
     from calendar import month_name
     label = f"{month_name[month]} {year}"
     body = f"<h3>ECMD Monthly Energy Report — {label}</h3><p>Please find the report attached.</p>"
-    email_helper.send_email(to=to_addr, cc=cc_addr,
+    email_helper.send_uep_email(to=to_addr, cc=cc_addr,
                             subject=f"RDC-UEP ECMD Report — {label}",
                             body=body, html=True)
 
@@ -5194,7 +5230,7 @@ def _dpu_send_scheduled_email():
                     f"<th>Qty (MT)</th><th>% Share</th></tr>"
                     f"{rows_html}</table>")
 
-            email_helper.send_email(
+            email_helper.send_uep_email(
                 to=to_addr, cc=cc_addr,
                 subject=f"RDC-UEP DPU Report — {label}",
                 body=body, html=True
@@ -5241,7 +5277,7 @@ def _pfs_send_scheduled_email():
                         f"<tr><th>Sr.</th><th>Plant</th><th>Code</th><th>Qty (MT)</th></tr>"
                         f"{rows_html}</table>")
 
-            email_helper.send_email(
+            email_helper.send_uep_email(
                 to=to_addr, cc=cc_addr,
                 subject=f"RDC-UEP PFS Report — {label}",
                 body=body, html=True

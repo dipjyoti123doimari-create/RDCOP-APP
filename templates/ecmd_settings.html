@@ -48,16 +48,16 @@
     <span class="settings-tile-arrow">›</span>
   </div>
 
-  <!-- SMTP status -->
-  <div class="settings-tile">
+  <!-- UEP SMTP -->
+  <div class="settings-tile" onclick="document.getElementById('modal-uep-smtp').style.display='flex'">
     <div class="settings-tile-icon">📮</div>
     <div class="settings-tile-info">
-      <div class="settings-tile-title">SMTP</div>
+      <div class="settings-tile-title">UEP SMTP</div>
       <div class="settings-tile-desc">
-        {% if email_configured %}Configured: {{ smtp.host }}{% else %}Not configured{% endif %}
+        {% if uep_smtp_configured %}Configured: {{ uep_smtp.host }}{% else %}Not configured{% endif %}
       </div>
-      <a href="{{ url_for('page_settings') }}" class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="event.stopPropagation()">Configure in I&amp;D Settings</a>
     </div>
+    <span class="settings-tile-arrow">›</span>
   </div>
 
   <!-- EB & DG Entry Month Lock -->
@@ -236,6 +236,68 @@
       <button type="button" class="btn btn-secondary"
               onclick="document.getElementById('modal-schedule').style.display='none'">Close</button>
     </div>
+  </div>
+</div>
+
+
+<!-- ── UEP SMTP Modal ────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="modal-uep-smtp"
+     style="display:{% if open_modal == 'uep-smtp' %}flex{% else %}none{% endif %}">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">📮 UEP SMTP Settings</span>
+      <button class="modal-close" onclick="document.getElementById('modal-uep-smtp').style.display='none'">✕</button>
+    </div>
+
+    <div class="alert alert-{{ 'success' if uep_smtp_configured else 'warning' }}" style="margin-bottom:14px">
+      {% if uep_smtp_configured %}UEP SMTP is configured and ready.{% else %}UEP SMTP is not configured yet.{% endif %}
+    </div>
+
+    <form method="POST" action="{{ url_for('ecmd_save_uep_smtp') }}">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>SMTP Host</label>
+          <input type="text" name="host" value="{{ uep_smtp.host }}" placeholder="smtp.gmail.com">
+        </div>
+        <div class="form-group">
+          <label>Port</label>
+          <input type="number" name="port" value="{{ uep_smtp.port }}" placeholder="587">
+        </div>
+        <div class="form-group">
+          <label>Sender Email</label>
+          <input type="email" name="sender" value="{{ uep_smtp.sender }}" placeholder="uep@example.com">
+        </div>
+        <div class="form-group">
+          <label>Password <span style="font-size:11px;color:var(--text-faint)">(leave blank to keep current)</span></label>
+          <input type="password" name="password" placeholder="App password">
+        </div>
+      </div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" name="use_tls" {% if uep_smtp.use_tls %}checked{% endif %}> Use TLS (port 587)
+        </label>
+      </div>
+      <div class="btn-group">
+        <button type="submit" class="btn btn-primary">💾 Save</button>
+        <button type="button" class="btn btn-secondary"
+                onclick="document.getElementById('modal-uep-smtp').style.display='none'">Cancel</button>
+      </div>
+    </form>
+
+    {% if uep_smtp_configured %}
+    <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:14px">
+      <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;
+                  letter-spacing:.05em;margin-bottom:10px">Send Test Email</div>
+      <form method="POST" action="{{ url_for('ecmd_test_uep_smtp') }}"
+            style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-group" style="margin:0;flex:1;min-width:200px">
+          <label>Send test to</label>
+          <input type="email" name="test_to" placeholder="your@email.com">
+        </div>
+        <button type="submit" class="btn btn-secondary" style="margin-bottom:0">✉️ Send Test</button>
+      </form>
+    </div>
+    {% endif %}
   </div>
 </div>
 
