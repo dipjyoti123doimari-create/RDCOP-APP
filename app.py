@@ -3925,6 +3925,16 @@ def ecmd_data_entry():
     # Days in the selected month
     days_in_month = _cal.monthrange(sel_year, sel_month)[1]
 
+    # MF per plant — latest saved value (admin sets it, users see it read-only)
+    mf_map = {p["plant_code"]: database.get_ecmd_mf(p["plant_code"]) for p in plant_rows}
+
+    is_admin = g.current_user.get("role") == auth.SUPER_ADMIN
+
+    # Allowed months: if admin has locked months, non-admins are restricted
+    allowed_months = database.get_ecmd_allowed_months()  # [(month, year), ...]
+    month_locked = bool(allowed_months)
+    month_allowed = is_admin or not month_locked or (sel_month, sel_year) in allowed_months
+
     months_list = [(m, _cal.month_name[m]) for m in range(1, 13)]
     years_list  = list(range(today.year - 2, today.year + 2))
 
@@ -3935,6 +3945,11 @@ def ecmd_data_entry():
                            readings_map=readings_map,
                            daily_map=daily_map,
                            mode_map=mode_map,
+                           mf_map=mf_map,
+                           is_admin=is_admin,
+                           allowed_months=allowed_months,
+                           month_locked=month_locked,
+                           month_allowed=month_allowed,
                            days_in_month=days_in_month,
                            sel_month=sel_month, sel_year=sel_year,
                            months_list=months_list, years_list=years_list,
@@ -3947,8 +3962,14 @@ def ecmd_save_reading():
     plant_code = request.form.get("plant_code", "").strip()
     month      = int(request.form.get("month", _date.today().month))
     year       = int(request.form.get("year",  _date.today().year))
-    # Plant-level access check for ECMD entry
     user = g.current_user
+    # Month freeze check
+    if user.get("role") != auth.SUPER_ADMIN:
+        allowed = database.get_ecmd_allowed_months()
+        if allowed and (month, year) not in allowed:
+            flash(f"Data entry for {month}/{year} is not open. Please contact admin.", "error")
+            return redirect(url_for("ecmd_data_entry", month=month, year=year))
+    # Plant-level access check
     plant_row = next((p for p in database.get_tp_plants() if p["plant_code"] == plant_code), None)
     if plant_row and not auth.user_can_access_plant(user, plant_row["plant_name"]):
         flash("You are not authorised to save readings for this plant.", "error")
@@ -4009,7 +4030,12 @@ def ecmd_set_entry_mode():
         flash("Invalid mode.", "error")
         return redirect(url_for("ecmd_data_entry", month=month, year=year))
     # Block if data already exists in the OTHER mode
-    has_monthly = bool(database.get_ecmd_reading(plant_code, month, year))
+    mth_row     = database.get_ecmd_reading(plant_code, month, year)
+    # A monthly row created only for diesel/volume totals (all meter cols None) is not "monthly data"
+    _meter_keys = ("eb_kwh_open","eb_kwh_close","eb_kvah_open","eb_kvah_close",
+                   "dg_hr_open","dg_hr_close","dg_kwh_open","dg_kwh_close",
+                   "mixer_dg_hr_open","mixer_dg_hr_close")
+    has_monthly = bool(mth_row) and any(mth_row.get(k) is not None for k in _meter_keys)
     has_daily   = bool(database.get_ecmd_daily_readings(plant_code, month, year))
     if mode == "daily" and has_monthly:
         flash("Monthly data already saved — delete it before switching to Day Wise.", "error")
@@ -4029,6 +4055,16 @@ def ecmd_save_daily_reading():
     year       = int(request.form.get("year",  _date.today().year))
     day        = int(request.form.get("day", 1))
     user = g.current_user
+    # Month freeze check — non-admins blocked from saving in locked months
+    if user.get("role") != auth.SUPER_ADMIN:
+        allowed = database.get_ecmd_allowed_months()
+        if allowed and (month, year) not in allowed:
+            msg = f"Data entry for {month}/{year} is not open. Please contact admin."
+            if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                from flask import jsonify
+                return jsonify({"error": msg}), 403
+            flash(msg, "error")
+            return redirect(url_for("ecmd_data_entry", month=month, year=year))
     plant_row = next((p for p in database.get_tp_plants() if p["plant_code"] == plant_code), None)
     if plant_row and not auth.user_can_access_plant(user, plant_row["plant_name"]):
         flash("You are not authorised to save readings for this plant.", "error")
@@ -4051,25 +4087,38 @@ def ecmd_save_daily_reading():
         "mixer_dg_hr_open":  _fv("mixer_dg_hr_open"),
         "mixer_dg_hr_close": _fv("mixer_dg_hr_close"),
     }
-    # Diesel & volume totals saved on the monthly row (even in daily mode)
-    diesel = _fv("diesel_issued_ltrs")
-    vol    = _fv("volume_on_dg")
-    if diesel is not None or vol is not None:
-        mf_val = _fv("mf") or 1.0
-        monthly_data = {"diesel_issued_ltrs": diesel, "volume_on_dg": vol,
-                        "mf": mf_val, "eb_kwh_open": None, "eb_kwh_close": None,
-                        "eb_kvah_open": None, "eb_kvah_close": None,
-                        "dg_hr_open": None, "dg_hr_close": None,
-                        "dg_kwh_open": None, "dg_kwh_close": None,
-                        "mixer_dg_hr_open": None, "mixer_dg_hr_close": None}
+    # day=0 means this is the Diesel/Volume totals-only form
+    if day == 0:
+        diesel = _fv("diesel_issued_ltrs")
+        vol    = _fv("volume_on_dg")
         existing = database.get_ecmd_reading(plant_code, month, year)
-        if existing:
-            monthly_data.update({k: existing.get(k) for k in monthly_data if k not in ("diesel_issued_ltrs","volume_on_dg")})
-        database.upsert_ecmd_reading(plant_code, month, year, monthly_data,
-                                     entered_by=user.get("username",""))
+        monthly_data = {
+            "eb_kwh_open": existing.get("eb_kwh_open") if existing else None,
+            "eb_kwh_close": existing.get("eb_kwh_close") if existing else None,
+            "eb_kvah_open": existing.get("eb_kvah_open") if existing else None,
+            "eb_kvah_close": existing.get("eb_kvah_close") if existing else None,
+            "mf": (existing.get("mf") or 1.0) if existing else 1.0,
+            "dg_hr_open": existing.get("dg_hr_open") if existing else None,
+            "dg_hr_close": existing.get("dg_hr_close") if existing else None,
+            "dg_kwh_open": existing.get("dg_kwh_open") if existing else None,
+            "dg_kwh_close": existing.get("dg_kwh_close") if existing else None,
+            "mixer_dg_hr_open": existing.get("mixer_dg_hr_open") if existing else None,
+            "mixer_dg_hr_close": existing.get("mixer_dg_hr_close") if existing else None,
+            "diesel_issued_ltrs": diesel,
+            "volume_on_dg": vol,
+        }
+        try:
+            database.upsert_ecmd_reading(plant_code, month, year, monthly_data,
+                                         entered_by=user.get("username", ""))
+            flash(f"✅ Diesel & Volume totals saved for {plant_code}.", "success")
+        except Exception as exc:
+            flash(f"Save failed: {exc}", "error")
+        return redirect(url_for("ecmd_data_entry", month=month, year=year))
+
+    # Regular day row
     try:
         database.upsert_ecmd_daily_reading(plant_code, month, year, day, data,
-                                           entered_by=user.get("username",""))
+                                           entered_by=user.get("username", ""))
         flash(f"✅ Day {day} readings saved for {plant_code}.", "success")
     except Exception as exc:
         flash(f"Save failed: {exc}", "error")
@@ -4489,6 +4538,7 @@ def ecmd_settings():
     _MN = ["","January","February","March","April","May","June",
            "July","August","September","October","November","December"]
     entry_open_month_name = _MN[entry_open_month] if entry_open_month else ""
+    allowed_months = database.get_ecmd_allowed_months()
     ctx = _ecmd_ctx()
     ctx["active_page"] = "settings"
     return render_template("ecmd_settings.html",
@@ -4503,6 +4553,7 @@ def ecmd_settings():
                            entry_open_month=entry_open_month,
                            entry_open_year=entry_open_year,
                            entry_open_month_name=entry_open_month_name,
+                           allowed_months=allowed_months,
                            **ctx)
 
 
@@ -4517,6 +4568,30 @@ def ecmd_set_entry_period():
         flash(f"Entry window opened for month {month}/{year}.", "success")
     else:
         flash("Entry window closed.", "success")
+    return redirect(url_for("ecmd_settings"))
+
+
+@app.route("/ecmd/settings/set-allowed-months", methods=["POST"])
+@auth.admin_required
+def ecmd_set_allowed_months():
+    """Admin sets which month(s) users can enter data for. Empty = allow all."""
+    action     = request.form.get("action", "add")
+    month      = request.form.get("month", "").strip()
+    year       = request.form.get("year", "").strip()
+    pairs      = database.get_ecmd_allowed_months()
+    if action == "clear":
+        database.set_ecmd_allowed_months([])
+        flash("Month lock removed — all months now accessible.", "success")
+    elif action == "remove" and month and year:
+        pairs = [(m, y) for m, y in pairs if not (m == int(month) and y == int(year))]
+        database.set_ecmd_allowed_months(pairs)
+        flash(f"Removed {month}/{year} from allowed months.", "success")
+    elif month and year:
+        entry = (int(month), int(year))
+        if entry not in pairs:
+            pairs.append(entry)
+        database.set_ecmd_allowed_months(pairs)
+        flash(f"Month {month}/{year} unlocked for data entry.", "success")
     return redirect(url_for("ecmd_settings"))
 
 

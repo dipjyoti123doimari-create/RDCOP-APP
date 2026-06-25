@@ -34,6 +34,22 @@
   </form>
 </div>
 
+{% if month_locked and not month_allowed %}
+<div class="alert alert-error" style="padding:12px 16px;font-size:13px;margin-bottom:12px">
+  🔒 <strong>Data entry for {{ month_abbrs[sel_month] }} {{ sel_year }} is not open.</strong>
+  Admin has restricted entry to specific months only. Please contact your administrator.
+  {% if allowed_months %}
+  <br><span style="font-size:11px;color:var(--text-muted)">
+    Allowed: {% for m,y in allowed_months %}{{ month_abbrs[m] }} {{ y }}{% if not loop.last %}, {% endif %}{% endfor %}
+  </span>
+  {% endif %}
+</div>
+{% elif month_locked and is_admin %}
+<div class="alert alert-info" style="padding:8px 14px;font-size:12px;margin-bottom:10px">
+  🔒 Month lock active for users — you are viewing as admin (all months accessible to you).
+</div>
+{% endif %}
+
 {% if plant_rows %}
 <div class="legend" style="margin-bottom:10px">
   <span class="legend-item legend-green">Readings saved</span>
@@ -128,8 +144,8 @@
     {% endif %}
   </div>
 
-  {# ── Show form only once a mode is chosen ── #}
-  {% if mode and mode != 'none' %}
+  {# ── Show form only once a mode is chosen AND month is allowed ── #}
+  {% if mode and mode != 'none' and month_allowed %}
 
   <!-- ════════ MONTHLY MODE ════════ -->
   {% if mode == 'monthly' %}
@@ -151,7 +167,9 @@
   {% for dr in day_rows %}{% set _ = day_by_num.update({dr.day: dr}) %}{% endfor %}
 
   <!-- Diesel & Volume totals -->
-  <form method="POST" action="{{ url_for('ecmd_save_daily_reading') }}" style="margin-bottom:16px">
+  {% set dpc = plant.plant_code | replace('-','_') | replace(' ','_') %}
+  <form method="POST" action="{{ url_for('ecmd_save_daily_reading') }}"
+        id="df-diesel-{{ dpc }}" style="margin-bottom:16px">
     <input type="hidden" name="plant_code" value="{{ plant.plant_code }}">
     <input type="hidden" name="month"      value="{{ sel_month }}">
     <input type="hidden" name="year"       value="{{ sel_year }}">
@@ -175,7 +193,12 @@
                placeholder="Total MT produced while DG was running">
       </div>
     </div>
-    <button type="submit" class="btn btn-secondary btn-sm">💾 Save Totals</button>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+      <span id="st-diesel-{{ plant.plant_code | replace('-','_') | replace(' ','_') }}"
+            style="font-size:11px;color:var(--text-faint)">
+        {% if has_mth and (r.diesel_issued_ltrs is not none or r.volume_on_dg is not none) %}✓ saved{% endif %}
+      </span>
+    </div>
   </form>
 
   <!-- Day-by-day table -->
@@ -201,7 +224,7 @@
           <th style="padding:8px 6px;color:#c084fc">Mixer DG<br>Open</th>
           <th style="padding:8px 6px;color:#c084fc">Mixer DG<br>Close</th>
           <th style="padding:8px 6px;color:#34d399;font-weight:700">Mixer DG<br>Total</th>
-          <th style="padding:8px 6px;min-width:70px">Action</th>
+          <th style="padding:8px 6px;min-width:60px">Status</th>
         </tr>
       </thead>
       <tbody>
@@ -280,11 +303,14 @@
             </span>
           </td>
 
-          {# MF #}
+          {# MF — admin editable, user read-only #}
+          {% set mf_val = dr.mf if has_dr else mf_map.get(plant.plant_code, 1) %}
           <td style="padding:2px 3px">
             <input type="number" step="any" name="mf" form="{{ fid }}"
                    id="mf-{{ pc }}-{{ d }}"
-                   style="width:45px" value="{{ dr.mf if has_dr else '1' }}" placeholder="1"
+                   style="width:45px;{% if not is_admin %}background:rgba(255,255,255,0.03);color:var(--text-muted);cursor:not-allowed{% endif %}"
+                   value="{{ mf_val }}" placeholder="1"
+                   {% if not is_admin %}readonly title="MF is set by admin only"{% endif %}
                    oninput="recalcMf('{{ pc }}','{{ d }}')">
           </td>
 
@@ -355,22 +381,21 @@
           </td>
         </form>
 
-        <td style="padding:2px 4px;white-space:nowrap">
-          <button type="submit" form="{{ fid }}"
-                  class="btn btn-primary btn-sm" style="padding:3px 8px;font-size:11px"
-                  title="Save day {{ d }}">💾</button>
-          {% if has_dr %}
+        <td style="padding:2px 4px;white-space:nowrap;text-align:center">
+          <span id="st-{{ fid }}" class="ecmd-row-status"
+                style="font-size:10px;color:var(--text-faint)">
+            {% if has_dr %}✓{% endif %}
+          </span>
           <form method="POST" action="{{ url_for('ecmd_delete_daily_reading') }}"
-                style="display:inline"
+                style="display:inline;margin-left:2px"
                 onsubmit="return confirm('Delete day {{ d }} reading for {{ plant.plant_name }}?')">
             <input type="hidden" name="plant_code" value="{{ plant.plant_code }}">
             <input type="hidden" name="month" value="{{ sel_month }}">
             <input type="hidden" name="year"  value="{{ sel_year }}">
             <input type="hidden" name="day"   value="{{ d }}">
             <button type="submit" class="btn btn-danger btn-sm"
-                    style="padding:3px 6px;font-size:11px" title="Delete day {{ d }}">🗑</button>
+                    style="padding:2px 5px;font-size:11px" title="Delete day {{ d }}">🗑</button>
           </form>
-          {% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -415,11 +440,10 @@ document.querySelectorAll('.ecmd-dow').forEach(function(el) {
   var d = parseInt(el.dataset.d),
       m = parseInt(el.dataset.m) - 1,
       y = parseInt(el.dataset.y);
-  var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  var dow  = new Date(y, m, d).getDay();
   var names = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var dow   = new Date(y, m, d).getDay();
   el.textContent = names[dow];
-  if (dow === 0 || dow === 6) el.style.color = '#f87171'; /* weekend red */
+  if (dow === 0 || dow === 6) el.style.color = '#f87171';
 });
 
 /* ── Live total computation ─────────────────────────────────────── */
@@ -437,11 +461,10 @@ function recalcFromSpan(span) {
   var useMf = span.dataset.useMf === '1';
   var mfEl  = null;
   if (useMf) {
-    /* find the mf input in same row — id encoded as mf-PC-D */
-    var parts = span.id.split('-');          /* tot-ebkwh-PC-D */
-    var d = parts[parts.length - 1];
+    var parts = span.id.split('-');
+    var d  = parts[parts.length - 1];
     var pc = parts.slice(2, parts.length - 1).join('-');
-    mfEl = document.getElementById('mf-' + pc + '-' + d);
+    mfEl   = document.getElementById('mf-' + pc + '-' + d);
   }
   calcTotal(span.id,
             span.dataset.open  || '',
@@ -450,13 +473,11 @@ function recalcFromSpan(span) {
             mfEl ? mfEl.value : '1');
 }
 
-/* Wire all .day-inp inputs */
 document.querySelectorAll('.day-inp').forEach(function(inp) {
   inp.addEventListener('input', function() {
     var totId = inp.dataset.tot;
     var span  = document.getElementById(totId);
     if (!span) return;
-    /* find sibling inputs with same data-tot */
     var siblings = document.querySelectorAll('[data-tot="' + totId + '"]');
     var openV = '', closeV = '';
     siblings.forEach(function(s) {
@@ -470,15 +491,81 @@ document.querySelectorAll('.day-inp').forEach(function(inp) {
   });
 });
 
-/* Recalc on page load for all total spans */
 document.querySelectorAll('[id^="tot-"]').forEach(function(span) {
   recalcFromSpan(span);
 });
 
 function recalcMf(pc, d) {
-  /* When MF changes, recalc EB KWh total only */
   var span = document.getElementById('tot-ebkwh-' + pc + '-' + d);
   if (span) recalcFromSpan(span);
 }
+
+/* ── Auto-save: day rows ─────────────────────────────────────────── */
+var _saveTimers = {};
+
+function setStatus(stId, state, msg) {
+  var el = document.getElementById(stId);
+  if (!el) return;
+  if (state === 'saving') { el.textContent = '⏳'; el.style.color = 'var(--text-faint)'; }
+  else if (state === 'ok') { el.textContent = '✓'; el.style.color = '#34d399'; }
+  else if (state === 'err') { el.textContent = '✗ ' + (msg || ''); el.style.color = '#f87171'; }
+}
+
+function autoSaveRow(formId) {
+  var form = document.getElementById(formId);
+  if (!form) return;
+  var stId = 'st-' + formId;
+  setStatus(stId, 'saving');
+  var data = new FormData(form);
+  fetch(form.action, { method: 'POST', body: data, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    .then(function(r) {
+      if (r.ok || r.redirected) { setStatus(stId, 'ok'); }
+      else { setStatus(stId, 'err', r.status); }
+    })
+    .catch(function(e) { setStatus(stId, 'err', 'net'); });
+}
+
+function scheduleRowSave(formId) {
+  if (_saveTimers[formId]) clearTimeout(_saveTimers[formId]);
+  _saveTimers[formId] = setTimeout(function() { autoSaveRow(formId); }, 800);
+}
+
+/* Wire blur on all day-row inputs */
+document.querySelectorAll('.day-inp, input[id^="mf-"]').forEach(function(inp) {
+  inp.addEventListener('change', function() {
+    var formId = inp.getAttribute('form') || (inp.closest('form') && inp.closest('form').id);
+    if (formId && formId.startsWith('df_')) scheduleRowSave(formId);
+  });
+});
+
+/* ── Auto-save: diesel/volume totals ─────────────────────────────── */
+var _dieselTimers = {};
+
+function autoSaveDiesel(formId, stId) {
+  var form = document.getElementById(formId);
+  if (!form) return;
+  var el = document.getElementById(stId);
+  if (el) { el.textContent = '⏳'; el.style.color = 'var(--text-faint)'; }
+  var data = new FormData(form);
+  fetch(form.action, { method: 'POST', body: data, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    .then(function(r) {
+      if (el) {
+        if (r.ok || r.redirected) { el.textContent = '✓ saved'; el.style.color = '#34d399'; }
+        else { el.textContent = '✗ error'; el.style.color = '#f87171'; }
+      }
+    })
+    .catch(function() { if (el) { el.textContent = '✗ net error'; el.style.color = '#f87171'; } });
+}
+
+document.querySelectorAll('form[id^="df-diesel-"]').forEach(function(form) {
+  var pc  = form.id.replace('df-diesel-', '');
+  var stId = 'st-diesel-' + pc;
+  form.querySelectorAll('input[type="number"]').forEach(function(inp) {
+    inp.addEventListener('change', function() {
+      if (_dieselTimers[pc]) clearTimeout(_dieselTimers[pc]);
+      _dieselTimers[pc] = setTimeout(function() { autoSaveDiesel(form.id, stId); }, 800);
+    });
+  });
+});
 </script>
 {% endblock %}

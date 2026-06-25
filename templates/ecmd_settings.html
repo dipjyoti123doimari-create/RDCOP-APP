@@ -60,16 +60,17 @@
     </div>
   </div>
 
-  <!-- EB & DG Entry Window -->
+  <!-- EB & DG Entry Month Lock -->
   <div class="settings-tile" onclick="document.getElementById('modal-entry-period').style.display='flex'">
-    <div class="settings-tile-icon">📅</div>
+    <div class="settings-tile-icon">🔒</div>
     <div class="settings-tile-info">
-      <div class="settings-tile-title">EB &amp; DG Entry Window</div>
+      <div class="settings-tile-title">Data Entry Month Lock</div>
       <div class="settings-tile-desc">
-        {% if entry_open_month and entry_open_year %}
-          Open for {{ entry_open_month_name }} {{ entry_open_year }}
+        {% if allowed_months %}
+          {% set _MN = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
+          Locked to: {% for m,y in allowed_months %}{{ _MN[m] }} {{ y }}{% if not loop.last %}, {% endif %}{% endfor %}
         {% else %}
-          Closed — click to open an entry period
+          Unlocked — all months accessible to users
         {% endif %}
       </div>
     </div>
@@ -78,37 +79,81 @@
 
 </div>
 
-<!-- Modal: Entry Period -->
+<!-- Modal: Entry Month Lock -->
 <div class="modal-overlay" id="modal-entry-period" style="display:none">
-  <div class="modal" style="max-width:420px">
+  <div class="modal" style="max-width:480px">
     <div class="modal-header">
-      <span>EB &amp; DG Entry Window</span>
+      <span>🔒 Data Entry Month Lock</span>
       <button class="modal-close" onclick="document.getElementById('modal-entry-period').style.display='none'">✕</button>
     </div>
-    <form method="POST" action="{{ url_for('ecmd_set_entry_period') }}">
-      <div class="modal-body" style="display:flex;flex-direction:column;gap:16px">
-        <p style="font-size:13px;color:var(--text-muted);margin:0">
-          Set which month PLANT_USER can submit EB &amp; DG data. Leave blank to close the entry window.
-        </p>
-        <div class="form-group">
-          <label>Month</label>
-          <select name="entry_month">
-            <option value="">— Closed —</option>
-            {% for m, mn in [('1','January'),('2','February'),('3','March'),('4','April'),('5','May'),('6','June'),('7','July'),('8','August'),('9','September'),('10','October'),('11','November'),('12','December')] %}
-            <option value="{{ m }}" {% if entry_open_month == m|int %}selected{% endif %}>{{ mn }}</option>
-            {% endfor %}
-          </select>
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:16px">
+      <p style="font-size:13px;color:var(--text-muted);margin:0">
+        Add months that users are allowed to enter data for. If the list is empty, all months are accessible.
+        Remove all months to unlock.
+      </p>
+
+      <!-- Currently allowed months -->
+      <div>
+        <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;
+                    letter-spacing:.05em;margin-bottom:8px">Currently Allowed Months</div>
+        {% set _MN = ['','January','February','March','April','May','June','July','August','September','October','November','December'] %}
+        {% if allowed_months %}
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px">
+          {% for m,y in allowed_months %}
+          <span style="background:rgba(99,91,255,0.15);color:#8B87FF;border:1px solid rgba(99,91,255,0.3);
+                       border-radius:6px;padding:3px 10px;font-size:12px;display:inline-flex;align-items:center;gap:6px">
+            {{ _MN[m] }} {{ y }}
+            <form method="POST" action="{{ url_for('ecmd_set_allowed_months') }}" style="display:inline;margin:0">
+              <input type="hidden" name="action" value="remove">
+              <input type="hidden" name="month" value="{{ m }}">
+              <input type="hidden" name="year" value="{{ y }}">
+              <button type="submit" style="background:none;border:none;color:#f87171;cursor:pointer;
+                                          font-size:13px;padding:0;line-height:1" title="Remove">✕</button>
+            </form>
+          </span>
+          {% endfor %}
         </div>
-        <div class="form-group">
-          <label>Year</label>
-          <input type="number" name="entry_year" value="{{ entry_open_year or now.year }}" min="2024" max="2099">
+        <form method="POST" action="{{ url_for('ecmd_set_allowed_months') }}" style="margin-top:6px">
+          <input type="hidden" name="action" value="clear">
+          <button type="submit" class="btn btn-danger btn-sm"
+                  onclick="return confirm('Remove all month locks? All months will be accessible.')">
+            🔓 Remove All Locks
+          </button>
+        </form>
+        {% else %}
+        <div class="alert alert-info" style="padding:8px 12px;font-size:12px;margin:0">
+          No months locked — users can access all months.
         </div>
+        {% endif %}
       </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="document.getElementById('modal-entry-period').style.display='none'">Cancel</button>
-        <button type="submit" class="btn btn-primary">Save</button>
+
+      <!-- Add a month -->
+      <div style="border-top:1px solid var(--border);padding-top:14px">
+        <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;
+                    letter-spacing:.05em;margin-bottom:10px">Add Month to Allow</div>
+        <form method="POST" action="{{ url_for('ecmd_set_allowed_months') }}"
+              style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+          <input type="hidden" name="action" value="add">
+          <div class="form-group" style="margin:0;flex:1;min-width:130px">
+            <label>Month</label>
+            <select name="month">
+              {% for mi in range(1,13) %}
+              <option value="{{ mi }}">{{ _MN[mi] }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;width:90px">
+            <label>Year</label>
+            <input type="number" name="year" value="{{ now.year }}" min="2024" max="2099">
+          </div>
+          <button type="submit" class="btn btn-primary" style="margin-bottom:0">➕ Add</button>
+        </form>
       </div>
-    </form>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary"
+              onclick="document.getElementById('modal-entry-period').style.display='none'">Close</button>
+    </div>
   </div>
 </div>
 

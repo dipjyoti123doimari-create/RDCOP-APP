@@ -1463,6 +1463,28 @@ def get_ecmd_mf(plant_code: str) -> float:
         conn.close()
 
 
+def get_ecmd_allowed_months() -> list:
+    """Return list of (month, year) tuples admin has unlocked for data entry."""
+    raw = get_module_setting("ecmd", "allowed_months", "")
+    result = []
+    for part in str(raw).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            m, y = part.split("-")
+            result.append((int(m), int(y)))
+        except Exception:
+            pass
+    return result
+
+
+def set_ecmd_allowed_months(pairs: list):
+    """Save list of (month, year) tuples. Pass [] to allow all."""
+    encoded = ",".join(f"{m}-{y}" for m, y in pairs)
+    set_module_setting("ecmd", "allowed_months", encoded)
+
+
 # ---------------------------------------------------------------------------
 # Authentication / Authorisation DB helpers
 # ---------------------------------------------------------------------------
