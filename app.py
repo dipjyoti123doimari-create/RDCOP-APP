@@ -4749,6 +4749,8 @@ def ecmd_dual_plant():
 
     # Plants whose BP2 mixer is permanently removed — exclude from report entirely
     _EXCLUDED = {"CT2", "GW2", "PA2"}
+    # TA2 is the only plant with BP3 physically installed
+    _BP3_PLANTS = {"TA2"}
 
     # Compute balance color based on variance: (max-min)/max*100
     # single mixer (BP2 never used) = 100% variance → red
@@ -4759,14 +4761,25 @@ def ecmd_dual_plant():
             continue
         entry = plant_map_rows[pc]
         mixers = entry["mixers"]
-        qtys = [v["qty"] for v in mixers.values()]
-        if len(qtys) >= 2:
-            mx_qty = max(qtys)
-            mn_qty = min(qtys)
-            variance = round((mx_qty - mn_qty) / mx_qty * 100) if mx_qty else 0
-        else:
-            # Only one mixer used — other mixer completely idle = 100% variance
-            variance = 100
+
+        # Fill missing mixers with zero — BP2 always present for all dual plants,
+        # BP3 only for TA2. Zero qty = 0% share.
+        if "BP2" not in mixers:
+            mixers["BP2"] = {"qty": 0, "pct": 0}
+        if pc in _BP3_PLANTS and "BP3" not in mixers:
+            mixers["BP3"] = {"qty": 0, "pct": 0}
+
+        # Recalculate pct shares now that zeros are filled in
+        total = entry["total"] or 1
+        for mx in mixers:
+            mixers[mx]["pct"] = round(mixers[mx]["qty"] / total * 100)
+
+        # Variance uses BP1 vs BP2 only (primary comparison)
+        bp1_qty = mixers.get("BP1", {}).get("qty", 0)
+        bp2_qty = mixers.get("BP2", {}).get("qty", 0)
+        mx_qty = max(bp1_qty, bp2_qty)
+        mn_qty = min(bp1_qty, bp2_qty)
+        variance = round((mx_qty - mn_qty) / mx_qty * 100) if mx_qty else 100
         if variance <= 10:
             balance = "green"
         elif variance <= 30:
