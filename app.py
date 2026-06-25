@@ -1379,7 +1379,9 @@ def tp_sync_sheets():
         database.set_module_setting("tp", "gsheet_worksheet", worksheet)
         flash(f"✅ {result['rows_synced']} plant rows synced from Google Sheets ({result['mode']} mode).", "success")
     _set_progress(100, "Complete")
-    return jsonify({"ok": True, "redirect": url_for("tp_data_uploader")})
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return jsonify({"ok": True, "redirect": url_for("tp_data_uploader")})
+    return redirect(url_for("sysconfig_page", open_modal="plant-data"))
 
 
 # ── Calculate ─────────────────────────────────────────────────────────────────
