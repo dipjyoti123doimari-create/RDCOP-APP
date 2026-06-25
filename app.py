@@ -4747,10 +4747,16 @@ def ecmd_dual_plant():
             "qty": r["quantity"], "pct": r["pct_share"]}
         plant_map_rows[pc]["total"] += r["quantity"]
 
+    # Plants whose BP2 mixer is permanently removed — exclude from report entirely
+    _EXCLUDED = {"CT2", "GW2", "PA2"}
+
     # Compute balance color based on variance: (max-min)/max*100
+    # single mixer (BP2 never used) = 100% variance → red
     # green ≤10%, yellow ≤30%, red >30%
     plants = []
     for pc in plant_order:
+        if pc in _EXCLUDED:
+            continue
         entry = plant_map_rows[pc]
         mixers = entry["mixers"]
         qtys = [v["qty"] for v in mixers.values()]
@@ -4758,21 +4764,21 @@ def ecmd_dual_plant():
             mx_qty = max(qtys)
             mn_qty = min(qtys)
             variance = round((mx_qty - mn_qty) / mx_qty * 100) if mx_qty else 0
-            if variance <= 10:
-                balance = "green"
-            elif variance <= 30:
-                balance = "yellow"
-            else:
-                balance = "red"
         else:
-            variance = 0
-            balance = "single"
+            # Only one mixer used — other mixer completely idle = 100% variance
+            variance = 100
+        if variance <= 10:
+            balance = "green"
+        elif variance <= 30:
+            balance = "yellow"
+        else:
+            balance = "red"
         entry["balance"] = balance
         entry["variance"] = variance
         plants.append(entry)
 
-    # Sort: red first, then yellow, then green; within same color sort by variance desc
-    _order = {"red": 0, "yellow": 1, "green": 2, "single": 3}
+    # Sort: red first (highest variance first), then yellow, then green
+    _order = {"red": 0, "yellow": 1, "green": 2}
     plants.sort(key=lambda p: (_order.get(p["balance"], 3), -p["variance"]))
 
     ctx = _ecmd_ctx()
