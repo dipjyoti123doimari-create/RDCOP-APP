@@ -554,8 +554,7 @@ def fetch_dual_plant_data(from_date, to_date) -> tuple:
 
 def fetch_invoice_pending_data(from_date, to_date) -> tuple:
     """
-    Fetch rows where STATUS='New' AND EXCISE_NUMBER IS NULL — these are
-    final-submission-pending invoices.
+    Fetch rows where STATUS='NEW' — these are final-submission-pending invoices.
     Returns (DataFrame, warnings).
     Columns: plant_code, quantity
     """
@@ -576,8 +575,7 @@ def fetch_invoice_pending_data(from_date, to_date) -> tuple:
             FROM {_TABLE}
             WHERE PRODDATE >= :from_date
               AND PRODDATE <= :to_date
-              AND STATUS = 'New'
-              AND (EXCISE_NUMBER IS NULL OR TRIM(EXCISE_NUMBER) = ' ')
+              AND STATUS = 'NEW'
             ORDER BY {cols['plant']}
         """
         cur.execute(sql, {"from_date": fd, "to_date": td})
