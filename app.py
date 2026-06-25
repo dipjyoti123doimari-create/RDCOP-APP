@@ -4841,6 +4841,13 @@ def ecmd_mail_scheduler():
         "last_status": _ms("pfs_mail_last_status", ""),
     }
 
+    # Periods available in DB for manual send
+    dpu_periods = [p["period_label"] for p in database.get_dual_plant_periods()]
+    pfs_periods = [p["period_label"] for p in database.get_invoice_pending_periods()]
+
+    # ECMD: list months that have calculated data
+    ecmd_months = database.get_ecmd_calculated_months() if hasattr(database, "get_ecmd_calculated_months") else []
+
     ctx = _ecmd_ctx()
     ctx["active_page"] = "mail_scheduler"
     return render_template("ecmd_mail_scheduler.html",
@@ -4848,6 +4855,9 @@ def ecmd_mail_scheduler():
                            ecmd_sched=ecmd_sched,
                            dpu_sched=dpu_sched,
                            pfs_sched=pfs_sched,
+                           dpu_periods=dpu_periods,
+                           pfs_periods=pfs_periods,
+                           ecmd_months=ecmd_months,
                            **ctx)
 
 
@@ -4916,6 +4926,102 @@ def ecmd_mail_scheduler_send_now():
     except Exception as e:
         flash(f"Failed to send {module.upper()} email: {e}", "error")
     return redirect(url_for("ecmd_mail_scheduler"))
+
+
+@app.route("/ecmd/mail-scheduler/manual-send", methods=["POST"])
+@auth.login_required
+@auth.role_required("SUPER_ADMIN")
+def ecmd_mail_scheduler_manual_send():
+    module    = request.form.get("module", "").strip()
+    to_addr   = request.form.get("to", "").strip()
+    cc_addr   = request.form.get("cc", "").strip()
+    from_date = request.form.get("from_date", "").strip()
+    to_date   = request.form.get("to_date",   "").strip()
+    label     = request.form.get("label",     "").strip()
+    month     = request.form.get("month",     "").strip()   # for ECMD: "6-2026"
+
+    if not to_addr:
+        flash("Recipient (To) is required for manual send.", "error")
+        return redirect(url_for("ecmd_mail_scheduler"))
+
+    try:
+        if module == "ecmd":
+            # Send ECMD monthly report for chosen month
+            if not month:
+                flash("Please select a month for ECMD manual send.", "error")
+                return redirect(url_for("ecmd_mail_scheduler"))
+            m, y = map(int, month.split("-"))
+            _send_ecmd_report_email(m, y, to_addr, cc_addr)
+            flash(f"ECMD report for {month} sent to {to_addr}.", "success")
+
+        elif module in ("dpu", "pfs"):
+            if not from_date or not to_date:
+                flash("From date and To date are required.", "error")
+                return redirect(url_for("ecmd_mail_scheduler"))
+            if not label:
+                label = f"{from_date} to {to_date}"
+            if module == "dpu":
+                rows, warns = _run_dual_plant_fetch(from_date, to_date, label)
+                _send_dpu_email(rows, label, to_addr, cc_addr)
+            else:
+                rows, warns = _run_invoice_pending_fetch(from_date, to_date, label)
+                _send_pfs_email(rows, label, to_addr, cc_addr)
+            flash(f"{module.upper()} report '{label}' sent to {to_addr}.", "success")
+        else:
+            flash("Unknown module.", "error")
+    except Exception as e:
+        flash(f"Manual send failed: {e}", "error")
+
+    return redirect(url_for("ecmd_mail_scheduler"))
+
+
+def _send_dpu_email(rows, label, to_addr, cc_addr):
+    if not rows:
+        body = f"<h3>Dual Plant Utilisation — {label}</h3><p>No data found for this period.</p>"
+    else:
+        rows_html = "".join(
+            f"<tr><td>{r['plant_name'] or r['plant_code']}</td>"
+            f"<td>{r['plant_code']}</td><td>{r['mixer']}</td>"
+            f"<td style='text-align:right'>{r['quantity']:,.2f}</td>"
+            f"<td style='text-align:right'>{r['pct_share']:.1f}%</td></tr>"
+            for r in rows
+        )
+        body = (f"<h3>Dual Plant Utilisation — {label}</h3>"
+                f"<table border='1' cellpadding='5' style='border-collapse:collapse'>"
+                f"<tr><th>Plant</th><th>Code</th><th>Mixer</th><th>Qty (MT)</th><th>% Share</th></tr>"
+                f"{rows_html}</table>")
+    email_helper.send_email(to=to_addr, cc=cc_addr,
+                            subject=f"RDC-UEP DPU Report — {label}",
+                            body=body, html=True)
+
+
+def _send_pfs_email(rows, label, to_addr, cc_addr):
+    if not rows:
+        body = f"<h3>Pending Final Submission — {label}</h3><p>✅ No pending invoices found.</p>"
+    else:
+        rows_html = "".join(
+            f"<tr><td>{i}</td><td>{r['plant_name'] or r['plant_code']}</td>"
+            f"<td>{r['plant_code']}</td>"
+            f"<td style='text-align:right'>{r['quantity']:,.2f}</td></tr>"
+            for i, r in enumerate(rows, 1)
+        )
+        body = (f"<h3>Pending Final Submission — {label}</h3>"
+                f"<p>⚠️ {len(rows)} plant(s) have pending final submission.</p>"
+                f"<table border='1' cellpadding='5' style='border-collapse:collapse'>"
+                f"<tr><th>Sr.</th><th>Plant</th><th>Code</th><th>Qty (MT)</th></tr>"
+                f"{rows_html}</table>")
+    email_helper.send_email(to=to_addr, cc=cc_addr,
+                            subject=f"RDC-UEP PFS Report — {label}",
+                            body=body, html=True)
+
+
+def _send_ecmd_report_email(month, year, to_addr, cc_addr):
+    from calendar import month_name
+    label = f"{month_name[month]} {year}"
+    body = f"<h3>ECMD Monthly Energy Report — {label}</h3><p>Please find the report attached.</p>"
+    email_helper.send_email(to=to_addr, cc=cc_addr,
+                            subject=f"RDC-UEP ECMD Report — {label}",
+                            body=body, html=True)
 
 
 def _ecmd_send_scheduled_email():

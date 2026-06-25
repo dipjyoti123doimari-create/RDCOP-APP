@@ -110,6 +110,99 @@
     pfs_sched
 ) }}
 
+<!-- Manual Send -->
+<div class="card" style="margin-bottom:18px;border-color:rgba(99,91,255,0.25)">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+    <span style="font-size:22px">✉️</span>
+    <div>
+      <div style="font-weight:700;font-size:15px">Manual Send</div>
+      <div style="font-size:11px;color:var(--text-muted)">Send a report for any period right now — overrides scheduler recipients</div>
+    </div>
+  </div>
+
+  <form method="POST" action="{{ url_for('ecmd_mail_scheduler_manual_send') }}" id="manual-send-form">
+    <div class="form-grid" style="align-items:flex-start;gap:14px">
+
+      <!-- Module selector -->
+      <div class="form-group">
+        <label>Module</label>
+        <select name="module" id="ms-module" onchange="msModuleChange()" style="min-width:160px">
+          <option value="">— Select —</option>
+          <option value="ecmd">ECMD — Monthly Report</option>
+          <option value="dpu">DPU — Dual Plant</option>
+          <option value="pfs">PFS — Pending Final Submission</option>
+        </select>
+      </div>
+
+      <!-- ECMD: month picker -->
+      <div class="form-group" id="ms-ecmd-fields" style="display:none">
+        <label>Month</label>
+        <select name="month" style="min-width:160px">
+          <option value="">— Select month —</option>
+          {% for m in ecmd_months %}
+          <option value="{{ m.month }}-{{ m.year }}">{{ m.month_name }} {{ m.year }}</option>
+          {% endfor %}
+          <!-- fallback: manual input -->
+          <option value="custom">Custom…</option>
+        </select>
+      </div>
+
+      <!-- DPU/PFS: period from saved OR custom date range -->
+      <div class="form-group" id="ms-period-fields" style="display:none">
+        <label>Period Label</label>
+        <input type="text" name="label" id="ms-label" placeholder="e.g. 1-15 Jun 2026" style="min-width:180px">
+      </div>
+      <div class="form-group" id="ms-from-field" style="display:none">
+        <label>From Date</label>
+        <input type="date" name="from_date" id="ms-from">
+      </div>
+      <div class="form-group" id="ms-to-field" style="display:none">
+        <label>To Date</label>
+        <input type="date" name="to_date" id="ms-to">
+      </div>
+
+      <!-- Quick period buttons (DPU/PFS only) -->
+      <div class="form-group" id="ms-quick-periods" style="display:none">
+        <label>Quick Period</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <div id="ms-dpu-periods">
+            {% for p in dpu_periods %}
+            <button type="button" class="btn btn-sm btn-secondary"
+                    onclick="msFillPeriod('{{ p }}')" style="margin-bottom:4px">{{ p }}</button>
+            {% endfor %}
+          </div>
+          <div id="ms-pfs-periods" style="display:none">
+            {% for p in pfs_periods %}
+            <button type="button" class="btn btn-sm btn-secondary"
+                    onclick="msFillPeriod('{{ p }}')" style="margin-bottom:4px">{{ p }}</button>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Recipients override -->
+      <div class="form-group">
+        <label>Send To <span style="font-size:10px;color:var(--text-muted)">(overrides saved)</span></label>
+        <input type="text" name="to" id="ms-to-addr" placeholder="email@domain.com" style="min-width:220px">
+      </div>
+      <div class="form-group">
+        <label>CC <span style="font-size:10px;color:var(--text-muted)">(optional)</span></label>
+        <input type="text" name="cc" placeholder="cc@domain.com" style="min-width:180px">
+      </div>
+    </div>
+
+    <div style="margin-top:14px;display:flex;align-items:center;gap:12px">
+      <button type="submit" class="btn btn-primary"
+              {% if not email_configured %}disabled title="Configure SMTP first"{% endif %}>
+        📤 Send Now
+      </button>
+      <span style="font-size:11px;color:var(--text-muted)">
+        Data will be fetched fresh from Oracle before sending.
+      </span>
+    </div>
+  </form>
+</div>
+
 <!-- Schedule status overview -->
 <div class="card" style="background:rgba(255,255,255,0.02)">
   <div class="section-title">📅 Schedule Overview</div>
@@ -149,4 +242,51 @@
   </table>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+function msModuleChange() {
+  var mod = document.getElementById('ms-module').value;
+  var isEcmd   = mod === 'ecmd';
+  var isDpuPfs = mod === 'dpu' || mod === 'pfs';
+
+  document.getElementById('ms-ecmd-fields').style.display   = isEcmd   ? '' : 'none';
+  document.getElementById('ms-period-fields').style.display = isDpuPfs ? '' : 'none';
+  document.getElementById('ms-from-field').style.display    = isDpuPfs ? '' : 'none';
+  document.getElementById('ms-to-field').style.display      = isDpuPfs ? '' : 'none';
+  document.getElementById('ms-quick-periods').style.display = isDpuPfs ? '' : 'none';
+
+  if (isDpuPfs) {
+    document.getElementById('ms-dpu-periods').style.display = mod === 'dpu' ? '' : 'none';
+    document.getElementById('ms-pfs-periods').style.display = mod === 'pfs' ? '' : 'none';
+  }
+
+  // Pre-fill To from saved scheduler settings
+  var toMap = {
+    ecmd: {{ ecmd_sched.to | tojson }},
+    dpu:  {{ dpu_sched.to  | tojson }},
+    pfs:  {{ pfs_sched.to  | tojson }}
+  };
+  var toField = document.getElementById('ms-to-addr');
+  if (mod && !toField.value) toField.value = toMap[mod] || '';
+}
+
+function msFillPeriod(label) {
+  document.getElementById('ms-label').value = label;
+  var parts = label.split(' ');
+  if (parts.length < 3) return;
+  var days  = parts[0].split('-');
+  var month = parts[1];
+  var year  = parts[2];
+  var monthMap = {Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',
+                  Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12'};
+  var mm    = monthMap[month] || '01';
+  var lastDay = new Date(parseInt(year), parseInt(mm), 0).getDate();
+  var fromD = days[0].padStart(2,'0');
+  var toD   = (days[1] === 'last' ? lastDay : parseInt(days[1])).toString().padStart(2,'0');
+  document.getElementById('ms-from').value = year + '-' + mm + '-' + fromD;
+  document.getElementById('ms-to').value   = year + '-' + mm + '-' + toD;
+}
+</script>
 {% endblock %}
