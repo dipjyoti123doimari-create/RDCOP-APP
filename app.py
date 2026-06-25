@@ -470,11 +470,14 @@ def _require_login():
         "/btrtp/settings", "/tp/settings",
     )
     _ecmd_entry_roles = (auth.PLANT_USER, auth.REGIONAL_USER,
-                         auth.HO_VIEWER, auth.FINANCE_VIEWER)
+                         auth.HO_VIEWER, auth.FINANCE_VIEWER, auth.UEP_ADMIN)
     if role != auth.SUPER_ADMIN:
-        # ECMD data-entry actions are allowed for PLANT_USER / REGIONAL_USER
+        # ECMD routes (including settings/admin actions) are fully open to UEP_ADMIN
+        # and data-entry routes are open to PLANT_USER / REGIONAL_USER / HO / FINANCE
         if path.startswith("/ecmd/") and role in _ecmd_entry_roles:
             pass  # let ECMD routes handle their own auth
+        elif path.startswith("/admin/users") and role == auth.UEP_ADMIN:
+            pass  # UEP_ADMIN user-management — route handles its own scope guard
         else:
             for pattern in _admin_only_patterns:
                 if pattern in path:
@@ -495,7 +498,7 @@ def _require_login():
     # PLANT_USER and REGIONAL_USER ARE allowed into ECMD (data entry + reports)
     _module_prefixes = ("/dashboard", "/id", "/tp/", "/btrtp/")
     _ecmd_allowed_roles = (auth.PLANT_USER, auth.REGIONAL_USER,
-                           auth.HO_VIEWER, auth.FINANCE_VIEWER)
+                           auth.HO_VIEWER, auth.FINANCE_VIEWER, auth.UEP_ADMIN)
     if role != auth.SUPER_ADMIN and request.method == "GET":
         if path.startswith("/ecmd/") or path == "/ecmd":
             if role not in _ecmd_allowed_roles:
@@ -5320,7 +5323,7 @@ def _pfs_send_scheduled_email():
 # ── System Config ─────────────────────────────────────────────────────────────
 
 @app.route("/sysconfig")
-@auth.login_required
+@auth.admin_required
 def sysconfig_page():
     smtp             = email_helper.get_smtp_config()
     email_configured = bool(smtp["host"] and smtp["sender"] and smtp["password"])
