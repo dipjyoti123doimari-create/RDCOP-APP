@@ -4748,14 +4748,25 @@ def ecmd_dual_plant_fetch():
 
 def _run_invoice_pending_fetch(from_date: str, to_date: str, label: str) -> tuple:
     """Fetch + process invoice-pending data. Returns (rows, warnings)."""
+    import re as _re
     df, warns = oracle_connector.fetch_invoice_pending_data(from_date, to_date)
     if df.empty:
         return [], warns
 
-    now_str   = _date.today().isoformat()
-    plant_map = {p["plant_code"]: p["plant_name"] for p in database.get_tp_plants()}
+    now_str = _date.today().isoformat()
 
-    import pandas as _pd
+    # Build plant map: exact code first, then base code (strip _BP1/_BP2/_BP3 suffix)
+    # so Oracle code 'MU7' matches master entry 'MU7_BP1'
+    plant_map = {}
+    for p in database.get_tp_plants():
+        code = p["plant_code"]
+        name = p["plant_name"]
+        plant_map[code] = name  # exact match takes priority
+        base = _re.sub(r'_BP\d+$', '', code)
+        if base != code and base not in plant_map:
+            # strip _BP suffix from name too (e.g. 'MUM-Sakinaka_BP1' -> 'MUM-Sakinaka')
+            plant_map[base] = _re.sub(r'_BP\d+$', '', name)
+
     grouped = df.groupby("plant_code")["quantity"].sum().reset_index()
     results = []
     for _, row in grouped.iterrows():
@@ -4768,7 +4779,8 @@ def _run_invoice_pending_fetch(from_date: str, to_date: str, label: str) -> tupl
             "quantity":   round(float(row["quantity"]), 2),
             "fetched_at": now_str,
         })
-    results.sort(key=lambda r: r["plant_code"])
+    # Sort descending by quantity
+    results.sort(key=lambda r: r["quantity"], reverse=True)
     database.save_invoice_pending_report(label, from_date, to_date, results)
     return results, warns
 

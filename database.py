@@ -1560,7 +1560,7 @@ def get_invoice_pending_report(period_label: str) -> list:
     conn = get_connection()
     try:
         cur = conn.execute(
-            "SELECT * FROM ecmd_invoice_pending WHERE period_label=? ORDER BY plant_code",
+            "SELECT * FROM ecmd_invoice_pending WHERE period_label=? ORDER BY quantity DESC",
             (period_label,)
         )
         return [dict(r) for r in cur.fetchall()]
