@@ -4790,11 +4790,40 @@ def _run_invoice_pending_fetch(from_date: str, to_date: str, label: str) -> tupl
 @app.route("/ecmd/invoice-pending")
 @auth.login_required
 def ecmd_invoice_pending():
-    today   = _date.today()
+    import re as _re
+    today      = _date.today()
     fortnights = _ecmd_fortnights(today.year, today.month)
     periods    = database.get_invoice_pending_periods()
     sel_label  = request.args.get("period", periods[0]["period_label"] if periods else "")
-    rows       = database.get_invoice_pending_report(sel_label) if sel_label else []
+
+    # Auto-fetch from Oracle for the selected period so data is always current
+    if sel_label and periods:
+        sel_period = next((p for p in periods if p["period_label"] == sel_label), None)
+        if sel_period:
+            try:
+                rows, _ = _run_invoice_pending_fetch(
+                    sel_period["from_date"], sel_period["to_date"], sel_label)
+                # Reload periods in case a new one was added
+                periods = database.get_invoice_pending_periods()
+            except Exception:
+                rows = database.get_invoice_pending_report(sel_label)
+        else:
+            rows = database.get_invoice_pending_report(sel_label)
+    else:
+        rows = database.get_invoice_pending_report(sel_label) if sel_label else []
+
+    # Live plant name fallback — fixes any row where name still equals code
+    if rows:
+        _pm = {}
+        for p in database.get_tp_plants():
+            _pm[p["plant_code"]] = p["plant_name"]
+            base = _re.sub(r'_BP\d+$', '', p["plant_code"])
+            if base != p["plant_code"] and base not in _pm:
+                _pm[base] = _re.sub(r'_BP\d+$', '', p["plant_name"])
+        for r in rows:
+            if r.get("plant_name") == r.get("plant_code") and r["plant_code"] in _pm:
+                r["plant_name"] = _pm[r["plant_code"]]
+
     ctx = _ecmd_ctx()
     ctx["active_page"] = "invoice_pending"
     return render_template("ecmd_invoice_pending.html",
