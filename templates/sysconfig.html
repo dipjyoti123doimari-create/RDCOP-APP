@@ -558,6 +558,9 @@
 <!-- Shared datalists for plant combos -->
 <datalist id="pl-names">{% for p in plant_list %}<option value="{{ p.plant_name }}">{% endfor %}</datalist>
 <datalist id="pl-codes">{% for p in plant_list %}<option value="{{ p.plant_code }}">{% endfor %}</datalist>
+<!-- Exco Location + Business Head datalists (populated from tp_plant_data) -->
+<datalist id="exco-opts-dl">{% for o in exco_opts %}<option value="{{ o }}">{% endfor %}</datalist>
+<datalist id="bh-opts-dl">{% for o in bh_opts %}<option value="{{ o }}">{% endfor %}</datalist>
 
 {% endblock %}
 {% block scripts %}
@@ -717,18 +720,14 @@ checkMaintLock();
             <div class="form-group"><label>Plant Code *</label><input type="text" name="plant_code" required></div>
             <div class="form-group">
               <label>Exco Location</label>
-              <select name="exco_location">
-                <option value="">— select —</option>
-                {% for o in exco_opts %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
-              </select>
+              <input type="text" name="exco_location" placeholder="Search or type…"
+                     data-combo data-opts-id="exco-opts-dl">
             </div>
             <div class="form-group"><label>Plant Name</label><input type="text" name="plant_name"></div>
             <div class="form-group">
               <label>Business Head</label>
-              <select name="business_head">
-                <option value="">— select —</option>
-                {% for o in bh_opts %}<option value="{{ o }}">{{ o }}</option>{% endfor %}
-              </select>
+              <input type="text" name="business_head" placeholder="Search or type…"
+                     data-combo data-opts-id="bh-opts-dl">
             </div>
             <div class="form-group"><label>Plant Manager</label><input type="text" name="plant_manager"></div>
             <div class="form-group"><label>Mixer Theo. Capacity</label><input type="number" step="0.01" name="mixer_theo_cap" placeholder="0.00"></div>
@@ -757,18 +756,16 @@ checkMaintLock();
           <div class="form-grid">
             <div class="form-group">
               <label>Exco Location</label>
-              <select name="exco_location">
-                <option value="">— select —</option>
-                {% for o in exco_opts %}<option value="{{ o }}" {% if edit_plant.exco_location == o %}selected{% endif %}>{{ o }}</option>{% endfor %}
-              </select>
+              <input type="text" name="exco_location" placeholder="Search or type…"
+                     value="{{ edit_plant.exco_location or '' }}"
+                     data-combo data-opts-id="exco-opts-dl">
             </div>
             <div class="form-group"><label>Plant Name</label><input type="text" name="plant_name" value="{{ edit_plant.plant_name or '' }}"></div>
             <div class="form-group">
               <label>Business Head</label>
-              <select name="business_head">
-                <option value="">— select —</option>
-                {% for o in bh_opts %}<option value="{{ o }}" {% if edit_plant.business_head == o %}selected{% endif %}>{{ o }}</option>{% endfor %}
-              </select>
+              <input type="text" name="business_head" placeholder="Search or type…"
+                     value="{{ edit_plant.business_head or '' }}"
+                     data-combo data-opts-id="bh-opts-dl">
             </div>
             <div class="form-group"><label>Plant Manager</label><input type="text" name="plant_manager" value="{{ edit_plant.plant_manager or '' }}"></div>
             <div class="form-group"><label>Mixer Theo. Capacity</label><input type="number" step="0.01" name="mixer_theo_cap" value="{{ edit_plant.mixer_theo_cap or '' }}"></div>
