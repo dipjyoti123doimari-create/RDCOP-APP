@@ -1529,8 +1529,9 @@ def get_dual_plant_periods() -> list:
     conn = get_connection()
     try:
         cur = conn.execute(
-            "SELECT DISTINCT period_label, from_date, to_date, fetched_at "
-            "FROM ecmd_dual_plant ORDER BY from_date DESC"
+            "SELECT period_label, from_date, to_date, MAX(fetched_at) AS fetched_at "
+            "FROM ecmd_dual_plant GROUP BY period_label, from_date, to_date "
+            "ORDER BY from_date DESC"
         )
         return [dict(r) for r in cur.fetchall()]
     finally:
@@ -1571,8 +1572,9 @@ def get_invoice_pending_periods() -> list:
     conn = get_connection()
     try:
         cur = conn.execute(
-            "SELECT DISTINCT period_label, from_date, to_date, fetched_at "
-            "FROM ecmd_invoice_pending ORDER BY from_date DESC"
+            "SELECT period_label, from_date, to_date, MAX(fetched_at) AS fetched_at "
+            "FROM ecmd_invoice_pending GROUP BY period_label, from_date, to_date "
+            "ORDER BY from_date DESC"
         )
         return [dict(r) for r in cur.fetchall()]
     finally:

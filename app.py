@@ -4655,8 +4655,8 @@ def _ecmd_fortnights(year: int, month: int):
     last = _cal.monthrange(year, month)[1]
     mn   = f"{year}-{month:02d}"
     return [
-        (f"1–15 {_cal.month_abbr[month]} {year}", f"{mn}-01", f"{mn}-15"),
-        (f"16–{last} {_cal.month_abbr[month]} {year}", f"{mn}-16", f"{mn}-{last:02d}"),
+        (f"1-15 {_cal.month_abbr[month]} {year}",   f"{mn}-01", f"{mn}-15"),
+        (f"1-{last} {_cal.month_abbr[month]} {year}", f"{mn}-01", f"{mn}-{last:02d}"),
     ]
 
 
