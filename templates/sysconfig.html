@@ -75,6 +75,19 @@
     <span class="settings-tile-arrow">›</span>
   </div>
 
+  <!-- Plant Data -->
+  <div class="settings-tile" onclick="openModal('modal-plant-data')">
+    <div class="settings-tile-icon">🏭</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Plant Data</div>
+      <div class="settings-tile-status {% if plant_count > 0 %}status-ok{% else %}status-warn{% endif %}">
+        {% if plant_count > 0 %}✅ {{ plant_count }} plants · Last synced {{ tp_last_sync.last_sync if tp_last_sync and tp_last_sync.last_sync else 'never' }}{% else %}⚠️ No plant data{% endif %}
+      </div>
+      <div class="settings-tile-desc" style="margin-top:4px;font-size:11px;color:#5a7a9a">Used by: TP · BTRTP · UEP (plant names for all modules)</div>
+    </div>
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
 </div>
 
 
@@ -619,5 +632,198 @@ function checkMaintLock() {
   document.getElementById('maint-drop').style.pointerEvents = locked ? 'none' : '';
 }
 checkMaintLock();
+</script>
+
+<!-- ══════════════════════════════════════════════════════
+     MODAL: Plant Data
+══════════════════════════════════════════════════════ -->
+<div id="modal-plant-data" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-plant-data')">
+  <div class="modal-box" style="max-width:860px">
+    <div class="modal-header">
+      <span>🏭 Plant Data</span>
+      <button class="modal-close" onclick="closeModal('modal-plant-data')">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Sync from Google Sheets -->
+      <div style="margin-bottom:18px;padding-bottom:18px;border-bottom:1px solid var(--border)">
+        <div class="section-title" style="margin-bottom:10px">🔄 Sync from Google Sheets</div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">
+          Syncs <strong>"Plant Data for TP"</strong> tab. Required columns:
+          Plant Code, Exco Location, Plant, Business Head, Plant Manager, Mixer Theo. Capacity
+        </p>
+        <form method="POST" action="{{ url_for('tp_sync_sheets') }}" id="sc-sync-form">
+          <div class="form-grid" style="align-items:flex-end;gap:12px">
+            <div class="form-group">
+              <label>Google Sheet URL or ID</label>
+              <input type="text" name="sheet_id" value="{{ tp_sheet_id or '' }}" style="min-width:260px"
+                     placeholder="Sheet ID or URL">
+            </div>
+            <div class="form-group">
+              <label>Worksheet / Tab Name</label>
+              <input type="text" name="worksheet" value="{{ tp_worksheet or 'Plant Data for TP' }}" style="min-width:180px">
+            </div>
+            <div class="form-group">
+              <label>&nbsp;</label>
+              <button type="submit" class="btn btn-primary" id="sc-sync-btn">🔄 Sync Now</button>
+            </div>
+          </div>
+        </form>
+        {% if tp_last_sync and tp_last_sync.last_sync %}
+        <div class="alert alert-info" style="margin-top:10px;padding:8px 14px;font-size:12px">
+          🕐 Last synced: <strong>{{ tp_last_sync.last_sync }}</strong> · <strong>{{ tp_last_sync.last_count }}</strong> plant rows
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Manage Plants tabs -->
+      <div class="tabs">
+        <button class="tab-btn active" data-tabset="sc-plant" data-tab="table">📋 Plant List</button>
+        <button class="tab-btn" data-tabset="sc-plant" data-tab="add">➕ Add</button>
+        <button class="tab-btn" data-tabset="sc-plant" data-tab="edit">✏️ Edit</button>
+        <button class="tab-btn" data-tabset="sc-plant" data-tab="delete">🗑️ Delete</button>
+        <button class="tab-btn" data-tabset="sc-plant" data-tab="log">📜 Log</button>
+      </div>
+
+      <!-- Table -->
+      <div class="tab-panel active" data-tabpanel="sc-plant" data-tab="table">
+        {% if plant_count == 0 %}
+        <div class="glass-card" style="text-align:center;padding:30px">No plant data yet. Sync from Google Sheets above.</div>
+        {% else %}
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px">{{ plant_count }} plants</p>
+        <div class="table-wrapper" style="max-height:320px;overflow-y:auto">
+          <table>
+            <thead><tr><th>Code</th><th>Exco Location</th><th>Plant Name</th><th>Business Head</th><th>Plant Manager</th><th>Mixer Cap.</th></tr></thead>
+            <tbody>
+              {% for row in plant_rows %}
+              <tr>
+                <td>{{ row.plant_code }}</td><td>{{ row.exco_location }}</td>
+                <td>{{ row.plant_name }}</td><td>{{ row.business_head }}</td>
+                <td>{{ row.plant_manager }}</td><td>{{ row.mixer_theo_cap }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Add -->
+      <div class="tab-panel" data-tabpanel="sc-plant" data-tab="add">
+        <form method="POST" action="{{ url_for('tp_add_plant') }}">
+          <div class="form-grid">
+            <div class="form-group"><label>Plant Code *</label><input type="text" name="plant_code" required></div>
+            <div class="form-group"><label>Exco Location</label><input type="text" name="exco_location"></div>
+            <div class="form-group"><label>Plant Name</label><input type="text" name="plant_name"></div>
+            <div class="form-group"><label>Business Head</label><input type="text" name="business_head"></div>
+            <div class="form-group"><label>Plant Manager</label><input type="text" name="plant_manager"></div>
+            <div class="form-group"><label>Mixer Theo. Capacity</label><input type="number" step="0.01" name="mixer_theo_cap" placeholder="0.00"></div>
+          </div>
+          <button type="submit" class="btn btn-primary">➕ Add Plant</button>
+        </form>
+      </div>
+
+      <!-- Edit -->
+      <div class="tab-panel" data-tabpanel="sc-plant" data-tab="edit">
+        {% if not tp_codes %}
+        <div class="glass-card">No plants. Add or sync first.</div>
+        {% else %}
+        <form method="GET" action="{{ url_for('sysconfig_page') }}" id="sc-edit-sel-form">
+          <input type="hidden" name="open_modal" value="plant-data">
+          <div class="form-group">
+            <label>Select Plant Code</label>
+            <select name="edit_code" data-searchable onchange="document.getElementById('sc-edit-sel-form').submit()">
+              <option value="">— select —</option>
+              {% for c in tp_codes %}<option value="{{ c }}" {% if edit_plant and edit_plant.plant_code == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+            </select>
+          </div>
+        </form>
+        {% if edit_plant %}
+        <form method="POST" action="{{ url_for('tp_update_plant', code=edit_plant.plant_code) }}" style="margin-top:14px">
+          <div class="form-grid">
+            <div class="form-group"><label>Exco Location</label><input type="text" name="exco_location" value="{{ edit_plant.exco_location or '' }}"></div>
+            <div class="form-group"><label>Plant Name</label><input type="text" name="plant_name" value="{{ edit_plant.plant_name or '' }}"></div>
+            <div class="form-group"><label>Business Head</label><input type="text" name="business_head" value="{{ edit_plant.business_head or '' }}"></div>
+            <div class="form-group"><label>Plant Manager</label><input type="text" name="plant_manager" value="{{ edit_plant.plant_manager or '' }}"></div>
+            <div class="form-group"><label>Mixer Theo. Capacity</label><input type="number" step="0.01" name="mixer_theo_cap" value="{{ edit_plant.mixer_theo_cap or '' }}"></div>
+          </div>
+          <button type="submit" class="btn btn-primary">💾 Save Changes</button>
+        </form>
+        {% endif %}
+        {% endif %}
+      </div>
+
+      <!-- Delete -->
+      <div class="tab-panel" data-tabpanel="sc-plant" data-tab="delete">
+        {% if not tp_codes %}
+        <div class="glass-card">No plants to delete.</div>
+        {% else %}
+        <form method="GET" action="{{ url_for('sysconfig_page') }}" id="sc-del-sel-form">
+          <input type="hidden" name="open_modal" value="plant-data">
+          <div class="form-group">
+            <label>Select Plant Code</label>
+            <select name="del_code" data-searchable onchange="document.getElementById('sc-del-sel-form').submit()">
+              <option value="">— select —</option>
+              {% for c in tp_codes %}<option value="{{ c }}" {% if del_plant and del_plant.plant_code == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+            </select>
+          </div>
+        </form>
+        {% if del_plant %}
+        <div class="table-wrapper" style="margin:12px 0">
+          <table>
+            <thead><tr><th>Code</th><th>Exco Location</th><th>Plant</th><th>Business Head</th><th>Plant Manager</th><th>Cap.</th></tr></thead>
+            <tbody><tr>
+              <td>{{ del_plant.plant_code }}</td><td>{{ del_plant.exco_location }}</td>
+              <td>{{ del_plant.plant_name }}</td><td>{{ del_plant.business_head }}</td>
+              <td>{{ del_plant.plant_manager }}</td><td>{{ del_plant.mixer_theo_cap }}</td>
+            </tr></tbody>
+          </table>
+        </div>
+        <form method="POST" action="{{ url_for('tp_delete_plant', code=del_plant.plant_code) }}"
+              onsubmit="return confirm('Delete plant {{ del_plant.plant_code }}?')">
+          <button type="submit" class="btn btn-danger">🗑️ Delete Plant</button>
+        </form>
+        {% endif %}
+        {% endif %}
+      </div>
+
+      <!-- Log -->
+      <div class="tab-panel" data-tabpanel="sc-plant" data-tab="log">
+        {% if not plant_log %}
+        <div class="glass-card">No changes yet.</div>
+        {% else %}
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">{{ plant_log | length }} change(s), newest first</p>
+        <div class="table-wrapper" style="max-height:300px;overflow-y:auto">
+          <table>
+            <thead><tr><th>Action</th><th>Code</th><th>Old</th><th>New</th><th>When</th><th>By</th></tr></thead>
+            <tbody>
+              {% for r in plant_log %}
+              <tr>
+                <td>{{ r.action_type }}</td><td>{{ r.plant_code }}</td>
+                <td style="font-size:11px;max-width:140px;word-break:break-all">{{ r.old_value_json }}</td>
+                <td style="font-size:11px;max-width:140px;word-break:break-all">{{ r.new_value_json }}</td>
+                <td>{{ r.changed_at }}</td><td>{{ r.changed_by }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+</div>
+<script>
+// Auto-open plant-data modal if redirected back with open_modal param
+(function(){
+  var p = new URLSearchParams(location.search);
+  if (p.get('open_modal') === 'plant-data') {
+    openModal('modal-plant-data');
+    var tab = p.get('tab') || 'edit';
+    if (typeof switchTab === 'function') switchTab('sc-plant', tab);
+  }
+  if (p.get('edit_code') || p.get('del_code')) openModal('modal-plant-data');
+})();
 </script>
 {% endblock %}

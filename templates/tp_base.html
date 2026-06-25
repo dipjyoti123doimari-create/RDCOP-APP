@@ -39,11 +39,6 @@
       <a href="{{ url_for('tp_reports') }}" class="nav-item {% if active_page in ('calculate','reports') %}active{% endif %}">
         <span class="nav-icon">⚡</span><span class="nav-label">Calculate &amp; Reports</span>
       </a>
-      {% if not current_user or current_user.role == 'SUPER_ADMIN' %}
-      <a href="{{ url_for('tp_data_uploader') }}" class="nav-item {% if active_page == 'data_uploader' %}active{% endif %}">
-        <span class="nav-icon">🗂️</span><span class="nav-label">Plant Data</span>
-      </a>
-      {% endif %}
       <a href="{{ url_for('tp_validation') }}" class="nav-item {% if active_page == 'validation' %}active{% endif %}">
         <span class="nav-icon">✅</span><span class="nav-label">Validation / Skip Log</span>
       </a>

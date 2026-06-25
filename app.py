@@ -5222,6 +5222,18 @@ def sysconfig_page():
 
     last_master_sync = last_sync.get("last_sync", "") if last_sync else ""
 
+    # Plant data (shared across TP / BTRTP / UEP)
+    plant_rows   = database.get_tp_plants()
+    plant_count  = len(plant_rows)
+    tp_codes     = database.get_tp_plant_codes()
+    plant_log    = database.get_tp_plant_log()
+    tp_last_sync = google_sheets.get_tp_last_sync_info()
+    tp_sheet_id  = database.get_module_setting("tp", "gsheet_id",
+                                               database.get_setting("gsheet_id", ""))
+    tp_worksheet = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
+    edit_plant   = database.get_tp_plant(edit_code) if edit_code else None
+    del_plant    = database.get_tp_plant(del_code)  if del_code  else None
+
     return render_template("sysconfig.html",
                            smtp=smtp, email_configured=email_configured,
                            ora=ora, ora_configured=ora_configured,
@@ -5241,7 +5253,12 @@ def sysconfig_page():
                            codes=codes, log_rows=log_rows,
                            edit_emp=edit_emp, del_emp=del_emp,
                            categories=config.CATEGORIES,
-                           plant_list=database.get_tp_plants(),
+                           plant_list=plant_rows,
+                           plant_rows=plant_rows, plant_count=plant_count,
+                           tp_codes=tp_codes, plant_log=plant_log,
+                           tp_last_sync=tp_last_sync, tp_sheet_id=tp_sheet_id,
+                           tp_worksheet=tp_worksheet,
+                           edit_plant=edit_plant, del_plant=del_plant,
                            today=str(_date.today()),
                            today_first=str(_date.today().replace(day=1)),
                            bg_auto=bg_auto(), bg_animate=bg_animate(), bg_theme=bg_theme(),
