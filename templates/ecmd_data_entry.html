@@ -216,6 +216,8 @@
           <th style="padding:8px 6px;color:#c084fc">Mixer DG<br>Open</th>
           <th style="padding:8px 6px;color:#c084fc">Mixer DG<br>Close</th>
           <th style="padding:8px 6px;color:#34d399;font-weight:700">Mixer DG<br>Total</th>
+          <th style="padding:8px 6px;color:#fb923c">Diesel<br>(Ltrs)</th>
+          <th style="padding:8px 6px;color:#38bdf8">Vol on DG<br>(MT)</th>
           <th style="padding:8px 6px;min-width:60px">Status</th>
         </tr>
       </thead>
@@ -371,6 +373,22 @@
               {% else %}—{% endif %}
             </span>
           </td>
+
+          {# Diesel Issued (day total) #}
+          <td style="padding:2px 3px">
+            <input type="number" step="any" name="diesel_issued_ltrs" form="{{ fid }}"
+                   class="day-inp-plain"
+                   style="width:80px" value="{{ dr.diesel_issued_ltrs if has_dr and dr.diesel_issued_ltrs is not none else '' }}"
+                   placeholder="—">
+          </td>
+
+          {# Volume on DG (day total) #}
+          <td style="padding:2px 3px">
+            <input type="number" step="any" name="volume_on_dg" form="{{ fid }}"
+                   class="day-inp-plain"
+                   style="width:70px" value="{{ dr.volume_on_dg if has_dr and dr.volume_on_dg is not none else '' }}"
+                   placeholder="—">
+          </td>
         </form>
 
         <td style="padding:2px 4px;white-space:nowrap;text-align:center">
@@ -400,41 +418,6 @@
     DG KWh is optional — blank defaults to hrs × 20 in calculation
   </div>
 
-  <!-- Diesel & Volume totals — below the table -->
-  <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px">
-    <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;
-                letter-spacing:.05em;margin-bottom:10px">
-      ⛽ Diesel &amp; Production Volume (Month Total)
-    </div>
-    <form method="POST" action="{{ url_for('ecmd_save_daily_reading') }}"
-          id="df-diesel-{{ dpc }}">
-      <input type="hidden" name="plant_code" value="{{ plant.plant_code }}">
-      <input type="hidden" name="month"      value="{{ sel_month }}">
-      <input type="hidden" name="year"       value="{{ sel_year }}">
-      <input type="hidden" name="day"        value="0">
-      <div class="form-grid">
-        <div class="form-group">
-          <label>Diesel Issued to DG (Litres) — Total</label>
-          <input type="number" step="any" name="diesel_issued_ltrs"
-                 value="{{ r.diesel_issued_ltrs if has_mth and r.diesel_issued_ltrs is not none else '' }}"
-                 placeholder="Total litres for the month">
-          <span style="font-size:11px;color:var(--text-faint)">L/Hr = Diesel ÷ DG Run Hrs</span>
-        </div>
-        <div class="form-group">
-          <label>Volume Done on DG (MT) — Total</label>
-          <input type="number" step="any" name="volume_on_dg"
-                 value="{{ r.volume_on_dg if has_mth and r.volume_on_dg is not none else '' }}"
-                 placeholder="Total MT produced while DG was running">
-        </div>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
-        <span id="st-diesel-{{ dpc }}" style="font-size:11px;color:var(--text-faint)">
-          {% if has_mth and (r.diesel_issued_ltrs is not none or r.volume_on_dg is not none) %}✓ saved{% endif %}
-        </span>
-        <span style="font-size:11px;color:var(--text-faint)">← auto-saves when you leave the field</span>
-      </div>
-    </form>
-  </div>
 
   {% endif %}{# end daily/monthly #}
 
@@ -558,42 +541,13 @@ function scheduleRowSave(formId) {
   _saveTimers[formId] = setTimeout(function() { autoSaveRow(formId); }, 800);
 }
 
-/* Wire blur on all day-row inputs */
-document.querySelectorAll('.day-inp, input[id^="mf-"]').forEach(function(inp) {
+/* Wire blur on all day-row inputs (meter fields + diesel/volume + MF) */
+document.querySelectorAll('.day-inp, .day-inp-plain, input[id^="mf-"]').forEach(function(inp) {
   inp.addEventListener('change', function() {
     var formId = inp.getAttribute('form') || (inp.closest('form') && inp.closest('form').id);
     if (formId && formId.startsWith('df_')) scheduleRowSave(formId);
   });
 });
 
-/* ── Auto-save: diesel/volume totals ─────────────────────────────── */
-var _dieselTimers = {};
-
-function autoSaveDiesel(formId, stId) {
-  var form = document.getElementById(formId);
-  if (!form) return;
-  var el = document.getElementById(stId);
-  if (el) { el.textContent = '⏳'; el.style.color = 'var(--text-faint)'; }
-  var data = new FormData(form);
-  fetch(form.action, { method: 'POST', body: data, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-    .then(function(r) {
-      if (el) {
-        if (r.ok || r.redirected) { el.textContent = '✓ saved'; el.style.color = '#34d399'; }
-        else { el.textContent = '✗ error'; el.style.color = '#f87171'; }
-      }
-    })
-    .catch(function() { if (el) { el.textContent = '✗ net error'; el.style.color = '#f87171'; } });
-}
-
-document.querySelectorAll('form[id^="df-diesel-"]').forEach(function(form) {
-  var pc  = form.id.replace('df-diesel-', '');
-  var stId = 'st-diesel-' + pc;
-  form.querySelectorAll('input[type="number"]').forEach(function(inp) {
-    inp.addEventListener('change', function() {
-      if (_dieselTimers[pc]) clearTimeout(_dieselTimers[pc]);
-      _dieselTimers[pc] = setTimeout(function() { autoSaveDiesel(form.id, stId); }, 800);
-    });
-  });
-});
 </script>
 {% endblock %}

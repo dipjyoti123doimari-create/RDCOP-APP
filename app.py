@@ -4075,17 +4075,19 @@ def ecmd_save_daily_reading():
         return float(v) if v != "" else None
 
     data = {
-        "eb_kwh_open":       _fv("eb_kwh_open"),
-        "eb_kwh_close":      _fv("eb_kwh_close"),
-        "eb_kvah_open":      _fv("eb_kvah_open"),
-        "eb_kvah_close":     _fv("eb_kvah_close"),
-        "mf":                _fv("mf") or 1.0,
-        "dg_hr_open":        _fv("dg_hr_open"),
-        "dg_hr_close":       _fv("dg_hr_close"),
-        "dg_kwh_open":       _fv("dg_kwh_open"),
-        "dg_kwh_close":      _fv("dg_kwh_close"),
-        "mixer_dg_hr_open":  _fv("mixer_dg_hr_open"),
-        "mixer_dg_hr_close": _fv("mixer_dg_hr_close"),
+        "eb_kwh_open":        _fv("eb_kwh_open"),
+        "eb_kwh_close":       _fv("eb_kwh_close"),
+        "eb_kvah_open":       _fv("eb_kvah_open"),
+        "eb_kvah_close":      _fv("eb_kvah_close"),
+        "mf":                 _fv("mf") or 1.0,
+        "dg_hr_open":         _fv("dg_hr_open"),
+        "dg_hr_close":        _fv("dg_hr_close"),
+        "dg_kwh_open":        _fv("dg_kwh_open"),
+        "dg_kwh_close":       _fv("dg_kwh_close"),
+        "mixer_dg_hr_open":   _fv("mixer_dg_hr_open"),
+        "mixer_dg_hr_close":  _fv("mixer_dg_hr_close"),
+        "diesel_issued_ltrs": _fv("diesel_issued_ltrs"),
+        "volume_on_dg":       _fv("volume_on_dg"),
     }
     # day=0 means this is the Diesel/Volume totals-only form
     if day == 0:
