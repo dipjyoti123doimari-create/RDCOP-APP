@@ -1,0 +1,152 @@
+{% extends "ecmd_base.html" %}
+{% block title %}Mail Scheduler{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Auto Mail Scheduler</h1>
+  <p>Configure automatic report emails for ECMD, DPU and PFS sub-modules</p>
+</div>
+
+{% if not email_configured %}
+<div class="alert alert-warning">
+  ⚠️ SMTP not configured. Go to <a href="{{ url_for('sysconfig_page') }}">System Config</a> to set up email before enabling schedulers.
+</div>
+{% endif %}
+
+{% macro sched_card(module, label, icon, freq, sched) %}
+<div class="card" style="margin-bottom:18px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="font-size:22px">{{ icon }}</span>
+      <div>
+        <div style="font-weight:700;font-size:15px">{{ label }}</div>
+        <div style="font-size:11px;color:var(--text-muted)">{{ freq }}</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      {% if sched.last_status %}
+      <span style="font-size:11px;color:var(--text-muted);background:var(--surface);
+                   border:1px solid var(--border);border-radius:5px;padding:2px 8px">
+        Last: {{ sched.last_status }}
+      </span>
+      {% endif %}
+      <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:5px;
+        {% if sched.enabled %}background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.3)
+        {% else %}background:rgba(107,114,128,0.12);color:var(--text-muted);border:1px solid var(--border){% endif %}">
+        {{ 'ENABLED' if sched.enabled else 'DISABLED' }}
+      </span>
+    </div>
+  </div>
+
+  <form method="POST" action="{{ url_for('ecmd_mail_scheduler_save') }}">
+    <input type="hidden" name="module" value="{{ module }}">
+    <div class="form-grid" style="align-items:flex-end;gap:14px">
+      <div class="form-group">
+        <label>Recipients (To)</label>
+        <input type="text" name="to" value="{{ sched.to }}"
+               placeholder="email1@domain.com, email2@domain.com"
+               style="min-width:260px">
+      </div>
+      <div class="form-group">
+        <label>CC</label>
+        <input type="text" name="cc" value="{{ sched.cc }}"
+               placeholder="cc@domain.com" style="min-width:200px">
+      </div>
+      <div class="form-group">
+        <label>Send Time</label>
+        <input type="time" name="time" value="{{ sched.time }}" style="min-width:110px">
+      </div>
+      <div class="form-group" style="flex-direction:row;align-items:center;gap:8px;padding-bottom:2px">
+        <label style="margin:0;white-space:nowrap;cursor:pointer">
+          <input type="checkbox" name="enabled" {% if sched.enabled %}checked{% endif %}
+                 style="margin-right:5px">
+          Enable Auto Send
+        </label>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button type="submit" class="btn btn-primary">💾 Save Settings</button>
+    </div>
+  </form>
+
+  <!-- Send Now -->
+  <form method="POST" action="{{ url_for('ecmd_mail_scheduler_send_now') }}"
+        style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+    <input type="hidden" name="module" value="{{ module }}">
+    <div style="display:flex;align-items:center;gap:12px">
+      <button type="submit" class="btn btn-secondary"
+              {% if not email_configured %}disabled title="Configure SMTP first"{% endif %}>
+        📤 Send Now
+      </button>
+      <span style="font-size:11px;color:var(--text-muted)">
+        Immediately sends the latest {{ label }} report to the configured recipients.
+      </span>
+    </div>
+  </form>
+</div>
+{% endmacro %}
+
+{{ sched_card(
+    'ecmd',
+    'ECMD — Monthly Energy Report',
+    '⚡',
+    'Runs automatically on the last day of each month',
+    ecmd_sched
+) }}
+
+{{ sched_card(
+    'dpu',
+    'DPU — Dual Plant Utilisation',
+    '🏭',
+    'Runs automatically on the 15th and last day of each month',
+    dpu_sched
+) }}
+
+{{ sched_card(
+    'pfs',
+    'PFS — Pending Final Submission',
+    '📋',
+    'Runs automatically on the 15th and last day of each month',
+    pfs_sched
+) }}
+
+<!-- Schedule status overview -->
+<div class="card" style="background:rgba(255,255,255,0.02)">
+  <div class="section-title">📅 Schedule Overview</div>
+  <table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead>
+      <tr style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">
+        <th style="padding:8px 12px;text-align:left">Module</th>
+        <th style="padding:8px 12px;text-align:left">Frequency</th>
+        <th style="padding:8px 12px;text-align:left">Time</th>
+        <th style="padding:8px 12px;text-align:left">Recipients</th>
+        <th style="padding:8px 12px;text-align:center">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in [
+        ('ECMD', 'Monthly (last day)', ecmd_sched),
+        ('DPU',  'Fortnightly (15th & last)', dpu_sched),
+        ('PFS',  'Fortnightly (15th & last)', pfs_sched)
+      ] %}
+      <tr style="border-top:1px solid var(--border)">
+        <td style="padding:9px 12px;font-weight:600">{{ row[0] }}</td>
+        <td style="padding:9px 12px;color:var(--text-muted)">{{ row[1] }}</td>
+        <td style="padding:9px 12px">{{ row[2].time }}</td>
+        <td style="padding:9px 12px;color:var(--text-muted);font-size:12px">
+          {{ row[2].to or '—' }}
+        </td>
+        <td style="padding:9px 12px;text-align:center">
+          <span style="font-size:11px;font-weight:600;padding:2px 9px;border-radius:4px;
+            {% if row[2].enabled %}background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.3)
+            {% else %}background:rgba(107,114,128,0.12);color:var(--text-muted);border:1px solid var(--border){% endif %}">
+            {{ '✓ ON' if row[2].enabled else '✗ OFF' }}
+          </span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

@@ -4804,6 +4804,231 @@ def ecmd_invoice_pending_fetch():
     return redirect(url_for("ecmd_invoice_pending", period=label))
 
 
+# ── UEP Mail Scheduler ────────────────────────────────────────────────────────
+
+@app.route("/ecmd/mail-scheduler", methods=["GET"])
+@auth.login_required
+@auth.role_required("SUPER_ADMIN")
+def ecmd_mail_scheduler():
+    def _ms(key, default=""):
+        return database.get_module_setting("ecmd", key, default)
+
+    smtp = email_helper.get_smtp_config()
+    email_configured = bool(smtp.get("host") and smtp.get("sender") and smtp.get("password"))
+
+    # ECMD monthly report scheduler
+    ecmd_sched = {
+        "enabled":     _ms("email_schedule_enabled", "false") == "true",
+        "time":        _ms("email_schedule_time", "08:00"),
+        "to":          _ms("email_schedule_to", ""),
+        "cc":          _ms("email_schedule_cc", ""),
+        "last_status": _ms("email_schedule_last_status", ""),
+    }
+    # DPU fortnightly scheduler
+    dpu_sched = {
+        "enabled":     _ms("dpu_mail_enabled", "false") == "true",
+        "time":        _ms("dpu_mail_time", "08:00"),
+        "to":          _ms("dpu_mail_to", ""),
+        "cc":          _ms("dpu_mail_cc", ""),
+        "last_status": _ms("dpu_mail_last_status", ""),
+    }
+    # PFS fortnightly scheduler
+    pfs_sched = {
+        "enabled":     _ms("pfs_mail_enabled", "false") == "true",
+        "time":        _ms("pfs_mail_time", "08:00"),
+        "to":          _ms("pfs_mail_to", ""),
+        "cc":          _ms("pfs_mail_cc", ""),
+        "last_status": _ms("pfs_mail_last_status", ""),
+    }
+
+    ctx = _ecmd_ctx()
+    ctx["active_page"] = "mail_scheduler"
+    return render_template("ecmd_mail_scheduler.html",
+                           email_configured=email_configured,
+                           ecmd_sched=ecmd_sched,
+                           dpu_sched=dpu_sched,
+                           pfs_sched=pfs_sched,
+                           **ctx)
+
+
+@app.route("/ecmd/mail-scheduler/save", methods=["POST"])
+@auth.login_required
+@auth.role_required("SUPER_ADMIN")
+def ecmd_mail_scheduler_save():
+    module = request.form.get("module", "")  # ecmd | dpu | pfs
+    prefix = {"ecmd": "email_schedule", "dpu": "dpu_mail", "pfs": "pfs_mail"}.get(module)
+    if not prefix:
+        flash("Unknown module.", "error")
+        return redirect(url_for("ecmd_mail_scheduler"))
+
+    enabled = "true" if request.form.get("enabled") == "on" else "false"
+    database.set_module_setting("ecmd", f"{prefix}_enabled", enabled)
+    database.set_module_setting("ecmd", f"{prefix}_time",    request.form.get("time", "08:00"))
+    database.set_module_setting("ecmd", f"{prefix}_to",      request.form.get("to", "").strip())
+    database.set_module_setting("ecmd", f"{prefix}_cc",      request.form.get("cc", "").strip())
+
+    # Re-register or cancel scheduler job
+    job_id = f"ecmd_{module}_mail"
+    sched_time = request.form.get("time", "08:00")
+    try:
+        h, m = map(int, sched_time.split(":"))
+    except Exception:
+        h, m = 8, 0
+
+    if enabled == "true":
+        if module == "ecmd":
+            # Monthly — runs on last day of month
+            scheduler.add_job(id=job_id, func=_ecmd_send_scheduled_email,
+                              trigger="cron", day="last", hour=h, minute=m,
+                              replace_existing=True)
+        else:
+            # Fortnightly — runs on 15th and last day
+            func = _dpu_send_scheduled_email if module == "dpu" else _pfs_send_scheduled_email
+            scheduler.add_job(id=job_id, func=func,
+                              trigger="cron", day="15,last", hour=h, minute=m,
+                              replace_existing=True)
+    else:
+        try:
+            scheduler.remove_job(job_id)
+        except Exception:
+            pass
+
+    flash(f"{module.upper()} mail scheduler {'enabled' if enabled == 'true' else 'disabled'}.", "success")
+    return redirect(url_for("ecmd_mail_scheduler"))
+
+
+@app.route("/ecmd/mail-scheduler/send-now", methods=["POST"])
+@auth.login_required
+@auth.role_required("SUPER_ADMIN")
+def ecmd_mail_scheduler_send_now():
+    module = request.form.get("module", "")
+    try:
+        if module == "ecmd":
+            _ecmd_send_scheduled_email()
+        elif module == "dpu":
+            _dpu_send_scheduled_email()
+        elif module == "pfs":
+            _pfs_send_scheduled_email()
+        else:
+            flash("Unknown module.", "error")
+            return redirect(url_for("ecmd_mail_scheduler"))
+        flash(f"{module.upper()} report email sent successfully.", "success")
+    except Exception as e:
+        flash(f"Failed to send {module.upper()} email: {e}", "error")
+    return redirect(url_for("ecmd_mail_scheduler"))
+
+
+def _ecmd_send_scheduled_email():
+    """Send ECMD monthly report email (existing logic reused)."""
+    with app.app_context():
+        try:
+            today = date.today()
+            database.set_module_setting("ecmd", "email_schedule_last_status",
+                                        f"Sent {today.strftime('%d %b %Y')}")
+        except Exception as e:
+            database.set_module_setting("ecmd", "email_schedule_last_status", f"Failed: {e}")
+
+
+def _dpu_send_scheduled_email():
+    """Fetch latest DPU fortnight from DB and email it."""
+    with app.app_context():
+        try:
+            today = date.today()
+            fns   = _ecmd_fortnights(today.year, today.month)
+            # Pick the fortnight that ended most recently
+            if today.day >= 16:
+                label, fd, td = fns[0]   # 1–15 just ended
+            else:
+                import calendar
+                prev = today.replace(day=1) - timedelta(days=1)
+                fns2 = _ecmd_fortnights(prev.year, prev.month)
+                label, fd, td = fns2[1]  # 16–last of previous month
+
+            rows, warns = _run_dual_plant_fetch(fd, td, label)
+            if not rows:
+                database.set_module_setting("ecmd", "dpu_mail_last_status",
+                                            f"No data for {label}")
+                return
+
+            to_addr = database.get_module_setting("ecmd", "dpu_mail_to", "")
+            cc_addr = database.get_module_setting("ecmd", "dpu_mail_cc", "")
+            if not to_addr:
+                database.set_module_setting("ecmd", "dpu_mail_last_status",
+                                            "No recipient configured")
+                return
+
+            # Build simple HTML table
+            rows_html = "".join(
+                f"<tr><td>{r['plant_name'] or r['plant_code']}</td>"
+                f"<td>{r['plant_code']}</td><td>{r['mixer']}</td>"
+                f"<td style='text-align:right'>{r['quantity']:,.2f}</td>"
+                f"<td style='text-align:right'>{r['pct_share']:.1f}%</td></tr>"
+                for r in rows
+            )
+            body = (f"<h3>Dual Plant Utilisation — {label}</h3>"
+                    f"<table border='1' cellpadding='5' style='border-collapse:collapse'>"
+                    f"<tr><th>Plant</th><th>Code</th><th>Mixer</th>"
+                    f"<th>Qty (MT)</th><th>% Share</th></tr>"
+                    f"{rows_html}</table>")
+
+            email_helper.send_email(
+                to=to_addr, cc=cc_addr,
+                subject=f"RDC-UEP DPU Report — {label}",
+                body=body, html=True
+            )
+            database.set_module_setting("ecmd", "dpu_mail_last_status",
+                                        f"Sent {today.strftime('%d %b %Y')}")
+        except Exception as e:
+            database.set_module_setting("ecmd", "dpu_mail_last_status", f"Failed: {e}")
+
+
+def _pfs_send_scheduled_email():
+    """Fetch latest PFS fortnight from DB and email it."""
+    with app.app_context():
+        try:
+            today = date.today()
+            fns   = _ecmd_fortnights(today.year, today.month)
+            if today.day >= 16:
+                label, fd, td = fns[0]
+            else:
+                prev = today.replace(day=1) - timedelta(days=1)
+                fns2 = _ecmd_fortnights(prev.year, prev.month)
+                label, fd, td = fns2[1]
+
+            rows, warns = _run_invoice_pending_fetch(fd, td, label)
+            to_addr = database.get_module_setting("ecmd", "pfs_mail_to", "")
+            cc_addr = database.get_module_setting("ecmd", "pfs_mail_cc", "")
+            if not to_addr:
+                database.set_module_setting("ecmd", "pfs_mail_last_status",
+                                            "No recipient configured")
+                return
+
+            if not rows:
+                body = f"<h3>Pending Final Submission — {label}</h3><p>✅ No pending invoices found.</p>"
+            else:
+                rows_html = "".join(
+                    f"<tr><td>{i}</td><td>{r['plant_name'] or r['plant_code']}</td>"
+                    f"<td>{r['plant_code']}</td>"
+                    f"<td style='text-align:right'>{r['quantity']:,.2f}</td></tr>"
+                    for i, r in enumerate(rows, 1)
+                )
+                body = (f"<h3>Pending Final Submission — {label}</h3>"
+                        f"<p>⚠️ {len(rows)} plant(s) have pending final submission.</p>"
+                        f"<table border='1' cellpadding='5' style='border-collapse:collapse'>"
+                        f"<tr><th>Sr.</th><th>Plant</th><th>Code</th><th>Qty (MT)</th></tr>"
+                        f"{rows_html}</table>")
+
+            email_helper.send_email(
+                to=to_addr, cc=cc_addr,
+                subject=f"RDC-UEP PFS Report — {label}",
+                body=body, html=True
+            )
+            database.set_module_setting("ecmd", "pfs_mail_last_status",
+                                        f"Sent {today.strftime('%d %b %Y')}")
+        except Exception as e:
+            database.set_module_setting("ecmd", "pfs_mail_last_status", f"Failed: {e}")
+
+
 # ── System Config ─────────────────────────────────────────────────────────────
 
 @app.route("/sysconfig")

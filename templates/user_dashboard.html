@@ -458,14 +458,14 @@
     </div>
   </div>
 
-  <!-- ═══ RDC-ECMD ═════════════════════════════════════════════ -->
+  <!-- ═══ RDC-UEP ══════════════════════════════════════════════ -->
   <div class="ud-section">
-    <div class="ud-section-label">RDC-ECMD — Energy &amp; DG Ratio</div>
+    <div class="ud-section-label">RDC-UEP — Utilization of Energy &amp; Plant</div>
     <div class="ud-module-row">
 
       <div class="ud-card {% if not ec_last %}no-click{% endif %}" onclick="{% if ec_last %}openModal('modal-ec',0){% endif %}">
         <div class="ud-card-head">
-          <span class="ud-mod-badge ec">RDC-ECMD</span>
+          <span class="ud-mod-badge ec">RDC-UEP</span>
           {% if ec_months|length > 1 %}
           <div class="ud-month-tabs" onclick="event.stopPropagation()">
             {% for m in ec_months %}
@@ -505,7 +505,7 @@
 
       <div class="ud-card {% if not ec_cur %}no-click{% endif %}" onclick="{% if ec_cur %}openModal('modal-ec-cur',0){% endif %}">
         <div class="ud-card-head">
-          <span class="ud-mod-badge ec">RDC-ECMD</span>
+          <span class="ud-mod-badge ec">RDC-UEP</span>
           <span class="ud-card-tag current">● Current</span>
           <span class="ud-card-period">{{ cur_month_name }} {{ cur_year }}</span>
         </div>
@@ -762,7 +762,7 @@
   <div class="ud-modal">
     <div class="ud-modal-head">
       <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0">
-        <h3 style="margin:0;white-space:nowrap">RDC-ECMD — Plant Energy &amp; DG</h3>
+        <h3 style="margin:0;white-space:nowrap">RDC-UEP — Utilization of Energy &amp; Plant</h3>
         {% if ec_months|length > 1 %}
         <div class="ud-month-tabs">
           {% for m in ec_months %}
@@ -992,7 +992,7 @@
     <div class="ud-modal-head">
       <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:12px">
-          <h3 style="margin:0;white-space:nowrap">RDC-ECMD — {{ cur_month_name }} {{ cur_year }}</h3>
+          <h3 style="margin:0;white-space:nowrap">RDC-UEP — {{ cur_month_name }} {{ cur_year }}</h3>
           <span class="ud-card-tag current" style="font-size:11px">● Current</span>
         </div>
         {% if ec_cur %}

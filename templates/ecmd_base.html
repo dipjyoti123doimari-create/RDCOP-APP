@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{% block title %}RDC-ECMD{% endblock %} — Energy & DG Ratio</title>
+<title>{% block title %}RDC-UEP{% endblock %} — Utilization of Energy & Plant</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Meie+Script&display=swap" rel="stylesheet">
@@ -27,37 +27,58 @@
           <span class="sidebar-name-main">RDC-OPS</span>
           <span class="sidebar-name-sub">by Dipjyoti</span>
         </div>
-        <span class="sidebar-module-badge" style="background:rgba(0,200,100,0.15);color:#00C864;border-color:rgba(0,200,100,0.3)">RDC-ECMD</span>
-        <span class="sidebar-tagline">Energy & DG Ratio</span>
+        <span class="sidebar-module-badge" style="background:rgba(0,200,100,0.15);color:#00C864;border-color:rgba(0,200,100,0.3)">RDC-UEP</span>
+        <span class="sidebar-tagline">Utilization of Energy &amp; Plant</span>
       </div>
     </div>
 
     <div class="sidebar-nav">
+
+      <!-- ── Dashboard ── -->
       <a href="{{ url_for('ecmd_dashboard') }}" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
         <span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span>
       </a>
-      <a href="{{ url_for('ecmd_data_entry') }}" class="nav-item {% if active_page == 'data_entry' %}active{% endif %}">
+
+      <!-- ── ECMD sub-module ── -->
+      <div class="nav-section-label">ECMD</div>
+      <a href="{{ url_for('ecmd_data_entry') }}" class="nav-item nav-sub {% if active_page == 'data_entry' %}active{% endif %}">
         <span class="nav-icon">📝</span><span class="nav-label">Data Entry</span>
       </a>
-      {% if not current_user or current_user.role == 'SUPER_ADMIN' %}
-      {% endif %}
-      <a href="{{ url_for('ecmd_reports') }}" class="nav-item {% if active_page in ('calculate','reports') %}active{% endif %}">
+      <a href="{{ url_for('ecmd_reports') }}" class="nav-item nav-sub {% if active_page in ('calculate','reports') %}active{% endif %}">
         <span class="nav-icon">⚡</span><span class="nav-label">Calculate &amp; Reports</span>
       </a>
-      <a href="{{ url_for('ecmd_dual_plant') }}" class="nav-item {% if active_page == 'dual_plant' %}active{% endif %}">
+
+      <!-- ── DPU sub-module ── -->
+      <div class="nav-section-label">DPU</div>
+      <a href="{{ url_for('ecmd_dual_plant') }}" class="nav-item nav-sub {% if active_page == 'dual_plant' %}active{% endif %}">
         <span class="nav-icon">🏭</span><span class="nav-label">Dual Plant Utilisation</span>
       </a>
-      <a href="{{ url_for('ecmd_invoice_pending') }}" class="nav-item {% if active_page == 'invoice_pending' %}active{% endif %}">
-        <span class="nav-icon">📋</span><span class="nav-label">Pending Invoice Generation</span>
+
+      <!-- ── PFS sub-module ── -->
+      <div class="nav-section-label">PFS</div>
+      <a href="{{ url_for('ecmd_invoice_pending') }}" class="nav-item nav-sub {% if active_page == 'invoice_pending' %}active{% endif %}">
+        <span class="nav-icon">📋</span><span class="nav-label">Pending Final Submission</span>
       </a>
+
+      <!-- ── Auto Mail Scheduler ── -->
+      <div class="nav-section-label">AUTO MAIL</div>
       {% if not current_user or current_user.role == 'SUPER_ADMIN' %}
-      <a href="{{ url_for('ecmd_settings') }}" class="nav-item {% if active_page == 'settings' %}active{% endif %}">
+      <a href="{{ url_for('ecmd_mail_scheduler') }}" class="nav-item nav-sub {% if active_page == 'mail_scheduler' %}active{% endif %}">
+        <span class="nav-icon">📧</span><span class="nav-label">Mail Scheduler</span>
+      </a>
+      {% endif %}
+
+      <!-- ── Admin ── -->
+      {% if not current_user or current_user.role == 'SUPER_ADMIN' %}
+      <div class="nav-section-label">ADMIN</div>
+      <a href="{{ url_for('ecmd_settings') }}" class="nav-item nav-sub {% if active_page == 'settings' %}active{% endif %}">
         <span class="nav-icon">⚙️</span><span class="nav-label">Settings</span>
       </a>
-      <a href="{{ url_for('sysconfig_page') }}" class="nav-item {% if active_page == 'sysconfig' %}active{% endif %}">
+      <a href="{{ url_for('sysconfig_page') }}" class="nav-item nav-sub {% if active_page == 'sysconfig' %}active{% endif %}">
         <span class="nav-icon">🗄️</span><span class="nav-label">System Config</span>
       </a>
       {% endif %}
+
     </div>
 
     <div class="sidebar-footer">
