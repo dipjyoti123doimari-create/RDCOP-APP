@@ -1,0 +1,74 @@
+{% extends "slow_loading_alert/sla_base.html" %}
+{% block title %}SLA Email Mapping{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-title">Email Mapping</h1>
+  <p class="page-subtitle">Read from Google Sheet — configure tab names in Settings</p>
+</div>
+
+{% if warnings %}
+<div class="alert alert-warning">
+  {% for w in warnings %}<div>⚠️ {{ w }}</div>{% endfor %}
+</div>
+{% endif %}
+
+{% if not mapping %}
+<div class="alert alert-info">
+  No mapping loaded. Check that Google Sheet ID and tab names are configured in
+  <a href="{{ url_for('sla_configuration') }}">SLA Configuration</a>.
+</div>
+{% else %}
+
+<!-- Plant Mapping -->
+<div class="card">
+  <div class="card-header">Plant Email Mapping</div>
+  <div style="overflow-x:auto">
+    <table class="sla-table">
+      <thead><tr>
+        <th>Plant Code</th><th>Plant Name</th>
+        <th>Plant Manager Email</th><th>Business Manager Email</th>
+        <th>Business Head Email</th><th>CC Emails</th>
+      </tr></thead>
+      <tbody>
+      {% for code, info in mapping.items() %}
+      <tr>
+        <td>{{ code }}</td>
+        <td>{{ info.plant_name or '—' }}</td>
+        <td>{{ info.pm_email or '—' }}</td>
+        <td>{{ info.bm_email or '—' }}</td>
+        <td>{{ info.bh_email or '—' }}</td>
+        <td>{{ info.cc_emails or '—' }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endif %}
+
+<!-- Batcher Mapping -->
+{% if batcher_map %}
+<div class="card" style="margin-top:16px">
+  <div class="card-header">Batcher Name Mapping</div>
+  <div style="overflow-x:auto">
+    <table class="sla-table">
+      <thead><tr><th>Batcher Code</th><th>Batcher Name</th></tr></thead>
+      <tbody>
+      {% for code, name in batcher_map.items() %}
+      <tr><td>{{ code }}</td><td>{{ name or '—' }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div style="margin-top:12px">
+  <form method="POST" action="{{ url_for('sla_refresh_mapping') }}">
+    <button type="submit" class="btn btn-primary btn-sm">🔄 Refresh from Google Sheet</button>
+  </form>
+</div>
+
+{% endblock %}

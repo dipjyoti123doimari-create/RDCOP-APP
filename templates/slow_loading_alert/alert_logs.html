@@ -1,0 +1,87 @@
+{% extends "slow_loading_alert/sla_base.html" %}
+{% block title %}SLA Alert Logs{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-title">Alert Logs</h1>
+</div>
+
+<!-- Email Logs -->
+<div class="card">
+  <div class="card-header">Email Send History (last 200)</div>
+  {% if email_logs %}
+  <div style="overflow-x:auto">
+    <table class="sla-table">
+      <thead><tr>
+        <th>#</th><th>Type</th><th>Date</th><th>Hour</th>
+        <th>Plant</th><th>To</th><th>CC</th>
+        <th>Cases</th><th>Status</th><th>Sent At</th><th>Error</th>
+      </tr></thead>
+      <tbody>
+      {% for l in email_logs %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td style="font-size:11px">{{ l.alert_type }}</td>
+        <td>{{ l.alert_date }}</td>
+        <td>{{ ('%02d:00'|format(l.alert_hour|int)) if l.alert_hour else '—' }}</td>
+        <td>{{ l.plant_name or l.plant_code or '—' }}</td>
+        <td style="font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis">{{ l.to_emails }}</td>
+        <td style="font-size:11px;max-width:100px;overflow:hidden;text-overflow:ellipsis">{{ l.cc_emails or '—' }}</td>
+        <td style="text-align:right">{{ l.total_cases }}</td>
+        <td><span style="font-size:11px;padding:2px 6px;border-radius:4px;
+          {% if l.status == 'SENT' %}background:rgba(0,200,100,.1);color:#00C864
+          {% else %}background:rgba(255,80,80,.1);color:#FF5050{% endif %}">
+          {{ l.status }}</span>
+        </td>
+        <td style="font-size:11px">{{ l.sent_at }}</td>
+        <td style="font-size:11px;color:#FF5050">{{ l.error_message or '' }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="alert alert-info" style="margin:16px">No email logs found.</div>
+  {% endif %}
+</div>
+
+<!-- Scheduler Logs -->
+<div class="card" style="margin-top:16px">
+  <div class="card-header">Scheduler Run History (last 100)</div>
+  {% if scheduler_logs %}
+  <div style="overflow-x:auto">
+    <table class="sla-table">
+      <thead><tr>
+        <th>#</th><th>Job</th><th>Started</th><th>Completed</th>
+        <th>Status</th><th style="text-align:right">Checked</th>
+        <th style="text-align:right">Alerts</th><th style="text-align:right">Sent</th>
+        <th>Error</th>
+      </tr></thead>
+      <tbody>
+      {% for l in scheduler_logs %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td style="font-size:11px">{{ l.job_name }}</td>
+        <td style="font-size:11px">{{ l.run_started_at }}</td>
+        <td style="font-size:11px">{{ l.run_completed_at }}</td>
+        <td><span style="font-size:11px;padding:2px 6px;border-radius:4px;
+          {% if l.status == 'SUCCESS' %}background:rgba(0,200,100,.1);color:#00C864
+          {% elif l.status == 'SKIPPED' %}background:rgba(200,200,200,.1);color:#888
+          {% else %}background:rgba(255,80,80,.1);color:#FF5050{% endif %}">
+          {{ l.status }}</span>
+        </td>
+        <td style="text-align:right">{{ l.total_records_checked }}</td>
+        <td style="text-align:right">{{ l.total_alert_cases }}</td>
+        <td style="text-align:right">{{ l.total_emails_sent }}</td>
+        <td style="font-size:11px;color:#FF5050;max-width:200px">{{ l.error_message or '' }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="alert alert-info" style="margin:16px">No scheduler logs found.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

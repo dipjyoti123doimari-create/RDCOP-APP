@@ -1,0 +1,130 @@
+{% extends "slow_loading_alert/sla_base.html" %}
+{% block title %}SLA Report{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-title">Slow Loading Alert Report</h1>
+</div>
+
+<!-- Filters -->
+<form method="GET" action="{{ url_for('sla_report') }}">
+<div class="filter-row">
+  <div>
+    <label style="font-size:11px;display:block;margin-bottom:2px">From Date</label>
+    <input type="date" name="from_date" value="{{ filters.from_date or '' }}">
+  </div>
+  <div>
+    <label style="font-size:11px;display:block;margin-bottom:2px">To Date</label>
+    <input type="date" name="to_date" value="{{ filters.to_date or '' }}">
+  </div>
+  {% if not is_plant_user %}
+  <div>
+    <label style="font-size:11px;display:block;margin-bottom:2px">Plant</label>
+    <select name="plant_code">
+      <option value="">All Plants</option>
+      {% for p in plant_list %}
+      <option value="{{ p.plant_code }}" {% if filters.plant_code == p.plant_code %}selected{% endif %}>
+        {{ p.plant_name or p.plant_code }}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+  <div>
+    <label style="font-size:11px;display:block;margin-bottom:2px">TM Number</label>
+    <input type="text" name="tm_number" value="{{ filters.tm_number or '' }}" placeholder="Search…" style="width:110px">
+  </div>
+  <div>
+    <label style="font-size:11px;display:block;margin-bottom:2px">Grade</label>
+    <input type="text" name="grade" value="{{ filters.grade or '' }}" placeholder="Search…" style="width:100px">
+  </div>
+  <div>
+    <label style="font-size:11px;display:block;margin-bottom:2px">Customer</label>
+    <input type="text" name="customer" value="{{ filters.customer or '' }}" placeholder="Search…" style="width:110px">
+  </div>
+  <div>
+    <label style="font-size:11px;display:block;margin-bottom:2px">Alert Type</label>
+    <select name="alert_type">
+      <option value="">All</option>
+      <option value="HOURLY" {% if filters.alert_type == 'HOURLY' %}selected{% endif %}>Hourly</option>
+      <option value="DAILY_SUMMARY" {% if filters.alert_type == 'DAILY_SUMMARY' %}selected{% endif %}>Daily Summary</option>
+    </select>
+  </div>
+  <div>
+    <label style="font-size:11px;display:block;margin-bottom:2px">Status</label>
+    <select name="status">
+      <option value="">All</option>
+      <option value="OPEN"              {% if filters.status == 'OPEN' %}selected{% endif %}>Open</option>
+      <option value="SENT"              {% if filters.status == 'SENT' %}selected{% endif %}>Sent</option>
+      <option value="FAILED"            {% if filters.status == 'FAILED' %}selected{% endif %}>Failed</option>
+      <option value="SKIPPED_DUPLICATE" {% if filters.status == 'SKIPPED_DUPLICATE' %}selected{% endif %}>Skipped</option>
+    </select>
+  </div>
+  <button type="submit" class="btn btn-primary btn-sm" style="align-self:flex-end">🔍 Filter</button>
+  <a href="{{ url_for('sla_report') }}" class="btn btn-secondary btn-sm" style="align-self:flex-end">✖ Clear</a>
+  {% if rows %}
+  <a href="{{ url_for('sla_export') }}?{{ request.query_string.decode() }}" class="btn btn-secondary btn-sm" style="align-self:flex-end">⬇ Export Excel</a>
+  {% endif %}
+</div>
+</form>
+
+<div class="card" style="margin-top:0">
+  <div class="card-header">
+    <span>{{ rows|length }} record(s) shown</span>
+  </div>
+  {% if rows %}
+  <div style="overflow-x:auto">
+    <table class="sla-table">
+      <thead><tr>
+        <th>#</th>
+        <th>Date</th><th>Hour</th>
+        <th>Plant</th><th>Customer</th><th>Grade</th>
+        <th>Batcher Code</th><th>Batcher Name</th><th>TM Number</th>
+        <th style="text-align:right">Batched Qty</th>
+        <th style="text-align:right">Mixer Cap</th>
+        <th style="text-align:right">Load Time</th>
+        <th style="text-align:right">Allowed</th>
+        <th style="text-align:right">Delay</th>
+        <th>Severity</th><th>Type</th><th>Status</th><th>Remarks</th>
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+      {% set delay = r.delay_minutes|float %}
+      {% set sev = 'RED' if delay > 3 else ('AMBER' if delay >= 1 else '') %}
+      <tr class="{% if sev == 'RED' %}sev-row-red{% elif sev == 'AMBER' %}sev-row-amber{% endif %}">
+        <td>{{ loop.index }}</td>
+        <td>{{ r.alert_date }}</td>
+        <td>{{ '%02d:00'|format(r.alert_hour|int) }}</td>
+        <td>{{ r.plant_name or r.plant_code }}</td>
+        <td>{{ r.customer }}</td>
+        <td>{{ r.grade }}</td>
+        <td>{{ r.batcher_code }}</td>
+        <td>{{ r.batcher_name or r.batcher_code }}</td>
+        <td>{{ r.tm_number }}</td>
+        <td style="text-align:right">{{ '%.1f'|format(r.batched_quantity|float) }}</td>
+        <td style="text-align:right">{{ r.mixer_capacity or '—' }}</td>
+        <td style="text-align:right">{{ r.loading_time_minutes|int }} min</td>
+        <td style="text-align:right">{{ r.allowed_loading_minutes|int }} min</td>
+        <td style="text-align:right;{% if sev == 'RED' %}color:#FF4444;font-weight:700{% elif sev == 'AMBER' %}color:#FFAA00;font-weight:700{% endif %}">
+          {{ r.delay_minutes|int }} min</td>
+        <td class="{% if sev == 'RED' %}sev-red{% elif sev == 'AMBER' %}sev-amber{% endif %}">{{ sev or '—' }}</td>
+        <td style="font-size:11px">{{ r.alert_type }}</td>
+        <td><span style="font-size:11px;padding:2px 6px;border-radius:4px;
+          {% if r.status == 'SENT' %}background:rgba(0,200,100,.1);color:#00C864
+          {% elif r.status == 'FAILED' %}background:rgba(255,80,80,.1);color:#FF5050
+          {% elif r.status == 'SKIPPED_DUPLICATE' %}background:rgba(180,180,180,.1);color:#888
+          {% else %}background:rgba(200,180,0,.1);color:#CCB000{% endif %}">
+          {{ r.status }}</span>
+        </td>
+        <td style="font-size:11px;max-width:180px;white-space:normal">{{ r.remarks or '' }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="alert alert-info" style="margin:16px">No records found for the selected filters.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

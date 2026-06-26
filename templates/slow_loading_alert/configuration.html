@@ -1,0 +1,154 @@
+{% extends "slow_loading_alert/sla_base.html" %}
+{% block title %}SLA Configuration{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-title">SLA Configuration</h1>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">
+
+<!-- ── Mixer Capacity Thresholds ── -->
+<div class="card">
+  <div class="card-header">Mixer Capacity Thresholds</div>
+  <div style="overflow-x:auto">
+    <table class="sla-table">
+      <thead><tr>
+        <th>Mixer Cap (m³)</th><th>Ref Qty (m³)</th><th>Base Time (min)</th>
+        {% if is_super_admin %}<th>Action</th>{% endif %}
+      </tr></thead>
+      <tbody>
+      {% for t in thresholds %}
+      <tr>
+        <td>{{ t.mixer_capacity }}</td>
+        <td>{{ t.reference_quantity }}</td>
+        <td>{{ t.base_allowed_minutes }}</td>
+        {% if is_super_admin %}
+        <td>
+          <form method="POST" action="{{ url_for('sla_delete_threshold', tid=t.id) }}" style="display:inline"
+                onsubmit="return confirm('Delete this threshold?')">
+            <button type="submit" class="btn btn-danger btn-xs">✖</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if is_super_admin %}
+  <div style="margin-top:12px;padding:12px;border-top:1px solid var(--border)">
+    <p style="font-size:12px;font-weight:600;margin-bottom:8px">Add New Threshold</p>
+    <form method="POST" action="{{ url_for('sla_add_threshold') }}" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <div>
+        <label style="font-size:11px;display:block">Mixer Cap (m³)</label>
+        <input type="number" name="mixer_capacity" step="0.1" required class="form-control" style="width:100px">
+      </div>
+      <div>
+        <label style="font-size:11px;display:block">Ref Qty (m³)</label>
+        <input type="number" name="reference_quantity" step="0.1" value="6" required class="form-control" style="width:80px">
+      </div>
+      <div>
+        <label style="font-size:11px;display:block">Base Time (min)</label>
+        <input type="number" name="base_allowed_minutes" step="0.5" required class="form-control" style="width:90px">
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">Add</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ── Module Settings ── -->
+{% if is_super_admin %}
+<div style="display:flex;flex-direction:column;gap:16px">
+
+  <!-- Alert toggles -->
+  <div class="card">
+    <div class="card-header">Alert Schedule</div>
+    <form method="POST" action="{{ url_for('sla_save_settings') }}">
+    <div style="display:flex;flex-direction:column;gap:10px;padding:4px 0">
+
+      <div class="form-group">
+        <label class="form-label">Hourly Alert</label>
+        <select name="hourly_alert_enabled" class="form-control">
+          <option value="true"  {% if settings.hourly_alert_enabled == 'true' %}selected{% endif %}>Enabled</option>
+          <option value="false" {% if settings.hourly_alert_enabled == 'false' %}selected{% endif %}>Disabled</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Daily Summary</label>
+        <select name="daily_summary_enabled" class="form-control">
+          <option value="true"  {% if settings.daily_summary_enabled == 'true' %}selected{% endif %}>Enabled</option>
+          <option value="false" {% if settings.daily_summary_enabled == 'false' %}selected{% endif %}>Disabled</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Daily Summary Time (HH:MM)</label>
+        <input type="time" name="daily_summary_time" value="{{ settings.daily_summary_time or '07:00' }}" class="form-control">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Global CC (comma-separated)</label>
+        <input type="text" name="global_cc" value="{{ settings.global_cc or '' }}" class="form-control" placeholder="cc@example.com">
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-sm">💾 Save Settings</button>
+    </div>
+    </form>
+  </div>
+
+  <!-- Oracle column overrides -->
+  <div class="card">
+    <div class="card-header">Oracle Column Mapping</div>
+    <form method="POST" action="{{ url_for('sla_save_oracle_cols') }}">
+    <div style="display:flex;flex-direction:column;gap:8px;padding:4px 0">
+      {% set col_fields = [
+        ('oracle_plant_col',    'Plant column',         'PLANTNO'),
+        ('oracle_customer_col', 'Customer column',      'CUSTOMERNAME'),
+        ('oracle_grade_col',    'Grade/Item Desc col',  'ITEMDESCRIPTION'),
+        ('oracle_batcher_col',  'Batcher/Created By col','CREATED_BY'),
+        ('oracle_truck_col',    'Truck/TM Number col',  'TRUCKNUMBER'),
+        ('oracle_quantity_col', 'Quantity column',      'PRODUCED_QUANTITY'),
+        ('oracle_time_col',     'Time Taken column',    'TIMETAKEN'),
+        ('oracle_mixer_cap_col','Mixer Capacity column','MIXERCAPACITY'),
+      ] %}
+      {% for key, label, placeholder in col_fields %}
+      <div class="form-group">
+        <label class="form-label" style="font-size:11px">{{ label }}</label>
+        <input type="text" name="{{ key }}" value="{{ settings[key] or '' }}" class="form-control" placeholder="{{ placeholder }}">
+      </div>
+      {% endfor %}
+      <button type="submit" class="btn btn-primary btn-sm">💾 Save Column Names</button>
+    </div>
+    </form>
+  </div>
+
+  <!-- Google Sheet mapping config -->
+  <div class="card">
+    <div class="card-header">Google Sheet Mapping</div>
+    <form method="POST" action="{{ url_for('sla_save_sheet_config') }}">
+    <div style="display:flex;flex-direction:column;gap:8px;padding:4px 0">
+      <div class="form-group">
+        <label class="form-label">Google Sheet ID / URL</label>
+        <input type="text" name="gsheet_id" value="{{ settings.gsheet_id or '' }}" class="form-control" placeholder="Sheet ID or full URL">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Plant Mapping Tab Name</label>
+        <input type="text" name="plant_mapping_tab" value="{{ settings.plant_mapping_tab or 'SLA Plant Mapping' }}" class="form-control">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Batcher Mapping Tab Name</label>
+        <input type="text" name="batcher_mapping_tab" value="{{ settings.batcher_mapping_tab or 'SLA Batcher Mapping' }}" class="form-control">
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">💾 Save Sheet Config</button>
+    </div>
+    </form>
+  </div>
+
+</div>
+{% endif %}
+</div>
+
+{% endblock %}

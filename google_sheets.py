@@ -358,6 +358,21 @@ def fetch_master_data(sheet_id: str, worksheet_name: str) -> pd.DataFrame:
     return _clean_and_validate(raw_df)
 
 
+def fetch_sheet_tab(sheet_id: str, worksheet_name: str) -> pd.DataFrame:
+    """
+    Generic helper: fetch any tab from a Google Sheet as a raw DataFrame.
+    Used by SLA mapping_service and any future module that needs arbitrary tabs.
+    Returns an empty DataFrame on any error.
+    """
+    try:
+        sheet_id = extract_sheet_id(sheet_id)
+        raw_df, _ = _fetch_with_fallback(sheet_id, worksheet_name)
+        return raw_df
+    except Exception as exc:
+        print(f"[google_sheets] fetch_sheet_tab('{worksheet_name}'): {exc}")
+        return pd.DataFrame()
+
+
 # ---------------------------------------------------------------------------
 # 6. SYNC: FETCH + SAVE TO SQLITE
 # ---------------------------------------------------------------------------

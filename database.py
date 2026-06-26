@@ -514,6 +514,93 @@ TABLE_SCHEMAS = {
             ip_address   TEXT
         )
     """,
+
+    # ── Slow Loading Alert (SLA) tables ─────────────────────────────────────
+
+    # Mixer capacity → base allowed time lookup table
+    "slow_loading_thresholds": """
+        CREATE TABLE IF NOT EXISTS slow_loading_thresholds (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            mixer_capacity      REAL NOT NULL,
+            reference_quantity  REAL NOT NULL DEFAULT 6,
+            base_allowed_minutes REAL NOT NULL,
+            is_active           INTEGER NOT NULL DEFAULT 1,
+            created_at          TEXT,
+            updated_at          TEXT
+        )
+    """,
+
+    # One row per detected slow-loading event
+    "slow_loading_alert_records": """
+        CREATE TABLE IF NOT EXISTS slow_loading_alert_records (
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            alert_date              TEXT NOT NULL,
+            alert_hour              INTEGER NOT NULL,
+            plant_code              TEXT,
+            plant_name              TEXT,
+            customer                TEXT,
+            grade                   TEXT,
+            batcher_code            TEXT,
+            batcher_name            TEXT,
+            tm_number               TEXT,
+            batched_quantity        REAL,
+            mixer_capacity          REAL,
+            loading_time_minutes    REAL,
+            allowed_loading_minutes REAL,
+            delay_minutes           REAL,
+            alert_type              TEXT DEFAULT 'HOURLY',
+            status                  TEXT DEFAULT 'OPEN',
+            remarks                 TEXT,
+            alert_key               TEXT,
+            created_at              TEXT,
+            updated_at              TEXT
+        )
+    """,
+
+    # Email send log for SLA module
+    "slow_loading_email_logs": """
+        CREATE TABLE IF NOT EXISTS slow_loading_email_logs (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            alert_type    TEXT,
+            alert_date    TEXT,
+            alert_hour    INTEGER,
+            plant_code    TEXT,
+            plant_name    TEXT,
+            to_emails     TEXT,
+            cc_emails     TEXT,
+            subject       TEXT,
+            total_cases   INTEGER,
+            status        TEXT,
+            error_message TEXT,
+            sent_at       TEXT,
+            created_at    TEXT
+        )
+    """,
+
+    # Scheduler run log for SLA module
+    "slow_loading_scheduler_logs": """
+        CREATE TABLE IF NOT EXISTS slow_loading_scheduler_logs (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_name              TEXT,
+            run_started_at        TEXT,
+            run_completed_at      TEXT,
+            status                TEXT,
+            total_records_checked INTEGER DEFAULT 0,
+            total_alert_cases     INTEGER DEFAULT 0,
+            total_emails_sent     INTEGER DEFAULT 0,
+            error_message         TEXT
+        )
+    """,
+
+    # Key-value config store for SLA module (mirrors module_settings pattern)
+    "slow_loading_config": """
+        CREATE TABLE IF NOT EXISTS slow_loading_config (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            config_key   TEXT UNIQUE NOT NULL,
+            config_value TEXT,
+            updated_at   TEXT
+        )
+    """,
 }
 
 
@@ -558,6 +645,35 @@ def init_db():
         # Index for fast date-range queries on the shared Oracle raw cache
         cur.execute("""CREATE INDEX IF NOT EXISTS idx_oracle_raw_date
                        ON oracle_raw_data(production_date)""")
+
+        # ── SLA indexes ──────────────────────────────────────────────────────
+        cur.execute("""CREATE INDEX IF NOT EXISTS idx_sla_records_date
+                       ON slow_loading_alert_records(alert_date)""")
+        cur.execute("""CREATE INDEX IF NOT EXISTS idx_sla_records_hour
+                       ON slow_loading_alert_records(alert_hour)""")
+        cur.execute("""CREATE INDEX IF NOT EXISTS idx_sla_records_plant
+                       ON slow_loading_alert_records(plant_code)""")
+        cur.execute("""CREATE INDEX IF NOT EXISTS idx_sla_records_key
+                       ON slow_loading_alert_records(alert_key)""")
+        cur.execute("""CREATE INDEX IF NOT EXISTS idx_sla_records_status
+                       ON slow_loading_alert_records(status)""")
+
+        # Seed threshold table if empty
+        cur.execute("SELECT COUNT(*) FROM slow_loading_thresholds")
+        if cur.fetchone()[0] == 0:
+            now_ts = datetime.now().isoformat(timespec="seconds")
+            thresholds = [
+                (30, 6, 16), (45, 6, 12), (56, 6, 10), (60, 6, 10),
+                (65, 6, 10), (70, 6, 10), (75, 6, 10), (80, 6, 10),
+                (86, 6, 10), (90, 6,  8), (100, 6, 8), (110, 6, 8),
+                (120, 6,  8),
+            ]
+            cur.executemany(
+                "INSERT INTO slow_loading_thresholds "
+                "(mixer_capacity, reference_quantity, base_allowed_minutes, is_active, created_at, updated_at) "
+                "VALUES (?, ?, ?, 1, ?, ?)",
+                [(m, r, b, now_ts, now_ts) for m, r, b in thresholds]
+            )
 
         conn.commit()
     finally:
@@ -1900,5 +2016,260 @@ def get_user_activity_log(limit: int = 500, user_id: int = None) -> list:
             )
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# SLA — Slow Loading Alert helpers
+# ---------------------------------------------------------------------------
+
+def sla_get_thresholds() -> list:
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "SELECT * FROM slow_loading_thresholds WHERE is_active=1 ORDER BY mixer_capacity"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def sla_get_all_thresholds() -> list:
+    conn = get_connection()
+    try:
+        cur = conn.execute("SELECT * FROM slow_loading_thresholds ORDER BY mixer_capacity")
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def sla_upsert_threshold(mixer_capacity, reference_quantity, base_allowed_minutes, threshold_id=None):
+    now_ts = _now()
+    conn = get_connection()
+    try:
+        if threshold_id:
+            conn.execute(
+                "UPDATE slow_loading_thresholds "
+                "SET mixer_capacity=?, reference_quantity=?, base_allowed_minutes=?, updated_at=? WHERE id=?",
+                (mixer_capacity, reference_quantity, base_allowed_minutes, now_ts, threshold_id)
+            )
+        else:
+            conn.execute(
+                "INSERT INTO slow_loading_thresholds "
+                "(mixer_capacity, reference_quantity, base_allowed_minutes, is_active, created_at, updated_at) "
+                "VALUES (?, ?, ?, 1, ?, ?)",
+                (mixer_capacity, reference_quantity, base_allowed_minutes, now_ts, now_ts)
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def sla_delete_threshold(threshold_id):
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM slow_loading_thresholds WHERE id=?", (threshold_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def sla_alert_key_exists_this_hour(alert_key, alert_date, alert_hour):
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "SELECT 1 FROM slow_loading_alert_records "
+            "WHERE alert_key=? AND alert_date=? AND alert_hour=? AND status='SENT' LIMIT 1",
+            (alert_key, alert_date, alert_hour)
+        )
+        return cur.fetchone() is not None
+    finally:
+        conn.close()
+
+
+def sla_bulk_insert_records(rows):
+    if not rows:
+        return 0
+    now_ts = _now()
+    for r in rows:
+        r.setdefault("created_at", now_ts)
+        r.setdefault("updated_at", now_ts)
+    return insert_rows("slow_loading_alert_records", rows)
+
+
+def sla_mark_records_sent(record_ids):
+    if not record_ids:
+        return
+    now_ts = _now()
+    conn = get_connection()
+    try:
+        conn.executemany(
+            "UPDATE slow_loading_alert_records SET status='SENT', updated_at=? WHERE id=?",
+            [(now_ts, rid) for rid in record_ids]
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def sla_mark_records_failed(record_ids, error=""):
+    if not record_ids:
+        return
+    now_ts = _now()
+    conn = get_connection()
+    try:
+        conn.executemany(
+            "UPDATE slow_loading_alert_records SET status='FAILED', remarks=?, updated_at=? WHERE id=?",
+            [(error[:500], now_ts, rid) for rid in record_ids]
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def sla_log_email(alert_type, alert_date, alert_hour, plant_code, plant_name,
+                   to_emails, cc_emails, subject, total_cases, status, error_message=""):
+    now_ts = _now()
+    insert_rows("slow_loading_email_logs", [{
+        "alert_type": alert_type, "alert_date": alert_date, "alert_hour": alert_hour,
+        "plant_code": plant_code, "plant_name": plant_name,
+        "to_emails": to_emails, "cc_emails": cc_emails,
+        "subject": subject, "total_cases": total_cases,
+        "status": status, "error_message": error_message,
+        "sent_at": now_ts, "created_at": now_ts,
+    }])
+
+
+def sla_log_scheduler(job_name, started_at, completed_at, status,
+                       total_checked=0, total_alerts=0, total_sent=0, error_message=""):
+    insert_rows("slow_loading_scheduler_logs", [{
+        "job_name": job_name, "run_started_at": started_at,
+        "run_completed_at": completed_at, "status": status,
+        "total_records_checked": total_checked, "total_alert_cases": total_alerts,
+        "total_emails_sent": total_sent, "error_message": error_message,
+    }])
+
+
+def sla_get_report(from_date=None, to_date=None, plant_code=None, batcher_code=None,
+                    tm_number=None, grade=None, customer=None,
+                    alert_type=None, status=None, limit=500):
+    clauses, params = [], []
+    if from_date:
+        clauses.append("alert_date >= ?"); params.append(from_date)
+    if to_date:
+        clauses.append("alert_date <= ?"); params.append(to_date)
+    if plant_code:
+        clauses.append("plant_code = ?"); params.append(plant_code)
+    if batcher_code:
+        clauses.append("batcher_code = ?"); params.append(batcher_code)
+    if tm_number:
+        clauses.append("tm_number LIKE ?"); params.append(f"%{tm_number}%")
+    if grade:
+        clauses.append("grade LIKE ?"); params.append(f"%{grade}%")
+    if customer:
+        clauses.append("customer LIKE ?"); params.append(f"%{customer}%")
+    if alert_type:
+        clauses.append("alert_type = ?"); params.append(alert_type)
+    if status:
+        clauses.append("status = ?"); params.append(status)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    sql = (f"SELECT * FROM slow_loading_alert_records {where} "
+           f"ORDER BY alert_date DESC, alert_hour DESC, delay_minutes DESC LIMIT ?")
+    params.append(limit)
+    conn = get_connection()
+    try:
+        cur = conn.execute(sql, params)
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def sla_get_dashboard_kpis(today_str, plant_codes=None):
+    conn = get_connection()
+    try:
+        plant_filter = ""
+        params_base = [today_str]
+        if plant_codes:
+            placeholders = ",".join("?" * len(plant_codes))
+            plant_filter = f"AND plant_code IN ({placeholders})"
+            params_base = [today_str] + list(plant_codes)
+
+        def _one(sql, p):
+            r = conn.execute(sql, p).fetchone()
+            return r[0] if r else 0
+
+        vehicles_today = _one(
+            f"SELECT COUNT(DISTINCT tm_number) FROM slow_loading_alert_records WHERE alert_date=? {plant_filter}",
+            params_base)
+        slow_today = _one(
+            f"SELECT COUNT(*) FROM slow_loading_alert_records WHERE alert_date=? AND status!='SKIPPED_DUPLICATE' {plant_filter}",
+            params_base)
+        hourly_sent = _one(
+            f"SELECT COUNT(*) FROM slow_loading_email_logs WHERE alert_date=? AND alert_type='HOURLY' AND status='SENT'",
+            [today_str])
+        daily_sent = _one(
+            f"SELECT COUNT(*) FROM slow_loading_email_logs WHERE alert_date=? AND alert_type='DAILY_SUMMARY' AND status='SENT'",
+            [today_str])
+
+        row = conn.execute(
+            f"SELECT AVG(loading_time_minutes), AVG(allowed_loading_minutes), MAX(delay_minutes) "
+            f"FROM slow_loading_alert_records WHERE alert_date=? {plant_filter}",
+            params_base).fetchone()
+        avg_load    = round(row[0] or 0, 1)
+        avg_allowed = round(row[1] or 0, 1)
+        max_delay   = round(row[2] or 0, 1)
+
+        last_run = conn.execute(
+            "SELECT run_completed_at FROM slow_loading_scheduler_logs "
+            "WHERE status='SUCCESS' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        last_run_time = last_run[0] if last_run else "Never"
+
+        return {
+            "vehicles_today": vehicles_today, "slow_today": slow_today,
+            "hourly_sent": hourly_sent, "daily_sent": daily_sent,
+            "avg_load": avg_load, "avg_allowed": avg_allowed,
+            "max_delay": max_delay, "last_run_time": last_run_time,
+        }
+    finally:
+        conn.close()
+
+
+def sla_get_email_logs(limit=200):
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "SELECT * FROM slow_loading_email_logs ORDER BY id DESC LIMIT ?", (limit,)
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def sla_get_scheduler_logs(limit=100):
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "SELECT * FROM slow_loading_scheduler_logs ORDER BY id DESC LIMIT ?", (limit,)
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def sla_get_distinct_plants():
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "SELECT DISTINCT plant_code, plant_name FROM slow_loading_alert_records "
+            "WHERE plant_code IS NOT NULL ORDER BY plant_name"
+        )
+        return [{"plant_code": r[0], "plant_name": r[1]} for r in cur.fetchall()]
     finally:
         conn.close()

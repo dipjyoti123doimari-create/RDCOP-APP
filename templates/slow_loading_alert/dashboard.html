@@ -1,0 +1,100 @@
+{% extends "slow_loading_alert/sla_base.html" %}
+{% block title %}SLA Dashboard{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-title">Slow Loading Alert — Dashboard</h1>
+  <p class="page-subtitle">Today: {{ today }}</p>
+</div>
+
+<!-- KPI Grid -->
+<div class="sla-kpi-grid">
+  <div class="sla-kpi">
+    <div class="sla-kpi-label">Vehicles Checked Today</div>
+    <div class="sla-kpi-value">{{ kpis.vehicles_today }}</div>
+    <div class="sla-kpi-sub">Unique TM numbers</div>
+  </div>
+  <div class="sla-kpi">
+    <div class="sla-kpi-label">Slow Loading Cases</div>
+    <div class="sla-kpi-value {% if kpis.slow_today > 0 %}sev-red{% endif %}">{{ kpis.slow_today }}</div>
+    <div class="sla-kpi-sub">Load time exceeded threshold</div>
+  </div>
+  <div class="sla-kpi">
+    <div class="sla-kpi-label">Hourly Alerts Sent</div>
+    <div class="sla-kpi-value">{{ kpis.hourly_sent }}</div>
+    <div class="sla-kpi-sub">Emails dispatched today</div>
+  </div>
+  <div class="sla-kpi">
+    <div class="sla-kpi-label">Daily Summary Sent</div>
+    <div class="sla-kpi-value">{{ kpis.daily_sent }}</div>
+    <div class="sla-kpi-sub">Morning summary dispatched</div>
+  </div>
+  <div class="sla-kpi">
+    <div class="sla-kpi-label">Avg Loading Time</div>
+    <div class="sla-kpi-value">{{ kpis.avg_load }}</div>
+    <div class="sla-kpi-sub">minutes (slow cases)</div>
+  </div>
+  <div class="sla-kpi">
+    <div class="sla-kpi-label">Avg Allowed Time</div>
+    <div class="sla-kpi-value">{{ kpis.avg_allowed }}</div>
+    <div class="sla-kpi-sub">minutes threshold avg</div>
+  </div>
+  <div class="sla-kpi">
+    <div class="sla-kpi-label">Maximum Delay</div>
+    <div class="sla-kpi-value {% if kpis.max_delay > 3 %}sev-red{% elif kpis.max_delay > 0 %}sev-amber{% endif %}">{{ kpis.max_delay }}</div>
+    <div class="sla-kpi-sub">minutes over allowed time</div>
+  </div>
+  <div class="sla-kpi">
+    <div class="sla-kpi-label">Last Alert Run</div>
+    <div class="sla-kpi-value" style="font-size:14px">{{ kpis.last_run_time }}</div>
+    <div class="sla-kpi-sub">Scheduler last ran</div>
+  </div>
+</div>
+
+<!-- Recent slow loading cases today -->
+{% if recent_cases %}
+<div class="card" style="margin-top:0">
+  <div class="card-header">
+    <span>Today's Slow Loading Cases</span>
+    <a href="{{ url_for('sla_report') }}" class="btn btn-secondary btn-sm">View All</a>
+  </div>
+  <div style="overflow-x:auto">
+    <table class="sla-table">
+      <thead><tr>
+        <th>Plant</th><th>Customer</th><th>Grade</th><th>Batcher</th>
+        <th>TM Number</th><th style="text-align:right">Batched Qty</th>
+        <th style="text-align:right">Load Time</th><th style="text-align:right">Allowed</th>
+        <th style="text-align:right">Delay</th><th>Hour</th><th>Status</th>
+      </tr></thead>
+      <tbody>
+      {% for r in recent_cases %}
+      {% set sev = r.get('_severity','') %}
+      <tr class="{% if sev == 'RED' %}sev-row-red{% elif sev == 'AMBER' %}sev-row-amber{% endif %}">
+        <td>{{ r.plant_name or r.plant_code }}</td>
+        <td>{{ r.customer }}</td>
+        <td>{{ r.grade }}</td>
+        <td>{{ r.batcher_name or r.batcher_code }}</td>
+        <td>{{ r.tm_number }}</td>
+        <td style="text-align:right">{{ '%.1f'|format(r.batched_quantity|float) }}</td>
+        <td style="text-align:right">{{ r.loading_time_minutes|int }} min</td>
+        <td style="text-align:right">{{ r.allowed_loading_minutes|int }} min</td>
+        <td style="text-align:right;{% if sev == 'RED' %}color:#FF4444;font-weight:700{% elif sev == 'AMBER' %}color:#FFAA00;font-weight:700{% endif %}">
+          {{ r.delay_minutes|int }} min</td>
+        <td>{{ '%02d:00'|format(r.alert_hour|int) }}</td>
+        <td><span style="font-size:11px;padding:2px 6px;border-radius:4px;
+          {% if r.status == 'SENT' %}background:rgba(0,200,100,.1);color:#00C864
+          {% elif r.status == 'FAILED' %}background:rgba(255,80,80,.1);color:#FF5050
+          {% else %}background:rgba(200,200,200,.1);color:#888{% endif %}">
+          {{ r.status }}</span>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-info">No slow loading cases recorded today.</div>
+{% endif %}
+
+{% endblock %}

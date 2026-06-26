@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}SLA{% endblock %} — Slow Loading Alert</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Meie+Script&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+<style>
+  .sla-kpi-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; margin-bottom:20px; }
+  .sla-kpi { background:var(--glass-bg); border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
+  .sla-kpi-label { font-size:11px; color:var(--text-muted); margin-bottom:4px; }
+  .sla-kpi-value { font-size:22px; font-weight:700; color:var(--text); }
+  .sla-kpi-sub   { font-size:10px; color:var(--text-muted); margin-top:2px; }
+  .sev-red   { color:#FF4444; font-weight:700; }
+  .sev-amber { color:#FFAA00; font-weight:700; }
+  .sla-table { border-collapse:collapse; width:100%; font-size:12px; }
+  .sla-table th { background:#082B49; color:#fff; padding:5px 8px; border:1px solid #999; text-align:left; white-space:nowrap; }
+  .sla-table td { padding:4px 8px; border:1px solid #ccd; white-space:nowrap; }
+  .sla-table tr.sev-row-red   { background:rgba(255,68,68,0.09); }
+  .sla-table tr.sev-row-amber { background:rgba(255,170,0,0.09); }
+  .sla-table tr:hover { background:var(--hover-bg); }
+  .filter-row { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px; }
+  .filter-row select, .filter-row input[type=text], .filter-row input[type=date] {
+    padding:5px 8px; border:1px solid var(--border); border-radius:6px;
+    background:var(--glass-bg); color:var(--text); font-size:12px; }
+</style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+<div id="cursor-glow" aria-hidden="true"></div>
+<div id="toast-container"></div>
+
+<div class="app">
+
+  <!-- ── Sidebar ─────────────────────────────── -->
+  <nav class="sidebar">
+    <div class="sidebar-header">
+      <a href="{{ url_for('page_home') }}" class="sidebar-back-btn" title="All Modules">⬅ All Modules</a>
+      <div class="sidebar-brand">
+        <img src="{{ url_for('static', filename='img/logo.gif') }}" alt="RDC-OPS" id="app-logo">
+        <div class="sidebar-name">
+          <span class="sidebar-name-main">RDC-OPS</span>
+          <span class="sidebar-name-sub">by Dipjyoti</span>
+        </div>
+        <span class="sidebar-module-badge" style="background:rgba(255,100,0,0.15);color:#FF6400;border-color:rgba(255,100,0,0.3)">SLA</span>
+        <span class="sidebar-tagline">Slow Loading Alert</span>
+      </div>
+    </div>
+
+    <div class="sidebar-nav">
+      <a href="{{ url_for('sla_dashboard') }}" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
+        <span class="nav-icon">🏠</span><span class="nav-label">Dashboard</span>
+      </a>
+      <a href="{{ url_for('sla_report') }}" class="nav-item {% if active_page == 'report' %}active{% endif %}">
+        <span class="nav-icon">📋</span><span class="nav-label">Alert Report</span>
+      </a>
+      <a href="{{ url_for('sla_email_mapping') }}" class="nav-item {% if active_page == 'email_mapping' %}active{% endif %}">
+        <span class="nav-icon">📬</span><span class="nav-label">Email Mapping</span>
+      </a>
+      <a href="{{ url_for('sla_alert_logs') }}" class="nav-item {% if active_page == 'alert_logs' %}active{% endif %}">
+        <span class="nav-icon">🗒️</span><span class="nav-label">Alert Logs</span>
+      </a>
+      {% if current_user and current_user.role == 'SUPER_ADMIN' %}
+      <a href="{{ url_for('sla_configuration') }}" class="nav-item {% if active_page == 'configuration' %}active{% endif %}">
+        <span class="nav-icon">⚙️</span><span class="nav-label">Configuration</span>
+      </a>
+      <a href="{{ url_for('sla_manual_run') }}" class="nav-item {% if active_page == 'manual_run' %}active{% endif %}">
+        <span class="nav-icon">▶️</span><span class="nav-label">Manual Run</span>
+      </a>
+      {% endif %}
+    </div>
+
+    <div class="sidebar-footer">
+      {% if current_user %}
+      👤 {{ current_user.full_name }}<br>
+      <span style="font-size:10px;opacity:.7">{{ current_user.role }}</span>
+      {% endif %}
+    </div>
+  </nav>
+
+  <!-- ── Main ────────────────────────────────── -->
+  <div class="main">
+    <div class="topbar">
+      <div class="ora-status checking" id="ora-status" title="Checking Oracle…">
+        <span class="ora-dot"></span>
+        <span class="ora-text topbar-reveal" id="ora-status-text">Oracle…</span>
+      </div>
+      <span class="topbar-divider"></span>
+      <span class="topbar-label topbar-reveal">Theme</span>
+      {% set _themes = [('Pre-dawn','🌑','ti-predawn'),('Sunrise','🌅','ti-sunrise'),('Daytime','☀️','ti-daytime'),('Dusk','🌆','ti-dusk'),('Sunset','🌇','ti-sunset'),('Night','🌙','')] %}
+      <div class="theme-picker" id="theme-picker">
+        <div class="theme-picker-btn" id="theme-picker-btn" onclick="toggleThemePicker()">
+          <span id="theme-icon-display">{% for t,i,cls in _themes %}{% if t == bg_theme %}<span class="{{ cls }}">{{ i }}</span>{% if t == 'Night' %}<span class="star-sparkle">✦</span>{% endif %}{% endif %}{% endfor %}</span>
+          <span id="theme-label-display" class="topbar-reveal">{{ bg_theme }}</span>
+          <span class="ms-arrow">▾</span>
+        </div>
+        <div class="theme-picker-panel" id="theme-picker-panel" style="display:none">
+          {% for t, icon, cls in _themes %}
+          <div class="theme-picker-opt {% if t == bg_theme %}active{% endif %}" onclick="selectTheme('{{ t }}')">
+            <span><span class="{{ cls }}">{{ icon }}</span>{% if t == 'Night' %}<span class="star-sparkle">✦</span>{% endif %}</span>
+            <span>{{ t }}</span>
+          </div>
+          {% endfor %}
+          <div class="theme-picker-foot">
+            <label class="theme-toggle"><input type="checkbox" id="bg-auto-cb" {% if bg_auto %}checked{% endif %} onchange="toggleBgAuto(this)"> Auto (by time of day)</label>
+            <label class="theme-toggle"><input type="checkbox" id="bg-animate-cb" {% if bg_animate %}checked{% endif %} onchange="toggleBgAnimate(this)"> Animation</label>
+          </div>
+        </div>
+      </div>
+      {% if current_user %}
+      <span class="topbar-divider"></span>
+      <span class="topbar-reveal" style="font-size:11px;color:var(--text-muted);white-space:nowrap">
+        {{ current_user.full_name }}
+        <span class="sidebar-module-badge" style="font-size:10px;padding:0 5px;margin-left:3px;
+          {% if current_user.role == 'SUPER_ADMIN' %}background:rgba(255,80,80,.12);color:#FF5050;border-color:rgba(255,80,80,.25)
+          {% elif current_user.role in ['HO_VIEWER','FINANCE_VIEWER'] %}background:rgba(0,180,255,.1);color:#00B4FF;border-color:rgba(0,180,255,.2)
+          {% else %}background:rgba(0,200,100,.1);color:#00C864;border-color:rgba(0,200,100,.2){% endif %}">
+          {{ current_user.role }}
+        </span>
+      </span>
+      <form class="topbar-reveal" method="POST" action="{{ url_for('page_logout') }}" style="margin:0">
+        <button type="submit" class="btn btn-secondary btn-sm">🚪 Logout</button>
+      </form>
+      {% endif %}
+    </div>
+
+    <div class="content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}
+          <div class="alert alert-{{ 'success' if cat == 'success' else ('error' if cat == 'error' else ('warning' if cat == 'warning' else 'info')) }}" data-auto>
+            {{ msg }}
+          </div>
+        {% endfor %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/background.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script>
+  initBackground({ animate: {{ 'true' if bg_animate else 'false' }}, autoTheme: {{ 'true' if bg_auto else 'false' }}, theme: '{{ bg_theme }}' });
+</script>
+{% block scripts %}{% endblock %}
+<script>
+(function() {
+  var reveals = document.querySelectorAll(".topbar-reveal");
+  setTimeout(function() {
+    reveals.forEach(function(el) { el.classList.add("show"); });
+  }, 420);
+  var back = document.querySelector(".sidebar-back-btn");
+  if (back) {
+    back.addEventListener("click", function(e) {
+      e.preventDefault();
+      var href = this.href;
+      reveals.forEach(function(el) { el.classList.remove("show"); el.classList.add("hide"); });
+      setTimeout(function() { window.location.href = href; }, 420);
+    });
+  }
+
+  // Oracle status indicator
+  fetch("/api/oracle-status").then(r=>r.json()).then(d=>{
+    var el=document.getElementById("ora-status");
+    var tx=document.getElementById("ora-status-text");
+    if(!el)return;
+    el.className="ora-status "+(d.reachable?"ok":"error");
+    if(tx) tx.textContent=d.reachable?"Oracle OK":"Oracle offline";
+  }).catch(()=>{});
+})();
+</script>
+</body>
+</html>

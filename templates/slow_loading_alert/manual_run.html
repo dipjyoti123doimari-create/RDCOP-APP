@@ -1,0 +1,118 @@
+{% extends "slow_loading_alert/sla_base.html" %}
+{% block title %}SLA Manual Run{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-title">Manual Run</h1>
+  <p class="page-subtitle">SUPER_ADMIN only — trigger alerts without waiting for the scheduler</p>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">
+
+<!-- Hourly Alert -->
+<div class="card">
+  <div class="card-header">Run Hourly Alert Now</div>
+  <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px">
+    Fetches today's Oracle data and sends alerts for any slow loading cases found right now.
+  </p>
+
+  <!-- Preview mode -->
+  <form method="POST" action="{{ url_for('sla_run_hourly_preview') }}" style="margin-bottom:8px">
+    <button type="submit" class="btn btn-secondary btn-sm">👁 Preview Cases (no email)</button>
+  </form>
+
+  <!-- Actual send -->
+  <form method="POST" action="{{ url_for('sla_run_hourly_send') }}"
+        onsubmit="return confirm('This will fetch Oracle data and send alert emails. Continue?')">
+    <button type="submit" class="btn btn-primary btn-sm">▶ Run &amp; Send Hourly Alert</button>
+  </form>
+
+  {% if hourly_result %}
+  <div class="alert alert-{{ 'success' if not hourly_result.errors else 'error' }}" style="margin-top:12px">
+    Checked: {{ hourly_result.total_checked }} rows &nbsp;·&nbsp;
+    Alerts: {{ hourly_result.total_alerts }} &nbsp;·&nbsp;
+    Sent: {{ hourly_result.total_sent }}
+    {% if hourly_result.errors %}<br><span style="color:#FF5050">{{ hourly_result.errors|join(', ') }}</span>{% endif %}
+  </div>
+  {% if hourly_preview %}
+  <div style="margin-top:12px;overflow-x:auto">
+    <table class="sla-table">
+      <thead><tr>
+        <th>Plant</th><th>TM Number</th><th>Grade</th><th>Customer</th>
+        <th style="text-align:right">Load Time</th><th style="text-align:right">Allowed</th>
+        <th style="text-align:right">Delay</th>
+      </tr></thead>
+      <tbody>
+      {% for r in hourly_preview %}
+      {% set sev = r.get('severity','') %}
+      <tr class="{% if sev == 'RED' %}sev-row-red{% elif sev == 'AMBER' %}sev-row-amber{% endif %}">
+        <td>{{ r.plant_name or r.plant_code }}</td>
+        <td>{{ r.tm_number }}</td>
+        <td>{{ r.grade }}</td>
+        <td>{{ r.customer }}</td>
+        <td style="text-align:right">{{ r.loading_time_minutes|int }} min</td>
+        <td style="text-align:right">{{ r.allowed_loading_minutes|int }} min</td>
+        <td style="text-align:right;{% if sev == 'RED' %}color:#FF4444;font-weight:700{% elif sev == 'AMBER' %}color:#FFAA00;font-weight:700{% endif %}">
+          {{ r.delay_minutes|int }} min</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
+
+<!-- Daily Summary -->
+<div class="card">
+  <div class="card-header">Run Daily Summary</div>
+  <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px">
+    Sends the previous day (or selected date) slow loading summary to Business Heads, Plant Managers, and Business Managers.
+  </p>
+
+  <form method="POST" action="{{ url_for('sla_run_daily_preview') }}" style="display:flex;gap:8px;align-items:flex-end;margin-bottom:8px">
+    <div>
+      <label style="font-size:11px;display:block">For Date</label>
+      <input type="date" name="summary_date" value="{{ yesterday }}" class="form-control">
+    </div>
+    <button type="submit" class="btn btn-secondary btn-sm">👁 Preview</button>
+  </form>
+
+  <form method="POST" action="{{ url_for('sla_run_daily_send') }}" style="display:flex;gap:8px;align-items:flex-end"
+        onsubmit="return confirm('Send daily summary emails? Continue?')">
+    <div>
+      <label style="font-size:11px;display:block">For Date</label>
+      <input type="date" name="summary_date" value="{{ yesterday }}" class="form-control">
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">▶ Send Summary</button>
+  </form>
+
+  {% if daily_result %}
+  <div class="alert alert-{{ 'success' if not daily_result.errors else 'error' }}" style="margin-top:12px">
+    Records: {{ daily_result.total_checked }} &nbsp;·&nbsp;
+    Emails Sent: {{ daily_result.total_sent }}
+    {% if daily_result.errors %}<br><span style="color:#FF5050">{{ daily_result.errors|join(', ') }}</span>{% endif %}
+  </div>
+  {% endif %}
+</div>
+
+</div>
+
+<!-- Test Email -->
+<div class="card" style="margin-top:16px">
+  <div class="card-header">Test Email</div>
+  <form method="POST" action="{{ url_for('sla_send_test_email') }}" style="display:flex;gap:8px;align-items:flex-end">
+    <div>
+      <label style="font-size:11px;display:block">Test Recipient</label>
+      <input type="email" name="test_email" value="{{ test_email_default }}" class="form-control" style="width:240px">
+    </div>
+    <button type="submit" class="btn btn-secondary btn-sm">📧 Send Test Email</button>
+  </form>
+  {% if test_result %}
+  <div class="alert alert-{{ 'success' if test_result.success else 'error' }}" style="margin-top:10px">
+    {{ 'Test email sent successfully.' if test_result.success else test_result.error }}
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

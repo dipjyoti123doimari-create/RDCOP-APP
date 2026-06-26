@@ -50,6 +50,7 @@ import btrtp_calculator
 import ecmd_calculator
 import tp_calculator
 import validations
+from modules.slow_loading_alert import scheduler as sla_scheduler
 
 # ── File logging (survives minimised/closed terminal windows) ────────────────
 _LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.log")
@@ -394,6 +395,19 @@ def _start_scheduler():
     _scheduler.add_job(_auto_calculate_current_month,
                        CronTrigger(hour=0, minute=30),
                        id="auto_calculate_current_month", replace_existing=True)
+    # SLA — hourly slow loading alert.
+    _scheduler.add_job(sla_scheduler.run_hourly_alert_job,
+                       CronTrigger(minute=0),  # fires at top of every hour
+                       id="sla_hourly_alert", replace_existing=True)
+    # SLA — daily summary (default 07:00; re-read from DB each time).
+    _sla_ds_time = database.get_module_setting("sla", "daily_summary_time", "07:00")
+    try:
+        _sla_h, _sla_m = map(int, _sla_ds_time.split(":"))
+    except Exception:
+        _sla_h, _sla_m = 7, 0
+    _scheduler.add_job(sla_scheduler.run_daily_summary_job,
+                       CronTrigger(hour=_sla_h, minute=_sla_m),
+                       id="sla_daily_summary", replace_existing=True)
     _scheduler.start()
 
 
@@ -503,10 +517,25 @@ def _require_login():
         if path.startswith("/ecmd/") or path == "/ecmd":
             if role not in _ecmd_allowed_roles:
                 return redirect(url_for("page_home"))
+        elif path.startswith("/sla/") or path == "/sla":
+            pass  # SLA handles its own plant-filter per route
         else:
             for pfx in _module_prefixes:
                 if path == pfx.rstrip("/") or path.startswith(pfx):
                     return redirect(url_for("page_home"))
+
+    # SLA: block config/manual-run for non-SUPER_ADMIN via POST
+    if path.startswith("/sla/") and role != auth.SUPER_ADMIN:
+        _sla_admin_paths = (
+            "/sla/configuration", "/sla/threshold/add", "/sla/threshold/delete",
+            "/sla/settings/save", "/sla/oracle-cols/save", "/sla/sheet-config/save",
+            "/sla/manual/run-hourly-send", "/sla/manual/run-daily-send",
+            "/sla/manual/send-test-email",
+        )
+        if any(path.startswith(p) for p in _sla_admin_paths):
+            return render_template("access_denied.html",
+                                   current_user=user,
+                                   required_roles=[auth.SUPER_ADMIN]), 403
 
 
 # ── Context processor (sidebar active-page + bg settings + auth) ────────────
@@ -5686,6 +5715,461 @@ def sysconfig_upload_backend():
     except Exception as exc:
         flash(f"Upload failed: {exc}", "error")
     return redirect(url_for("sysconfig_page") + "?m=backend")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SLA — Slow Loading Alert Module Routes
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _sla_allowed_plant_codes(user):
+    """Return list of plant_codes the user may see, or None (= all plants)."""
+    role = user.get("role", "")
+    if role in (auth.SUPER_ADMIN, auth.HO_VIEWER, auth.FINANCE_VIEWER, auth.UEP_ADMIN):
+        return None  # all plants
+    # REGIONAL_USER / PLANT_USER — restrict to assigned plants
+    plants = user.get("allowed_plants", [])
+    # allowed_plants stores plant_names; we need to cross-reference SLA records
+    # which store plant_code. Best-effort: use whatever distinct codes are in the DB
+    # that match any of the user's allowed_plant_names.
+    if not plants:
+        return []
+    conn = database.get_connection()
+    try:
+        ph = ",".join("?" * len(plants))
+        cur = conn.execute(
+            f"SELECT DISTINCT plant_code FROM slow_loading_alert_records WHERE plant_name IN ({ph})",
+            list(plants)
+        )
+        return [r[0] for r in cur.fetchall()] or []
+    finally:
+        conn.close()
+
+
+@app.route("/sla")
+@app.route("/sla/")
+@auth.login_required
+def sla_dashboard():
+    _ss("active_page", "dashboard")
+    user       = g.current_user
+    today_str  = str(_date.today())
+    codes      = _sla_allowed_plant_codes(user)
+    kpis       = database.sla_get_dashboard_kpis(today_str, codes)
+    recent     = database.sla_get_report(from_date=today_str, to_date=today_str,
+                                          plant_code=codes[0] if (codes and len(codes)==1) else None,
+                                          limit=50)
+    # Annotate severity
+    for r in recent:
+        d = float(r.get("delay_minutes") or 0)
+        r["_severity"] = "RED" if d > 3 else ("AMBER" if d >= 1 else "")
+    # Filter by allowed codes when multiple
+    if codes is not None:
+        recent = [r for r in recent if r.get("plant_code") in codes]
+    return render_template("slow_loading_alert/dashboard.html",
+                           today=today_str, kpis=kpis, recent_cases=recent)
+
+
+@app.route("/sla/report")
+@auth.login_required
+def sla_report():
+    _ss("active_page", "report")
+    user = g.current_user
+    codes = _sla_allowed_plant_codes(user)
+    f = request.args
+    plant_filter = f.get("plant_code", "")
+    # Enforce plant restriction
+    if codes is not None and plant_filter and plant_filter not in codes:
+        plant_filter = ""
+    rows = database.sla_get_report(
+        from_date=f.get("from_date"), to_date=f.get("to_date"),
+        plant_code=plant_filter or None,
+        batcher_code=f.get("batcher_code") or None,
+        tm_number=f.get("tm_number") or None,
+        grade=f.get("grade") or None,
+        customer=f.get("customer") or None,
+        alert_type=f.get("alert_type") or None,
+        status=f.get("status") or None,
+        limit=500
+    )
+    if codes is not None:
+        rows = [r for r in rows if r.get("plant_code") in codes]
+    plant_list = database.sla_get_distinct_plants()
+    if codes is not None:
+        plant_list = [p for p in plant_list if p["plant_code"] in codes]
+    return render_template("slow_loading_alert/report.html",
+                           rows=rows, filters=dict(f),
+                           plant_list=plant_list,
+                           is_plant_user=(user.get("role") == auth.PLANT_USER))
+
+
+@app.route("/sla/export")
+@auth.login_required
+def sla_export():
+    user  = g.current_user
+    codes = _sla_allowed_plant_codes(user)
+    f = request.args
+    plant_filter = f.get("plant_code", "") or None
+    if codes is not None and plant_filter and plant_filter not in codes:
+        plant_filter = None
+    rows = database.sla_get_report(
+        from_date=f.get("from_date"), to_date=f.get("to_date"),
+        plant_code=plant_filter,
+        batcher_code=f.get("batcher_code") or None,
+        tm_number=f.get("tm_number") or None,
+        grade=f.get("grade") or None,
+        customer=f.get("customer") or None,
+        alert_type=f.get("alert_type") or None,
+        status=f.get("status") or None,
+        limit=5000
+    )
+    if codes is not None:
+        rows = [r for r in rows if r.get("plant_code") in codes]
+    if not rows:
+        flash("No data to export.", "warning")
+        return redirect(url_for("sla_report"))
+
+    import io as _io
+    df_exp = pd.DataFrame(rows)
+    rename = {
+        "alert_date": "Alert Date", "alert_hour": "Alert Hour",
+        "plant_code": "Plant Code", "plant_name": "Plant Name",
+        "customer": "Customer", "grade": "Grade",
+        "batcher_code": "Batcher Code", "batcher_name": "Batcher Name",
+        "tm_number": "TM Number", "batched_quantity": "Batched Quantity",
+        "mixer_capacity": "Mixer Capacity",
+        "loading_time_minutes": "Loading Time (min)",
+        "allowed_loading_minutes": "Allowed Time (min)",
+        "delay_minutes": "Delay (min)",
+        "alert_type": "Alert Type", "status": "Status", "remarks": "Remarks",
+    }
+    df_exp = df_exp.rename(columns=rename)
+    keep = [c for c in rename.values() if c in df_exp.columns]
+    df_exp = df_exp[keep]
+    # Add severity column
+    def _sev(d):
+        try:
+            d = float(d)
+        except Exception:
+            return ""
+        return "RED" if d > 3 else ("AMBER" if d >= 1 else "")
+    if "Delay (min)" in df_exp.columns:
+        df_exp.insert(df_exp.columns.get_loc("Delay (min)") + 1, "Severity",
+                      df_exp["Delay (min)"].apply(_sev))
+    buf = _io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df_exp.to_excel(writer, sheet_name="SLA Report", index=False)
+    buf.seek(0)
+    resp = make_response(buf.read())
+    resp.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    resp.headers["Content-Disposition"] = f"attachment; filename=SLA_Report_{str(_date.today())}.xlsx"
+    return resp
+
+
+@app.route("/sla/email-mapping")
+@auth.login_required
+def sla_email_mapping():
+    _ss("active_page", "email_mapping")
+    from modules.slow_loading_alert import mapping_service
+    warnings = []
+    mapping = {}
+    batcher_map = {}
+    try:
+        mapping = mapping_service.get_plant_mapping()
+    except Exception as exc:
+        warnings.append(str(exc))
+    try:
+        batcher_map = mapping_service.get_batcher_mapping()
+    except Exception as exc:
+        warnings.append(str(exc))
+    return render_template("slow_loading_alert/email_mapping.html",
+                           mapping=mapping, batcher_map=batcher_map, warnings=warnings)
+
+
+@app.route("/sla/email-mapping/refresh", methods=["POST"])
+@auth.login_required
+def sla_refresh_mapping():
+    flash("Mapping refreshed from Google Sheet.", "success")
+    return redirect(url_for("sla_email_mapping"))
+
+
+@app.route("/sla/alert-logs")
+@auth.login_required
+def sla_alert_logs():
+    _ss("active_page", "alert_logs")
+    email_logs     = database.sla_get_email_logs(200)
+    scheduler_logs = database.sla_get_scheduler_logs(100)
+    return render_template("slow_loading_alert/alert_logs.html",
+                           email_logs=email_logs, scheduler_logs=scheduler_logs)
+
+
+@app.route("/sla/configuration")
+@auth.login_required
+def sla_configuration():
+    _ss("active_page", "configuration")
+    if g.current_user.get("role") not in (auth.SUPER_ADMIN,):
+        # Read-only for non-admin (still shows page, but no save buttons)
+        pass
+    thresholds = database.sla_get_all_thresholds()
+    _setting_keys = [
+        "hourly_alert_enabled", "daily_summary_enabled", "daily_summary_time",
+        "global_cc", "gsheet_id", "plant_mapping_tab", "batcher_mapping_tab",
+        "oracle_plant_col", "oracle_customer_col", "oracle_grade_col",
+        "oracle_batcher_col", "oracle_truck_col", "oracle_quantity_col",
+        "oracle_time_col", "oracle_mixer_cap_col",
+    ]
+    settings = {k: database.get_module_setting("sla", k, "") for k in _setting_keys}
+    is_super_admin = g.current_user.get("role") == auth.SUPER_ADMIN
+    return render_template("slow_loading_alert/configuration.html",
+                           thresholds=thresholds, settings=settings,
+                           is_super_admin=is_super_admin)
+
+
+@app.route("/sla/threshold/add", methods=["POST"])
+@auth.login_required
+def sla_add_threshold():
+    if g.current_user.get("role") != auth.SUPER_ADMIN:
+        return render_template("access_denied.html", current_user=g.current_user,
+                               required_roles=[auth.SUPER_ADMIN]), 403
+    try:
+        mc  = float(request.form["mixer_capacity"])
+        rq  = float(request.form["reference_quantity"])
+        bam = float(request.form["base_allowed_minutes"])
+        database.sla_upsert_threshold(mc, rq, bam)
+        flash(f"Threshold added for {mc} m³.", "success")
+    except Exception as exc:
+        flash(f"Error: {exc}", "error")
+    return redirect(url_for("sla_configuration"))
+
+
+@app.route("/sla/threshold/delete/<int:tid>", methods=["POST"])
+@auth.login_required
+def sla_delete_threshold(tid):
+    if g.current_user.get("role") != auth.SUPER_ADMIN:
+        return render_template("access_denied.html", current_user=g.current_user,
+                               required_roles=[auth.SUPER_ADMIN]), 403
+    database.sla_delete_threshold(tid)
+    flash("Threshold deleted.", "success")
+    return redirect(url_for("sla_configuration"))
+
+
+@app.route("/sla/settings/save", methods=["POST"])
+@auth.login_required
+def sla_save_settings():
+    if g.current_user.get("role") != auth.SUPER_ADMIN:
+        return render_template("access_denied.html", current_user=g.current_user,
+                               required_roles=[auth.SUPER_ADMIN]), 403
+    keys = ["hourly_alert_enabled", "daily_summary_enabled", "daily_summary_time", "global_cc"]
+    for k in keys:
+        v = request.form.get(k, "")
+        database.set_module_setting("sla", k, v)
+    flash("SLA settings saved.", "success")
+    return redirect(url_for("sla_configuration"))
+
+
+@app.route("/sla/oracle-cols/save", methods=["POST"])
+@auth.login_required
+def sla_save_oracle_cols():
+    if g.current_user.get("role") != auth.SUPER_ADMIN:
+        return render_template("access_denied.html", current_user=g.current_user,
+                               required_roles=[auth.SUPER_ADMIN]), 403
+    for k in ["oracle_plant_col","oracle_customer_col","oracle_grade_col",
+              "oracle_batcher_col","oracle_truck_col","oracle_quantity_col",
+              "oracle_time_col","oracle_mixer_cap_col"]:
+        database.set_module_setting("sla", k, request.form.get(k, "").strip())
+    flash("Oracle column names saved.", "success")
+    return redirect(url_for("sla_configuration"))
+
+
+@app.route("/sla/sheet-config/save", methods=["POST"])
+@auth.login_required
+def sla_save_sheet_config():
+    if g.current_user.get("role") != auth.SUPER_ADMIN:
+        return render_template("access_denied.html", current_user=g.current_user,
+                               required_roles=[auth.SUPER_ADMIN]), 403
+    for k in ["gsheet_id", "plant_mapping_tab", "batcher_mapping_tab"]:
+        database.set_module_setting("sla", k, request.form.get(k, "").strip())
+    flash("Google Sheet configuration saved.", "success")
+    return redirect(url_for("sla_configuration"))
+
+
+@app.route("/sla/manual")
+@auth.login_required
+def sla_manual_run():
+    if g.current_user.get("role") != auth.SUPER_ADMIN:
+        return render_template("access_denied.html", current_user=g.current_user,
+                               required_roles=[auth.SUPER_ADMIN]), 403
+    _ss("active_page", "manual_run")
+    yesterday = str(_date.today() - timedelta(days=1))
+    smtp_cfg  = email_helper.get_smtp_config()
+    test_default = smtp_cfg.get("sender", "")
+    return render_template("slow_loading_alert/manual_run.html",
+                           yesterday=yesterday, test_email_default=test_default,
+                           hourly_result=None, daily_result=None,
+                           hourly_preview=None, test_result=None)
+
+
+@app.route("/sla/manual/run-hourly-preview", methods=["POST"])
+@auth.login_required
+def sla_run_hourly_preview():
+    if g.current_user.get("role") != auth.SUPER_ADMIN:
+        return render_template("access_denied.html", current_user=g.current_user,
+                               required_roles=[auth.SUPER_ADMIN]), 403
+    _ss("active_page", "manual_run")
+    yesterday = str(_date.today() - timedelta(days=1))
+    smtp_cfg  = email_helper.get_smtp_config()
+    result = sla_scheduler.run_hourly_alert_job(preview_only=True)
+    preview = result.pop("preview", [])
+    return render_template("slow_loading_alert/manual_run.html",
+                           yesterday=yesterday,
+                           test_email_default=smtp_cfg.get("sender",""),
+                           hourly_result=result, hourly_preview=preview,
+                           daily_result=None, test_result=None)
+
+
+@app.route("/sla/manual/run-hourly-send", methods=["POST"])
+@auth.login_required
+def sla_run_hourly_send():
+    if g.current_user.get("role") != auth.SUPER_ADMIN:
+        return render_template("access_denied.html", current_user=g.current_user,
+                               required_roles=[auth.SUPER_ADMIN]), 403
+    _ss("active_page", "manual_run")
+    yesterday = str(_date.today() - timedelta(days=1))
+    smtp_cfg  = email_helper.get_smtp_config()
+    result = sla_scheduler.run_hourly_alert_job(preview_only=False)
+    msg = (f"Hourly alert run complete — "
+           f"{result.get('total_alerts',0)} alert(s), "
+           f"{result.get('total_sent',0)} email(s) sent.")
+    flash(msg, "success" if not result.get("errors") else "warning")
+    return render_template("slow_loading_alert/manual_run.html",
+                           yesterday=yesterday,
+                           test_email_default=smtp_cfg.get("sender",""),
+                           hourly_result=result, hourly_preview=None,
+                           daily_result=None, test_result=None)
+
+
+@app.route("/sla/manual/run-daily-preview", methods=["POST"])
+@auth.login_required
+def sla_run_daily_preview():
+    if g.current_user.get("role") != auth.SUPER_ADMIN:
+        return render_template("access_denied.html", current_user=g.current_user,
+                               required_roles=[auth.SUPER_ADMIN]), 403
+    _ss("active_page", "manual_run")
+    yesterday = str(_date.today() - timedelta(days=1))
+    smtp_cfg  = email_helper.get_smtp_config()
+    summary_date = request.form.get("summary_date", yesterday)
+    result = sla_scheduler.run_daily_summary_job(summary_date, preview_only=True)
+    return render_template("slow_loading_alert/manual_run.html",
+                           yesterday=yesterday,
+                           test_email_default=smtp_cfg.get("sender",""),
+                           hourly_result=None, hourly_preview=None,
+                           daily_result=result, test_result=None)
+
+
+@app.route("/sla/manual/run-daily-send", methods=["POST"])
+@auth.login_required
+def sla_run_daily_send():
+    if g.current_user.get("role") != auth.SUPER_ADMIN:
+        return render_template("access_denied.html", current_user=g.current_user,
+                               required_roles=[auth.SUPER_ADMIN]), 403
+    _ss("active_page", "manual_run")
+    yesterday = str(_date.today() - timedelta(days=1))
+    smtp_cfg  = email_helper.get_smtp_config()
+    summary_date = request.form.get("summary_date", yesterday)
+    result = sla_scheduler.run_daily_summary_job(summary_date, preview_only=False)
+    msg = (f"Daily summary run — "
+           f"{result.get('total_checked',0)} record(s), "
+           f"{result.get('total_sent',0)} email(s) sent.")
+    flash(msg, "success" if not result.get("errors") else "warning")
+    return render_template("slow_loading_alert/manual_run.html",
+                           yesterday=yesterday,
+                           test_email_default=smtp_cfg.get("sender",""),
+                           hourly_result=None, hourly_preview=None,
+                           daily_result=result, test_result=None)
+
+
+@app.route("/sla/manual/send-test-email", methods=["POST"])
+@auth.login_required
+def sla_send_test_email():
+    if g.current_user.get("role") != auth.SUPER_ADMIN:
+        return render_template("access_denied.html", current_user=g.current_user,
+                               required_roles=[auth.SUPER_ADMIN]), 403
+    _ss("active_page", "manual_run")
+    yesterday = str(_date.today() - timedelta(days=1))
+    smtp_cfg  = email_helper.get_smtp_config()
+    test_email = request.form.get("test_email", "").strip()
+    result = {"success": False, "error": "No email address provided."}
+    if test_email:
+        from modules.slow_loading_alert.email_service import _send_html
+        test_html = (
+            "<p>This is a test email from the <strong>Slow Loading Alert</strong> module.</p>"
+            "<p>If you received this, SMTP is configured correctly.</p>"
+        )
+        try:
+            _send_html(test_email, "", "SLA Test Email — RDC Operations", test_html)
+            result = {"success": True, "error": None}
+        except Exception as exc:
+            result = {"success": False, "error": str(exc)}
+    return render_template("slow_loading_alert/manual_run.html",
+                           yesterday=yesterday,
+                           test_email_default=test_email or smtp_cfg.get("sender",""),
+                           hourly_result=None, hourly_preview=None,
+                           daily_result=None, test_result=result)
+
+
+# SLA JSON APIs
+
+@app.route("/sla/api/dashboard")
+@auth.login_required
+def sla_api_dashboard():
+    user  = g.current_user
+    codes = _sla_allowed_plant_codes(user)
+    today = str(_date.today())
+    return jsonify(database.sla_get_dashboard_kpis(today, codes))
+
+
+@app.route("/sla/api/report")
+@auth.login_required
+def sla_api_report():
+    user  = g.current_user
+    codes = _sla_allowed_plant_codes(user)
+    f     = request.args
+    plant_filter = f.get("plant_code") or None
+    if codes is not None and plant_filter and plant_filter not in codes:
+        plant_filter = None
+    rows = database.sla_get_report(
+        from_date=f.get("from_date"), to_date=f.get("to_date"),
+        plant_code=plant_filter, limit=500
+    )
+    if codes is not None:
+        rows = [r for r in rows if r.get("plant_code") in codes]
+    return jsonify(rows)
+
+
+@app.route("/sla/api/run-hourly", methods=["POST"])
+@auth.login_required
+def sla_api_run_hourly():
+    if g.current_user.get("role") != auth.SUPER_ADMIN:
+        return jsonify({"error": "Forbidden"}), 403
+    result = sla_scheduler.run_hourly_alert_job()
+    return jsonify(result)
+
+
+@app.route("/sla/api/run-daily-summary", methods=["POST"])
+@auth.login_required
+def sla_api_run_daily():
+    if g.current_user.get("role") != auth.SUPER_ADMIN:
+        return jsonify({"error": "Forbidden"}), 403
+    summary_date = request.json.get("summary_date") if request.is_json else None
+    result = sla_scheduler.run_daily_summary_job(summary_date)
+    return jsonify(result)
+
+
+@app.route("/sla/api/logs")
+@auth.login_required
+def sla_api_logs():
+    return jsonify({
+        "email_logs":     database.sla_get_email_logs(100),
+        "scheduler_logs": database.sla_get_scheduler_logs(50),
+    })
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
