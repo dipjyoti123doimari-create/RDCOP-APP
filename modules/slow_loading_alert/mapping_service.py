@@ -76,40 +76,97 @@ def _fetch_tab(sheet_id: str, tab: str) -> pd.DataFrame:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+def _strip_variant(code: str) -> str:
+    """Return the bare plant code without a _BPn mixer-variant suffix.
+    'MU7_BP1' -> 'MU7'  ;  'MU7' -> 'MU7'."""
+    c = str(code or "").strip()
+    if "_" in c:
+        return c.split("_")[0]
+    return c
+
+
 def _fallback_plant_mapping_from_tp() -> dict:
     """
     Build plant mapping from the existing TP plant master (tp_plant_data).
-    Provides plant_name + mixer_capacity (mixer_theo_cap) per plant code.
+    Provides plant_name + exco_location + mixer_capacity per plant code.
+
+    Oracle reports the BARE plant code (e.g. 'MU7'), but the TP master stores
+    plants under mixer-variant codes (e.g. 'MU7_BP1', 'MU7_BP2'). So in addition
+    to the exact variant codes we ALSO register the bare code as an alias that
+    points to the variant's location/name (all variants of a plant share one
+    Exco Location). Mixer capacity for the bare alias uses the largest variant
+    capacity (representative of the plant); the exact variant code keeps its own.
+
     Email fields are blank — they require the SLA Plant Mapping sheet tab.
     """
     mapping = {}
+    bare_groups = {}  # bare_code -> list of (name, location, mixer_cap)
     try:
         conn = database.get_connection()
         try:
             cur = conn.execute(
-                "SELECT plant_code, plant_name, business_head, plant_manager, "
-                "mixer_theo_cap FROM tp_plant_data"
+                "SELECT plant_code, plant_name, exco_location, mixer_theo_cap "
+                "FROM tp_plant_data"
             )
-            for code, name, bh, pm, cap in cur.fetchall():
+            for code, name, loc, cap in cur.fetchall():
                 if not code:
                     continue
+                c = str(code).strip()
                 try:
                     mc = float(cap) if cap is not None else None
                 except (TypeError, ValueError):
                     mc = None
-                mapping[str(code).strip()] = {
+                rec = {
                     "plant_name":     (name or "").strip(),
-                    "pm_email":       "",   # not an email in TP master (name only)
+                    "exco_location":  (loc or "").strip(),
+                    "pm_email":       "",   # TP master has names, not emails
                     "bm_email":       "",
                     "bh_email":       "",
                     "cc_emails":      "",
                     "mixer_capacity": mc,
                 }
+                mapping[c] = rec
+                bare_groups.setdefault(_strip_variant(c), []).append(rec)
         finally:
             conn.close()
     except Exception as exc:
         print(f"[sla-mapping] TP fallback failed: {exc}")
+        return mapping
+
+    # Register bare-code aliases (only when the bare code isn't already a real row)
+    for bare, recs in bare_groups.items():
+        if bare in mapping:
+            continue
+        # Plant name without the _BPn suffix; first non-empty location.
+        name = ""
+        loc = ""
+        caps = []
+        for r in recs:
+            if not name and r["plant_name"]:
+                name = _strip_variant_name(r["plant_name"])
+            if not loc and r["exco_location"]:
+                loc = r["exco_location"]
+            if r["mixer_capacity"] is not None:
+                caps.append(r["mixer_capacity"])
+        mapping[bare] = {
+            "plant_name":     name or bare,
+            "exco_location":  loc,
+            "pm_email":       "",
+            "bm_email":       "",
+            "bh_email":       "",
+            "cc_emails":      "",
+            # representative capacity for the bare code = largest variant cap
+            "mixer_capacity": max(caps) if caps else None,
+        }
     return mapping
+
+
+def _strip_variant_name(name: str) -> str:
+    """'MUM-Kashimira_BP2' -> 'MUM-Kashimira'."""
+    n = str(name or "").strip()
+    if "_BP" in n:
+        return n.split("_BP")[0]
+    return n
 
 
 def get_plant_mapping() -> dict:
@@ -209,34 +266,76 @@ def get_batcher_mapping() -> dict:
     return mapping
 
 
+def _plant_lookup(plant_map: dict, code) -> dict:
+    """
+    Resolve a plant_code to its mapping record, tolerant of bare↔variant
+    mismatches between Oracle (bare 'MU7') and the TP master ('MU7_BP1'):
+      1. exact code
+      2. bare code (suffix stripped)
+      3. any variant whose bare code matches (first one found)
+    Returns {} if nothing matches.
+    """
+    c = str(code).strip()
+    if c in plant_map:
+        return plant_map[c]
+    bare = _strip_variant(c)
+    if bare in plant_map:
+        return plant_map[bare]
+    # Last resort: scan for any code sharing the same bare prefix.
+    for k, v in plant_map.items():
+        if _strip_variant(k) == bare:
+            return v
+    return {}
+
+
+def get_location_map() -> dict:
+    """
+    Return {plant_code: exco_location} including bare-code aliases, so callers
+    can group SLA records by location. Sourced from the plant mapping (which
+    falls back to the TP master with variant handling).
+    """
+    pm = get_plant_mapping()
+    return {code: info.get("exco_location", "") for code, info in pm.items()}
+
+
+def resolve_location(plant_map: dict, code) -> str:
+    """Return the Exco Location for a plant code (bare/variant tolerant)."""
+    return _plant_lookup(plant_map, code).get("exco_location", "")
+
+
 def apply_mappings(df: pd.DataFrame,
                    plant_map: dict,
                    batcher_map: dict) -> pd.DataFrame:
     """
     Enrich a DataFrame that has plant_code and batcher_code with:
-      plant_name, batcher_name, pm_email, bm_email, bh_email, cc_emails
+      plant_name, exco_location, batcher_name, pm_email, bm_email,
+      bh_email, cc_emails, mixer_capacity
+    Tolerant of bare↔variant plant-code differences (see _plant_lookup).
     """
     df = df.copy()
 
-    def _pm(code): return plant_map.get(str(code), {}).get("plant_name", str(code))
-    def _pm_e(code): return plant_map.get(str(code), {}).get("pm_email", "")
-    def _bm_e(code): return plant_map.get(str(code), {}).get("bm_email", "")
-    def _bh_e(code): return plant_map.get(str(code), {}).get("bh_email", "")
-    def _cc_e(code): return plant_map.get(str(code), {}).get("cc_emails", "")
+    def _info(code): return _plant_lookup(plant_map, code)
+    def _pm(code):   return _info(code).get("plant_name") or str(code)
+    def _loc(code):  return _info(code).get("exco_location", "")
+    def _pm_e(code): return _info(code).get("pm_email", "")
+    def _bm_e(code): return _info(code).get("bm_email", "")
+    def _bh_e(code): return _info(code).get("bh_email", "")
+    def _cc_e(code): return _info(code).get("cc_emails", "")
     def _bn(code):   return batcher_map.get(str(code), str(code))
 
     def _mc(code, existing):
-        # Mixer capacity comes from the Google Sheet plant mapping. If the sheet
-        # has no value, keep whatever was already on the row (usually None).
-        sheet_cap = plant_map.get(str(code), {}).get("mixer_capacity")
-        return sheet_cap if sheet_cap is not None else existing
+        # Mixer capacity: prefer the sheet/TP value (bare/variant tolerant),
+        # else keep whatever was already on the row.
+        cap = _info(code).get("mixer_capacity")
+        return cap if cap is not None else existing
 
-    df["plant_name"]   = df["plant_code"].apply(_pm)
-    df["batcher_name"] = df["batcher_code"].apply(_bn)
-    df["pm_email"]     = df["plant_code"].apply(_pm_e)
-    df["bm_email"]     = df["plant_code"].apply(_bm_e)
-    df["bh_email"]     = df["plant_code"].apply(_bh_e)
-    df["cc_emails"]    = df["plant_code"].apply(_cc_e)
+    df["plant_name"]    = df["plant_code"].apply(_pm)
+    df["exco_location"] = df["plant_code"].apply(_loc)
+    df["batcher_name"]  = df["batcher_code"].apply(_bn)
+    df["pm_email"]      = df["plant_code"].apply(_pm_e)
+    df["bm_email"]      = df["plant_code"].apply(_bm_e)
+    df["bh_email"]      = df["plant_code"].apply(_bh_e)
+    df["cc_emails"]     = df["plant_code"].apply(_cc_e)
     if "mixer_capacity" in df.columns:
         df["mixer_capacity"] = df.apply(
             lambda r: _mc(r["plant_code"], r.get("mixer_capacity")), axis=1)
