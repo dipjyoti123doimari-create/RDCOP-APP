@@ -76,6 +76,42 @@ def _fetch_tab(sheet_id: str, tab: str) -> pd.DataFrame:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+def _fallback_plant_mapping_from_tp() -> dict:
+    """
+    Build plant mapping from the existing TP plant master (tp_plant_data).
+    Provides plant_name + mixer_capacity (mixer_theo_cap) per plant code.
+    Email fields are blank — they require the SLA Plant Mapping sheet tab.
+    """
+    mapping = {}
+    try:
+        conn = database.get_connection()
+        try:
+            cur = conn.execute(
+                "SELECT plant_code, plant_name, business_head, plant_manager, "
+                "mixer_theo_cap FROM tp_plant_data"
+            )
+            for code, name, bh, pm, cap in cur.fetchall():
+                if not code:
+                    continue
+                try:
+                    mc = float(cap) if cap is not None else None
+                except (TypeError, ValueError):
+                    mc = None
+                mapping[str(code).strip()] = {
+                    "plant_name":     (name or "").strip(),
+                    "pm_email":       "",   # not an email in TP master (name only)
+                    "bm_email":       "",
+                    "bh_email":       "",
+                    "cc_emails":      "",
+                    "mixer_capacity": mc,
+                }
+        finally:
+            conn.close()
+    except Exception as exc:
+        print(f"[sla-mapping] TP fallback failed: {exc}")
+    return mapping
+
+
 def get_plant_mapping() -> dict:
     """
     Return dict keyed by plant_code:
@@ -92,27 +128,52 @@ def get_plant_mapping() -> dict:
     """
     sheet_id, plant_tab, _ = _get_cfg()
     df = _fetch_tab(sheet_id, plant_tab)
-    mapping = {}
-    if df.empty:
-        return mapping
 
-    col_code = _find_col(df, "Plant Code", "PlantCode", "Plant_Code", "Code")
-    col_name = _find_col(df, "Plant Name", "PlantName", "Plant_Name", "Name")
-    col_pm   = _find_col(df, "Plant Manager Email", "PM Email", "PlantManagerEmail", "PMEmail")
-    col_bm   = _find_col(df, "Business Manager Email", "BM Email", "BusinessManagerEmail", "BMEmail")
-    col_bh   = _find_col(df, "Business Head Email", "BH Email", "BusinessHeadEmail", "BHEmail")
-    col_cc   = _find_col(df, "CC Email", "CC Emails", "CCEmail", "CC", "CCEmails")
+    col_code = _find_col(df, "Plant Code", "PlantCode", "Plant_Code") if not df.empty else None
+    col_name = _find_col(df, "Plant Name", "PlantName", "Plant_Name") if not df.empty else None
+    col_pm   = _find_col(df, "Plant Manager Email", "PM Email", "PlantManagerEmail", "PMEmail") if not df.empty else None
+    col_bm   = _find_col(df, "Business Manager Email", "BM Email", "BusinessManagerEmail", "BMEmail") if not df.empty else None
+    col_bh   = _find_col(df, "Business Head Email", "BH Email", "BusinessHeadEmail", "BHEmail") if not df.empty else None
+    col_cc   = _find_col(df, "CC Email", "CC Emails", "CCEmail", "CC", "CCEmails") if not df.empty else None
+    col_mc   = _find_col(df, "Mixer Capacity", "MixerCapacity", "Mixer_Capacity",
+                         "Mixer Cap", "MixerCap") if not df.empty else None
+
+    # Guard against the public-CSV fallback returning the WRONG tab (e.g. the
+    # default employee-master tab) when "SLA Plant Mapping" doesn't exist.
+    # A valid SLA plant tab must have at least a plant code AND one email column.
+    is_valid_sla_tab = bool(col_code and (col_pm or col_bm or col_bh))
+    mapping = {}
+
+    if not is_valid_sla_tab:
+        # No proper SLA sheet tab → fall back to the existing TP plant master
+        # for plant name + mixer capacity. Emails will be blank (must add the
+        # SLA Plant Mapping tab to enable alert recipients).
+        return _fallback_plant_mapping_from_tp()
+
+    # TP master mixer caps — used to fill any plant the sheet leaves blank.
+    tp_fallback = _fallback_plant_mapping_from_tp()
 
     for _, row in df.iterrows():
         code = str(row.get(col_code, "") if col_code else "").strip()
         if not code:
             continue
+        # Mixer capacity may be blank in the sheet — parse leniently, then fall
+        # back to the TP plant master capacity for that plant code.
+        mc_raw = str(row.get(col_mc, "") if col_mc else "").strip()
+        try:
+            mixer_cap = float(mc_raw) if mc_raw else None
+        except (TypeError, ValueError):
+            mixer_cap = None
+        if mixer_cap is None:
+            mixer_cap = tp_fallback.get(code, {}).get("mixer_capacity")
         mapping[code] = {
-            "plant_name": str(row.get(col_name, "") if col_name else "").strip(),
-            "pm_email":   str(row.get(col_pm,   "") if col_pm   else "").strip(),
-            "bm_email":   str(row.get(col_bm,   "") if col_bm   else "").strip(),
-            "bh_email":   str(row.get(col_bh,   "") if col_bh   else "").strip(),
-            "cc_emails":  str(row.get(col_cc,   "") if col_cc   else "").strip(),
+            "plant_name":     str(row.get(col_name, "") if col_name else "").strip()
+                              or tp_fallback.get(code, {}).get("plant_name", ""),
+            "pm_email":       str(row.get(col_pm,   "") if col_pm   else "").strip(),
+            "bm_email":       str(row.get(col_bm,   "") if col_bm   else "").strip(),
+            "bh_email":       str(row.get(col_bh,   "") if col_bh   else "").strip(),
+            "cc_emails":      str(row.get(col_cc,   "") if col_cc   else "").strip(),
+            "mixer_capacity": mixer_cap,
         }
     return mapping
 
@@ -164,12 +225,23 @@ def apply_mappings(df: pd.DataFrame,
     def _cc_e(code): return plant_map.get(str(code), {}).get("cc_emails", "")
     def _bn(code):   return batcher_map.get(str(code), str(code))
 
+    def _mc(code, existing):
+        # Mixer capacity comes from the Google Sheet plant mapping. If the sheet
+        # has no value, keep whatever was already on the row (usually None).
+        sheet_cap = plant_map.get(str(code), {}).get("mixer_capacity")
+        return sheet_cap if sheet_cap is not None else existing
+
     df["plant_name"]   = df["plant_code"].apply(_pm)
     df["batcher_name"] = df["batcher_code"].apply(_bn)
     df["pm_email"]     = df["plant_code"].apply(_pm_e)
     df["bm_email"]     = df["plant_code"].apply(_bm_e)
     df["bh_email"]     = df["plant_code"].apply(_bh_e)
     df["cc_emails"]    = df["plant_code"].apply(_cc_e)
+    if "mixer_capacity" in df.columns:
+        df["mixer_capacity"] = df.apply(
+            lambda r: _mc(r["plant_code"], r.get("mixer_capacity")), axis=1)
+    else:
+        df["mixer_capacity"] = df["plant_code"].apply(lambda c: _mc(c, None))
     return df
 
 

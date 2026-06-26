@@ -36,16 +36,53 @@ _TABLE = "APPSREAD.rdc_batch_trx_headers"
 def _sla_oracle_cols() -> dict:
     def _ms(k, d):
         return (database.get_module_setting("sla", k, d) or d).strip()
+    # Defaults match the REAL rdc_batch_trx_headers columns (verified against the
+    # live Oracle data dictionary):
+    #   PLANTNO, SALESORDER, ITEMNAME, CREATED_BY, TRUCK_CODE,
+    #   PRODUCED_QUANTITY, TIMETAKEN
+    # Notes:
+    #   customer  → the trx table has no customer-NAME column, only SALESORDER.
+    #               The customer name shown in reports is resolved separately.
+    #               Default to SALESORDER; admin can override in SLA Settings if
+    #               a customer-name column exists in another joined source.
+    #   grade     → ITEMNAME (FG code). The friendly grade label (e.g. M25) is a
+    #               lookup; admin can override the column if needed.
+    #   mixer_cap → NOT in Oracle — comes from the Google Sheet plant mapping.
+    #               Always selected as NULL here and filled in mapping_service.
+    # An EMPTY override means "this column is not available" → selected as NULL.
     return {
         "plant":      _ms("oracle_plant_col",      "PLANTNO"),
-        "customer":   _ms("oracle_customer_col",   "CUSTOMERNAME"),
-        "grade":      _ms("oracle_grade_col",       "ITEMDESCRIPTION"),
+        "customer":   _ms("oracle_customer_col",   "SALESORDER"),
+        "grade":      _ms("oracle_grade_col",       "ITEMNAME"),
         "batcher":    _ms("oracle_batcher_col",     "CREATED_BY"),
-        "truck":      _ms("oracle_truck_col",       "TRUCKNUMBER"),
+        "truck":      _ms("oracle_truck_col",       "TRUCK_CODE"),
         "quantity":   _ms("oracle_quantity_col",    "PRODUCED_QUANTITY"),
         "time":       _ms("oracle_time_col",        "TIMETAKEN"),
-        "mixer_cap":  _ms("oracle_mixer_cap_col",   "MIXERCAPACITY"),
+        "mixer_cap":  _ms("oracle_mixer_cap_col",   ""),  # from Google Sheet
     }
+
+
+def _plant_mixer_caps() -> dict:
+    """
+    Mixer capacity per plant code, sourced from the existing TP plant master.
+    Returns {plant_code: mixer_theo_cap}. Empty dict if table missing/empty.
+    """
+    caps = {}
+    try:
+        conn = database.get_connection()
+        try:
+            cur = conn.execute(
+                "SELECT plant_code, mixer_theo_cap FROM tp_plant_data "
+                "WHERE mixer_theo_cap IS NOT NULL"
+            )
+            for code, cap in cur.fetchall():
+                if code is not None and cap is not None:
+                    caps[str(code).strip()] = cap
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    return caps
 
 
 def fetch_loading_data(from_date=None, to_date=None) -> tuple:
@@ -60,7 +97,7 @@ def fetch_loading_data(from_date=None, to_date=None) -> tuple:
     """
     cfg = oracle_connector.get_oracle_config()
     cols = _sla_oracle_cols()
-    # Reuse shared TP column overrides for plant and time
+    # Reuse shared TP column overrides for plant and time as a fallback
     tp_cols = oracle_connector.get_tp_oracle_cols()
     plant_col  = cols["plant"]   or tp_cols["plant"]
     time_col   = cols["time"]    or tp_cols["time"]
@@ -71,6 +108,25 @@ def fetch_loading_data(from_date=None, to_date=None) -> tuple:
         from_date = str(_date.today())
     if to_date is None:
         to_date = str(_date.today())
+
+    # Build the SELECT list. Any column whose override is EMPTY is treated as
+    # "not available in Oracle" and selected as a literal NULL so the query
+    # never references a non-existent column. Mixer capacity always comes from
+    # the Google Sheet mapping, so it is always NULL here.
+    def _sel(expr_col, alias):
+        return f"{expr_col} AS {alias}" if expr_col else f"NULL AS {alias}"
+
+    select_list = ",\n                ".join([
+        "PRODDATE AS production_date",
+        _sel(plant_col,         "plant_code"),
+        _sel(cols["customer"],  "customer"),
+        _sel(cols["grade"],     "grade"),
+        _sel(cols["batcher"],   "batcher_code"),
+        _sel(cols["truck"],     "tm_number"),
+        _sel(cols["quantity"],  "batched_quantity"),
+        _sel(time_col,          "loading_time_minutes"),
+        "NULL AS mixer_capacity",  # filled from Google Sheet in mapping_service
+    ])
 
     oracle_connector._init_thick(cfg["instantclient"])
     import oracledb
@@ -84,49 +140,16 @@ def fetch_loading_data(from_date=None, to_date=None) -> tuple:
             status_clause = "AND STATUS = :status"
             params["status"] = cfg["status_filter"]
 
-        # MIXER_CAP is optional — wrap in NVL so missing column doesn't crash
-        mixer_cap_select = f"{cols['mixer_cap']} AS mixer_capacity" if cols["mixer_cap"] else "NULL AS mixer_capacity"
-
         sql = f"""
             SELECT
-                PRODDATE              AS production_date,
-                {plant_col}           AS plant_code,
-                {cols['customer']}    AS customer,
-                {cols['grade']}       AS grade,
-                {cols['batcher']}     AS batcher_code,
-                {cols['truck']}       AS tm_number,
-                {cols['quantity']}    AS batched_quantity,
-                {time_col}            AS loading_time_minutes,
-                {mixer_cap_select}
+                {select_list}
             FROM {_TABLE}
             WHERE PRODDATE >= :from_date
               AND PRODDATE <= :to_date
               {status_clause}
             ORDER BY PRODDATE, {plant_col}
         """
-        try:
-            cur.execute(sql, params)
-        except Exception as exc:
-            # Mixer capacity column may not exist — retry without it
-            warnings.append(f"Mixer capacity column '{cols['mixer_cap']}' not found in Oracle — defaulting to NULL. ({exc})")
-            sql_no_mixer = f"""
-                SELECT
-                    PRODDATE              AS production_date,
-                    {plant_col}           AS plant_code,
-                    {cols['customer']}    AS customer,
-                    {cols['grade']}       AS grade,
-                    {cols['batcher']}     AS batcher_code,
-                    {cols['truck']}       AS tm_number,
-                    {cols['quantity']}    AS batched_quantity,
-                    {time_col}            AS loading_time_minutes,
-                    NULL                  AS mixer_capacity
-                FROM {_TABLE}
-                WHERE PRODDATE >= :from_date
-                  AND PRODDATE <= :to_date
-                  {status_clause}
-                ORDER BY PRODDATE, {plant_col}
-            """
-            cur.execute(sql_no_mixer, params)
+        cur.execute(sql, params)
 
         rows = cur.fetchall()
         col_names = [d[0].lower() for d in cur.description]

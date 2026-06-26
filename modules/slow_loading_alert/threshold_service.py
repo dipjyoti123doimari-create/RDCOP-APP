@@ -33,9 +33,13 @@ def get_allowed_time(mixer_capacity, batched_quantity) -> tuple[float, str]:
     """
     remarks = []
 
-    # Coerce inputs
+    # Coerce inputs. Treat None AND NaN (float('nan') from pandas) as "missing".
     try:
         cap = float(mixer_capacity) if mixer_capacity is not None else None
+        if cap is not None and cap != cap:   # NaN check (NaN != NaN)
+            cap = None
+        if cap is not None and cap <= 0:      # 0 / negative capacity is invalid
+            cap = None
     except (TypeError, ValueError):
         cap = None
 
@@ -81,13 +85,19 @@ def get_allowed_time(mixer_capacity, batched_quantity) -> tuple[float, str]:
             else:
                 # Nearest higher
                 higher = [t for t in thresholds if t["mixer_capacity"] > cap]
-                best = min(higher, key=lambda t: t["mixer_capacity"])
-                base = float(best["base_allowed_minutes"])
-                ref_qty = float(best["reference_quantity"])
-                remarks.append(
-                    f"Threshold derived using nearest mixer capacity "
-                    f"({best['mixer_capacity']} m³ used for {cap} m³)."
-                )
+                if higher:
+                    best = min(higher, key=lambda t: t["mixer_capacity"])
+                    base = float(best["base_allowed_minutes"])
+                    ref_qty = float(best["reference_quantity"])
+                    remarks.append(
+                        f"Threshold derived using nearest mixer capacity "
+                        f"({best['mixer_capacity']} m³ used for {cap} m³)."
+                    )
+                else:
+                    # No threshold rows at all — fall back to default base time
+                    base = 10.0
+                    ref_qty = 6.0
+                    remarks.append("No threshold table available, default used.")
 
     # Scale by batched quantity relative to reference quantity
     ref_qty_val = 6.0
