@@ -5837,7 +5837,7 @@ def sla_export():
         "tm_number": "TM Number", "batched_quantity": "Batched Quantity",
         "mixer_capacity": "Mixer Capacity",
         "loading_time_minutes": "Loading Time (min)",
-        "allowed_loading_minutes": "Allowed Time (min)",
+        "allowed_loading_minutes": "Threshold Time (min)",
         "delay_minutes": "Delay (min)",
         "alert_type": "Alert Type", "status": "Status", "remarks": "Remarks",
     }
@@ -5911,10 +5911,13 @@ def sla_configuration():
     thresholds = database.sla_get_all_thresholds()
     _setting_keys = [
         "hourly_alert_enabled", "daily_summary_enabled", "daily_summary_time",
-        "global_cc", "gsheet_id", "plant_mapping_tab", "batcher_mapping_tab",
-        "oracle_plant_col", "oracle_customer_col", "oracle_grade_col",
-        "oracle_batcher_col", "oracle_truck_col", "oracle_quantity_col",
-        "oracle_time_col", "oracle_mixer_cap_col",
+        "min_threshold_min", "global_cc", "gsheet_id", "plant_mapping_tab",
+        "batcher_mapping_tab",
+        "oracle_plant_col", "oracle_salesorder_col", "oracle_linenumber_col",
+        "oracle_grade_col", "oracle_batcher_col", "oracle_truck_col",
+        "oracle_quantity_col", "oracle_time_col", "oracle_cust_name_col",
+        "oracle_grade_name_col", "oracle_master_so_col", "oracle_master_ln_col",
+        "oracle_mixer_cap_col",
     ]
     settings = {k: database.get_module_setting("sla", k, "") for k in _setting_keys}
     is_super_admin = g.current_user.get("role") == auth.SUPER_ADMIN
@@ -5957,7 +5960,8 @@ def sla_save_settings():
     if g.current_user.get("role") != auth.SUPER_ADMIN:
         return render_template("access_denied.html", current_user=g.current_user,
                                required_roles=[auth.SUPER_ADMIN]), 403
-    keys = ["hourly_alert_enabled", "daily_summary_enabled", "daily_summary_time", "global_cc"]
+    keys = ["hourly_alert_enabled", "daily_summary_enabled", "daily_summary_time",
+            "min_threshold_min", "global_cc"]
     for k in keys:
         v = request.form.get(k, "")
         database.set_module_setting("sla", k, v)
@@ -5971,9 +5975,11 @@ def sla_save_oracle_cols():
     if g.current_user.get("role") != auth.SUPER_ADMIN:
         return render_template("access_denied.html", current_user=g.current_user,
                                required_roles=[auth.SUPER_ADMIN]), 403
-    for k in ["oracle_plant_col","oracle_customer_col","oracle_grade_col",
+    for k in ["oracle_plant_col","oracle_salesorder_col","oracle_linenumber_col",
               "oracle_batcher_col","oracle_truck_col","oracle_quantity_col",
-              "oracle_time_col","oracle_mixer_cap_col"]:
+              "oracle_time_col","oracle_grade_col","oracle_cust_name_col",
+              "oracle_grade_name_col","oracle_master_so_col","oracle_master_ln_col",
+              "oracle_mixer_cap_col"]:
         database.set_module_setting("sla", k, request.form.get(k, "").strip())
     flash("Oracle column names saved.", "success")
     return redirect(url_for("sla_configuration"))

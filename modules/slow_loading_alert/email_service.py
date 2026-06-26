@@ -45,11 +45,11 @@ def _delay_cell(delay: float, severity: str) -> str:
 def _html_table(records: list) -> str:
     headers = [
         "Plant", "Customer", "Grade", "Batcher",
-        "TM Number", "Batched Qty", "Load Time", "Allowed Time", "Delay (min)"
+        "TM Number", "Batched Qty", "Load Time", "Threshold Time", "Delay (min)"
     ]
     th = "".join(
         f'<th style="background:#082B49;color:#fff;padding:4px 6px;'
-        f'border:1px solid #999;text-align:{"right" if h in ("Batched Qty","Load Time","Allowed Time","Delay (min)") else "left"}'
+        f'border:1px solid #999;text-align:{"right" if h in ("Batched Qty","Load Time","Threshold Time","Delay (min)") else "left"}'
         f'">{h}</th>'
         for h in headers
     )
@@ -127,7 +127,7 @@ def build_hourly_html(plant_name: str, alert_date: str, alert_hour: int,
         intro=(f"This is an automated <strong>Slow Loading Alert</strong> for "
                f"<strong>{plant_name}</strong> at <strong>{hour_label}</strong> "
                f"on <strong>{alert_date}</strong>. "
-               f"<strong>{total}</strong> vehicle(s) exceeded the allowed loading time."),
+               f"<strong>{total}</strong> vehicle(s) exceeded the threshold loading time."),
         summary_html=summary,
         table_html=table,
     )

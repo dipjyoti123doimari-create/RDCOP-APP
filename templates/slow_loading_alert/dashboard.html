@@ -35,14 +35,14 @@
     <div class="sla-kpi-sub">minutes (slow cases)</div>
   </div>
   <div class="sla-kpi">
-    <div class="sla-kpi-label">Avg Allowed Time</div>
+    <div class="sla-kpi-label">Avg Threshold Time</div>
     <div class="sla-kpi-value">{{ kpis.avg_allowed }}</div>
     <div class="sla-kpi-sub">minutes threshold avg</div>
   </div>
   <div class="sla-kpi">
     <div class="sla-kpi-label">Maximum Delay</div>
     <div class="sla-kpi-value {% if kpis.max_delay > 3 %}sev-red{% elif kpis.max_delay > 0 %}sev-amber{% endif %}">{{ kpis.max_delay }}</div>
-    <div class="sla-kpi-sub">minutes over allowed time</div>
+    <div class="sla-kpi-sub">minutes over threshold time</div>
   </div>
   <div class="sla-kpi">
     <div class="sla-kpi-label">Last Alert Run</div>
@@ -63,7 +63,7 @@
       <thead><tr>
         <th>Plant</th><th>Customer</th><th>Grade</th><th>Batcher</th>
         <th>TM Number</th><th style="text-align:right">Batched Qty</th>
-        <th style="text-align:right">Load Time</th><th style="text-align:right">Allowed</th>
+        <th style="text-align:right">Load Time</th><th style="text-align:right">Threshold Time</th>
         <th style="text-align:right">Delay</th><th>Hour</th><th>Status</th>
       </tr></thead>
       <tbody>

@@ -14,7 +14,7 @@
   <div style="overflow-x:auto">
     <table class="sla-table">
       <thead><tr>
-        <th>Mixer Cap (m³)</th><th>Ref Qty (m³)</th><th>Base Time (min)</th>
+        <th>Mixer Cap (m³)</th><th>Ref Qty (m³)</th><th>Base Threshold (min)</th>
         {% if is_super_admin %}<th>Action</th>{% endif %}
       </tr></thead>
       <tbody>
@@ -49,7 +49,7 @@
         <input type="number" name="reference_quantity" step="0.1" value="6" required class="form-control" style="width:80px">
       </div>
       <div>
-        <label style="font-size:11px;display:block">Base Time (min)</label>
+        <label style="font-size:11px;display:block">Base Threshold (min)</label>
         <input type="number" name="base_allowed_minutes" step="0.5" required class="form-control" style="width:90px">
       </div>
       <button type="submit" class="btn btn-primary btn-sm">Add</button>
@@ -90,6 +90,12 @@
       </div>
 
       <div class="form-group">
+        <label class="form-label">Minimum Threshold Time (min)</label>
+        <input type="number" step="0.5" name="min_threshold_min" value="{{ settings.min_threshold_min or '4' }}" class="form-control">
+        <small style="color:var(--text-muted);font-size:11px">Floor for small loads — first-batch raw-material feed overhead. Default 4.</small>
+      </div>
+
+      <div class="form-group">
         <label class="form-label">Global CC (comma-separated)</label>
         <input type="text" name="global_cc" value="{{ settings.global_cc or '' }}" class="form-control" placeholder="cc@example.com">
       </div>
@@ -105,14 +111,19 @@
     <form method="POST" action="{{ url_for('sla_save_oracle_cols') }}">
     <div style="display:flex;flex-direction:column;gap:8px;padding:4px 0">
       {% set col_fields = [
-        ('oracle_plant_col',    'Plant column',         'PLANTNO'),
-        ('oracle_customer_col', 'Customer column',      'CUSTOMERNAME'),
-        ('oracle_grade_col',    'Grade/Item Desc col',  'ITEMDESCRIPTION'),
-        ('oracle_batcher_col',  'Batcher/Created By col','CREATED_BY'),
-        ('oracle_truck_col',    'Truck/TM Number col',  'TRUCKNUMBER'),
-        ('oracle_quantity_col', 'Quantity column',      'PRODUCED_QUANTITY'),
-        ('oracle_time_col',     'Time Taken column',    'TIMETAKEN'),
-        ('oracle_mixer_cap_col','Mixer Capacity column','MIXERCAPACITY'),
+        ('oracle_plant_col',      'Plant column',                'PLANTNO'),
+        ('oracle_salesorder_col', 'Sales Order column',          'SALESORDER'),
+        ('oracle_linenumber_col', 'Line Number column',          'LINENUMBER'),
+        ('oracle_batcher_col',    'Batcher/Created By col',       'CREATED_BY'),
+        ('oracle_truck_col',      'Truck/TM Number col',         'TRUCK_CODE'),
+        ('oracle_quantity_col',   'Quantity column',             'PRODUCED_QUANTITY'),
+        ('oracle_time_col',       'Time Taken column',           'TIMETAKEN'),
+        ('oracle_grade_col',      'Grade fallback (item) col',   'ITEMNAME'),
+        ('oracle_cust_name_col',  'Customer name (master T-col)','T009'),
+        ('oracle_grade_name_col', 'Grade name (master T-col)',   'T006'),
+        ('oracle_master_so_col',  'Master sales order (T-col)',  'T004'),
+        ('oracle_master_ln_col',  'Master line number (T-col)',  'T003'),
+        ('oracle_mixer_cap_col',  'Mixer Capacity (blank=sheet)',''),
       ] %}
       {% for key, label, placeholder in col_fields %}
       <div class="form-group">

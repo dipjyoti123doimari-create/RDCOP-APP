@@ -1,14 +1,23 @@
 """
 threshold_service.py
 ====================
-Calculates the allowed loading time for a given mixer capacity and batched quantity.
+Calculates the THRESHOLD time (allowed loading time) for a given mixer capacity
+and batched quantity.
 
 Reference table (base time for 6 m³):
   30→16 min, 45→12, 56→10, 60→10, 65→10, 70→10, 75→10,
   80→10, 86→10, 90→8, 100→8, 110→8, 120→8
 
 Dynamic rule:
-  Allowed Time = base_time × (batched_quantity / 6)  → rounded to nearest minute
+  Threshold Time = base_time × (batched_quantity / 6)  → rounded to nearest minute
+
+Minimum floor:
+  Real RMC batching has a fixed first-batch overhead — raw materials must be fed
+  before the sequence starts — so even a tiny load (≤2 m³) needs ~4 min. We never
+  let the threshold fall below MIN_THRESHOLD_MIN (default 4), configurable via
+  module setting sla.min_threshold_min.
+  e.g. cap60/qty2: 10×(2/6)=3.3 → floored to 4 min.
+  cap60/qty6 stays 10 (floor doesn't change values already ≥ 4).
 
 Nearest-capacity fallback:
   If exact capacity not found, use nearest lower; if none, nearest higher.
@@ -18,18 +27,32 @@ Nearest-capacity fallback:
 import math
 import database
 
+# Hard default; overridable via module setting "sla.min_threshold_min".
+MIN_THRESHOLD_MIN = 4.0
+
 
 def _load_thresholds() -> list:
     """Load active thresholds sorted by mixer_capacity ascending."""
     return database.sla_get_thresholds()
 
 
-def get_allowed_time(mixer_capacity, batched_quantity) -> tuple[float, str]:
-    """
-    Return (allowed_minutes: float, remark: str).
+def _min_floor() -> float:
+    """Minimum threshold minutes (first-batch material-feed overhead)."""
+    try:
+        return float(database.get_module_setting("sla", "min_threshold_min",
+                                                  MIN_THRESHOLD_MIN) or MIN_THRESHOLD_MIN)
+    except (TypeError, ValueError):
+        return MIN_THRESHOLD_MIN
 
-    allowed_minutes is rounded to the nearest whole minute.
-    remark is empty string when an exact match is found.
+
+def get_threshold_time(mixer_capacity, batched_quantity) -> tuple:
+    """
+    Return (threshold_minutes: float, remark: str).
+
+    threshold_minutes is base_time × (qty/6), rounded to the nearest minute,
+    then floored to never be below the minimum (first-batch overhead).
+    remark is empty string when an exact capacity match is found and no floor
+    or nearest-capacity fallback was applied.
     """
     remarks = []
 
@@ -106,10 +129,23 @@ def get_allowed_time(mixer_capacity, batched_quantity) -> tuple[float, str]:
         if exact:
             ref_qty_val = float(exact[0]["reference_quantity"])
 
-    allowed = base * (qty / ref_qty_val)
-    allowed = round(allowed)  # nearest whole minute
+    threshold = base * (qty / ref_qty_val)
+    threshold = round(threshold)  # nearest whole minute
 
-    return float(allowed), "; ".join(remarks)
+    # Minimum floor — first-batch raw-material feed overhead means even very
+    # small loads need a few minutes. Never report a threshold below the floor.
+    floor = _min_floor()
+    if threshold < floor:
+        remarks.append(
+            f"Minimum threshold {floor:.0f} min applied (first-batch overhead).")
+        threshold = floor
+
+    return float(threshold), "; ".join(remarks)
+
+
+# Backward-compatible alias — older callers used get_allowed_time().
+def get_allowed_time(mixer_capacity, batched_quantity) -> tuple:
+    return get_threshold_time(mixer_capacity, batched_quantity)
 
 
 def classify_severity(delay_minutes: float) -> str:

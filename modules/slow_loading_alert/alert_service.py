@@ -11,7 +11,7 @@ an hour, and returns lists ready for DB insert.
 import hashlib
 from datetime import datetime as _dt
 
-from modules.slow_loading_alert.threshold_service import get_allowed_time, classify_severity
+from modules.slow_loading_alert.threshold_service import get_threshold_time, classify_severity
 
 
 def build_alert_key(plant_code: str, tm_number: str, grade: str, customer: str,
@@ -29,7 +29,7 @@ def build_alert_key(plant_code: str, tm_number: str, grade: str, customer: str,
 def detect_slow_loading(df, alert_date: str, alert_hour: int) -> list:
     """
     Evaluate every row in df and return a list of alert record dicts
-    for rows where loading_time_minutes > allowed_loading_minutes.
+    for rows where loading_time_minutes > threshold_time.
 
     df must have columns:
         plant_code, plant_name, customer, grade, batcher_code, batcher_name,
@@ -55,12 +55,12 @@ def detect_slow_loading(df, alert_date: str, alert_hour: int) -> list:
         if not plant_code or not tm_number or batched_qty <= 0 or load_time <= 0:
             continue
 
-        allowed_time, threshold_remark = get_allowed_time(mixer_cap, batched_qty)
+        threshold_time, threshold_remark = get_threshold_time(mixer_cap, batched_qty)
 
-        if load_time <= allowed_time:
+        if load_time <= threshold_time:
             continue  # not slow — no alert
 
-        delay = load_time - allowed_time
+        delay = load_time - threshold_time
         severity = classify_severity(delay)
 
         key = build_alert_key(plant_code, tm_number, grade, customer,
@@ -79,7 +79,7 @@ def detect_slow_loading(df, alert_date: str, alert_hour: int) -> list:
             "batched_quantity":        batched_qty,
             "mixer_capacity":          float(mixer_cap) if mixer_cap is not None else None,
             "loading_time_minutes":    load_time,
-            "allowed_loading_minutes": allowed_time,
+            "allowed_loading_minutes": threshold_time,  # DB col kept for compat
             "delay_minutes":           round(delay, 2),
             "alert_type":              "HOURLY",
             "status":                  "OPEN",
