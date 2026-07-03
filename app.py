@@ -2464,8 +2464,9 @@ def _btrtp_build_excel(batcher_rows, month, year):
     CTR  = Alignment(vertical="center", horizontal="center")
     LEFT = Alignment(vertical="center", horizontal="left")
     WRAP = Alignment(wrap_text=True, vertical="center", horizontal="center")
-    thin = Side(style="thin", color="9A9A9A")
-    BDR  = Border(left=thin, right=thin, top=thin, bottom=thin)
+    thin  = Side(style="thin",   color="9A9A9A")
+    thick = Side(style="medium", color="1A1A1A")
+    BDR   = Border(left=thin, right=thin, top=thin, bottom=thin)
 
     def _fill_font(pct):
         pct = round(pct or 0)  # colour by displayed (rounded) value
@@ -2490,10 +2491,18 @@ def _btrtp_build_excel(batcher_rows, month, year):
         c.fill = HDR_FILL; c.font = HDR_FONT; c.alignment = WRAP; c.border = BDR
     ws.row_dimensions[2].height = 28
 
+    # Pre-compute which rows are the last in their plant cluster
+    last_in_cluster = set()
+    for i, row in enumerate(batcher_rows):
+        next_plant = batcher_rows[i + 1].get("plant_name", "") if i + 1 < len(batcher_rows) else None
+        if next_plant != row.get("plant_name", ""):
+            last_in_cluster.add(i)
+
     srno = 1
-    for ri, row in enumerate(batcher_rows, 3):
+    for ri, (idx, row) in enumerate(((i, r) for i, r in enumerate(batcher_rows)), 3):
         pct        = float(row.get("throughput_pct", 0))
         row_fill, row_font = _fill_font(pct)
+        is_last = idx in last_in_cluster
         vals = [
             srno,
             row.get("batcher_id", ""),
@@ -2509,10 +2518,15 @@ def _btrtp_build_excel(batcher_rows, month, year):
         ]
         for ci, v in enumerate(vals, 1):
             c = ws.cell(ri, ci, v)
-            c.border = BDR
             c.fill   = row_fill
             c.font   = row_font
             c.alignment = LEFT if ci in (2, 3, 4, 5, 6) else CTR
+            c.border = Border(
+                left   = thick if ci == 1            else thin,
+                right  = thick if ci == len(vals)    else thin,
+                top    = thin,
+                bottom = thick if is_last            else thin,
+            )
         srno += 1
 
     for ci, w in enumerate([8, 14, 20, 22, 18, 18, 10, 10, 10, 8, 8], 1):
