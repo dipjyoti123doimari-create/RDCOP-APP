@@ -604,8 +604,8 @@ var hash = new URLSearchParams(location.search).get('m');
 if (hash) openModal('modal-' + hash);
 
 var params = new URLSearchParams(location.search);
-if (params.get('edit_code'))  { openModal('modal-master'); openManageModal('edit'); }
-if (params.get('del_code'))   { openModal('modal-master'); openManageModal('delete'); }
+if (params.get('edit_code') && params.get('open_modal') !== 'plant-data')  { openModal('modal-master'); openManageModal('edit'); }
+if (params.get('del_code')  && params.get('open_modal') !== 'plant-data')  { openModal('modal-master'); openManageModal('delete'); }
 
 submitFormAjax(
   document.getElementById('fetch-form'),
@@ -664,7 +664,7 @@ checkMaintLock();
         {% else %}
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <p class="caption" style="margin:0">Currently <strong>{{ plant_count }}</strong> plants</p>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="switchTab('sc-plant','edit')">✏️ Manage Plants</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="switchTab('sc-plant','add')">✏️ Add / Edit Plants</button>
         </div>
         <div class="table-wrapper" style="max-height:260px">
           <table style="width:auto;min-width:100%">
