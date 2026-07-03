@@ -50,11 +50,11 @@
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Below 60%</div>
-    <div class="kpi-value">{{ (plant_rows | selectattr('throughput_pct','lt',60) | list | length) | format_int }}</div>
+    <div class="kpi-value">{{ (plant_rows | map(attribute='throughput_pct') | map('round') | select('lt',60) | list | length) | format_int }}</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">75% &amp; Above</div>
-    <div class="kpi-value">{{ (plant_rows | selectattr('throughput_pct','ge',75) | list | length) | format_int }}</div>
+    <div class="kpi-value">{{ (plant_rows | map(attribute='throughput_pct') | map('round') | select('ge',75) | list | length) | format_int }}</div>
   </div>
 </div>
 
@@ -81,7 +81,8 @@
     </thead>
     <tbody>
       {% for r in plant_rows %}
-      {% set tp = r.throughput_pct %}
+      {# Colour by the ROUNDED value so it matches what's displayed. #}
+      {% set tp = r.throughput_pct | round(0) | int %}
       <tr class="{% if tp < 60 %}row-red{% elif tp < 75 %}row-yellow{% else %}row-green{% endif %}">
         <td>{{ r.lookup_code }}</td>
         <td>{{ r.plant_name }}</td>

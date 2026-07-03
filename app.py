@@ -206,6 +206,32 @@ def _build_tp_excel(plant_rows, location_rows) -> bytes:
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         plant_df.to_excel(writer, sheet_name="Plant Throughput", index=False)
         loc_df.to_excel(writer, sheet_name="Location Throughput", index=False)
+
+        # --- Colour-code each plant row by its throughput band ---------------
+        # Same bands as the on-screen report (tp_reports.html):
+        #   red   = below 60%    yellow = 60–74%    green = 75% & above
+        from openpyxl.styles import PatternFill
+        red_fill    = PatternFill("solid", fgColor="F8CBAD")   # soft red
+        yellow_fill = PatternFill("solid", fgColor="FFE699")   # soft yellow
+        green_fill  = PatternFill("solid", fgColor="C6EFCE")   # soft green
+
+        ws = writer.sheets["Plant Throughput"]
+        # "Throughput %" is the 9th column (A..J); data starts on row 2.
+        for i, row in enumerate(plant_rows):
+            excel_row = i + 2  # +1 header, +1 for 1-based index
+            # Colour by the ROUNDED value so it matches the displayed %:
+            # 74.6 → 75% green, 59.5 → 60% yellow (not raw-value red/yellow).
+            tp = round(row.get("throughput_pct") or 0)
+            if tp < 60:
+                fill = red_fill
+            elif tp < 75:
+                fill = yellow_fill
+            else:
+                fill = green_fill
+            # Shade the whole row (columns 1..10) to match the on-screen report.
+            for col in range(1, len(plant_df.columns) + 1):
+                ws.cell(row=excel_row, column=col).fill = fill
+
     buf.seek(0)
     return buf.read()
 
@@ -1051,8 +1077,8 @@ def page_home():
         cur.execute("""SELECT month, year,
             COUNT(DISTINCT lookup_code) as plants,
             ROUND(AVG(throughput_pct),1) as avg_tp,
-            SUM(CASE WHEN throughput_pct >= 75 THEN 1 ELSE 0 END) as above_target,
-            SUM(CASE WHEN throughput_pct <  75 THEN 1 ELSE 0 END) as below_target,
+            SUM(CASE WHEN ROUND(throughput_pct) >= 75 THEN 1 ELSE 0 END) as above_target,
+            SUM(CASE WHEN ROUND(throughput_pct) <  75 THEN 1 ELSE 0 END) as below_target,
             ROUND(SUM(total_quantity),0) as total_qty
             FROM tp_results GROUP BY year,month
             ORDER BY year DESC, month DESC LIMIT 2""")
@@ -1075,8 +1101,8 @@ def page_home():
             rows_f = _plant_filter([dict(zip(cols, r)) for r in cur.fetchall()], col="plant_name")
             if is_restricted:
                 m["plants"]       = len(rows_f)
-                m["above_target"] = sum(1 for r in rows_f if (r.get("throughput_pct") or 0) >= 75)
-                m["below_target"] = sum(1 for r in rows_f if (r.get("throughput_pct") or 0) < 75)
+                m["above_target"] = sum(1 for r in rows_f if round(r.get("throughput_pct") or 0) >= 75)
+                m["below_target"] = sum(1 for r in rows_f if round(r.get("throughput_pct") or 0) < 75)
                 m["avg_tp"]       = round(sum(r.get("throughput_pct") or 0 for r in rows_f) / len(rows_f), 1) if rows_f else 0
             tp_months_rows.append(rows_f)
         tp_last_rows = tp_months_rows[0] if tp_months_rows else []
@@ -1084,8 +1110,8 @@ def page_home():
         # TP current month — from tp_results (same as previous month card)
         cur.execute("""SELECT COUNT(DISTINCT lookup_code) as plants,
             ROUND(AVG(throughput_pct),1) as avg_tp,
-            SUM(CASE WHEN throughput_pct >= 75 THEN 1 ELSE 0 END) as above_target,
-            SUM(CASE WHEN throughput_pct <  75 THEN 1 ELSE 0 END) as below_target,
+            SUM(CASE WHEN ROUND(throughput_pct) >= 75 THEN 1 ELSE 0 END) as above_target,
+            SUM(CASE WHEN ROUND(throughput_pct) <  75 THEN 1 ELSE 0 END) as below_target,
             ROUND(SUM(total_quantity),0) as total_qty
             FROM tp_results WHERE month=? AND year=?""", (now.month, now.year))
         row = cur.fetchone()
@@ -1107,16 +1133,16 @@ def page_home():
             tp_cur_rows = _plant_filter([dict(zip(cols, r)) for r in cur.fetchall()], col="plant_name")
             if is_restricted:
                 tp_cur["plants"]       = len(tp_cur_rows)
-                tp_cur["above_target"] = sum(1 for r in tp_cur_rows if (r.get("throughput_pct") or 0) >= 75)
-                tp_cur["below_target"] = sum(1 for r in tp_cur_rows if (r.get("throughput_pct") or 0) < 75)
+                tp_cur["above_target"] = sum(1 for r in tp_cur_rows if round(r.get("throughput_pct") or 0) >= 75)
+                tp_cur["below_target"] = sum(1 for r in tp_cur_rows if round(r.get("throughput_pct") or 0) < 75)
                 tp_cur["avg_tp"]       = round(sum(r.get("throughput_pct") or 0 for r in tp_cur_rows) / len(tp_cur_rows), 1) if tp_cur_rows else 0
 
         # ── BTRTP — fetch up to 2 calculated months ──────────
         cur.execute("""SELECT month, year,
             COUNT(*) as batchers,
             ROUND(SUM(throughput_pct * total_quantity) / NULLIF(SUM(total_quantity),0), 1) as avg_tp,
-            SUM(CASE WHEN throughput_pct >= 75 THEN 1 ELSE 0 END) as above_target,
-            SUM(CASE WHEN throughput_pct <  75 THEN 1 ELSE 0 END) as below_target
+            SUM(CASE WHEN ROUND(throughput_pct) >= 75 THEN 1 ELSE 0 END) as above_target,
+            SUM(CASE WHEN ROUND(throughput_pct) <  75 THEN 1 ELSE 0 END) as below_target
             FROM btrtp_results GROUP BY year,month
             ORDER BY year DESC, month DESC LIMIT 2""")
         bt_months = []
@@ -1138,8 +1164,8 @@ def page_home():
             rows_f = _plant_filter([dict(zip(cols, r)) for r in cur.fetchall()], col="plant_name")
             if is_restricted:
                 m["batchers"]     = len(rows_f)
-                m["above_target"] = sum(1 for r in rows_f if (r.get("throughput_pct") or 0) >= 75)
-                m["below_target"] = sum(1 for r in rows_f if (r.get("throughput_pct") or 0) < 75)
+                m["above_target"] = sum(1 for r in rows_f if round(r.get("throughput_pct") or 0) >= 75)
+                m["below_target"] = sum(1 for r in rows_f if round(r.get("throughput_pct") or 0) < 75)
                 total_qty_bt = sum(r.get("total_quantity") or 0 for r in rows_f)
                 m["avg_tp"] = round(sum((r.get("throughput_pct") or 0) * (r.get("total_quantity") or 0) for r in rows_f) / total_qty_bt, 1) if total_qty_bt else 0
             bt_months_rows.append(rows_f)
@@ -1149,8 +1175,8 @@ def page_home():
         bt_last_known_sync = None
         cur.execute("""SELECT COUNT(*) as batchers,
             ROUND(SUM(throughput_pct * total_quantity) / NULLIF(SUM(total_quantity),0), 1) as avg_tp,
-            SUM(CASE WHEN throughput_pct >= 75 THEN 1 ELSE 0 END) as above_target,
-            SUM(CASE WHEN throughput_pct <  75 THEN 1 ELSE 0 END) as below_target
+            SUM(CASE WHEN ROUND(throughput_pct) >= 75 THEN 1 ELSE 0 END) as above_target,
+            SUM(CASE WHEN ROUND(throughput_pct) <  75 THEN 1 ELSE 0 END) as below_target
             FROM btrtp_results WHERE month=? AND year=?""", (now.month, now.year))
         row = cur.fetchone()
         bt_cur = dict(row) if (row and row[0]) else None
@@ -1170,8 +1196,8 @@ def page_home():
             bt_cur_rows = _plant_filter([dict(zip(cols, r)) for r in cur.fetchall()], col="plant_name")
             if is_restricted:
                 bt_cur["batchers"]     = len(bt_cur_rows)
-                bt_cur["above_target"] = sum(1 for r in bt_cur_rows if (r.get("throughput_pct") or 0) >= 75)
-                bt_cur["below_target"] = sum(1 for r in bt_cur_rows if (r.get("throughput_pct") or 0) < 75)
+                bt_cur["above_target"] = sum(1 for r in bt_cur_rows if round(r.get("throughput_pct") or 0) >= 75)
+                bt_cur["below_target"] = sum(1 for r in bt_cur_rows if round(r.get("throughput_pct") or 0) < 75)
                 total_qty_btc = sum(r.get("total_quantity") or 0 for r in bt_cur_rows)
                 bt_cur["avg_tp"] = round(sum((r.get("throughput_pct") or 0) * (r.get("total_quantity") or 0) for r in bt_cur_rows) / total_qty_btc, 1) if total_qty_btc else 0
 
@@ -1465,7 +1491,12 @@ def tp_calculate():
 
 # ── Reports ───────────────────────────────────────────────────────────────────
 def _tp_band(pct):
-    """Throughput colour band for a percentage."""
+    """Throughput colour band for a percentage.
+
+    Bands use the ROUNDED value so the colour matches the displayed % —
+    74.6 shows as 75% → green, 59.5 shows as 60% → yellow.
+    """
+    pct = round(pct or 0)
     if pct < 60:
         return "red"
     if pct < 75:
@@ -1646,6 +1677,7 @@ def _tp_build_excel(plant_rows, location_rows, month, year):
     BDR   = Border(left=thin, right=thin, top=thin, bottom=thin)
 
     def _fill_font(pct):
+        pct = round(pct or 0)  # colour by displayed (rounded) value
         if pct < 60:  return RED_FILL, RED_FONT
         if pct < 75:  return YEL_FILL, YEL_FONT
         return GRN_FILL, GRN_FONT
@@ -1732,6 +1764,7 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
     mon_tag = _tp_mon_tag(month, year)
 
     def _bg(pct):
+        pct = round(pct or 0)  # colour by displayed (rounded) value
         if pct < 60:  return "#FFB3B3"
         if pct < 75:  return "#FFE066"
         return "#92D492"
@@ -2060,7 +2093,11 @@ def _btrtp_ctx():
 
 
 def _btrtp_band(pct):
-    """Throughput colour band for a percentage (same thresholds as TP)."""
+    """Throughput colour band for a percentage (same thresholds as TP).
+
+    Bands use the ROUNDED value so the colour matches the displayed %.
+    """
+    pct = round(pct or 0)
     if pct < 60:
         return "red"
     if pct < 75:
@@ -2388,6 +2425,7 @@ def _btrtp_build_excel(batcher_rows, month, year):
     BDR  = Border(left=thin, right=thin, top=thin, bottom=thin)
 
     def _fill_font(pct):
+        pct = round(pct or 0)  # colour by displayed (rounded) value
         if pct < 60:  return RED_FILL, RED_FONT
         if pct < 75:  return YEL_FILL, YEL_FONT
         return GRN_FILL, GRN_FONT
@@ -2509,6 +2547,7 @@ def btrtp_send_email():
                 f'border:1px solid #999999;text-align:{align};'
                 f'font-size:11px;font-family:Arial,sans-serif;line-height:1.2;white-space:nowrap;"')
     def _row_color(pct):
+        pct = round(pct or 0)  # colour by displayed (rounded) value
         if pct < 60: return "#FFB3B3", "#7B1F1F"
         if pct < 75: return "#FFE066", "#5C4200"
         return "#92D492", "#1A5C1A"
@@ -6185,4 +6224,5 @@ if __name__ == "__main__":
     print("  RDC Batching Incentive Calculator")
     print("  Flask server starting on http://localhost:2001")
     print("=" * 60)
+    app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.run(host="0.0.0.0", port=2001, debug=False, use_reloader=False)

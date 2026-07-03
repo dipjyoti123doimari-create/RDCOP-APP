@@ -140,7 +140,7 @@
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Below 60%</div>
-    <div class="kpi-value">{{ (plant_rows | selectattr('throughput_pct','lt',60) | list | length) | format_int }}</div>
+    <div class="kpi-value">{{ (plant_rows | map(attribute='throughput_pct') | map('round') | select('lt',60) | list | length) | format_int }}</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">PAN India Avg</div>
@@ -240,7 +240,9 @@
       </thead>
       <tbody>
         {% for r in plant_rows %}
-        {% set tp = r.throughput_pct %}
+        {# Colour by the ROUNDED value so it matches what's displayed:
+           74.6 shows as 75% → green,  59.5 shows as 60% → yellow. #}
+        {% set tp = r.throughput_pct | round(0) | int %}
         <tr class="{% if tp < 60 %}row-red{% elif tp < 75 %}row-yellow{% else %}row-green{% endif %}">
           <td>{{ loop.index }}</td>
           <td><strong>{{ r.lookup_code }}</strong></td>
@@ -251,7 +253,7 @@
           <td>{{ r.mixer_theo_cap }}</td>
           <td>{{ r.total_quantity | round(1) }}</td>
           <td>{{ r.total_time_min | round(1) }}</td>
-          <td><strong>{{ tp | round(0) | int }}%</strong></td>
+          <td><strong>{{ tp }}%</strong></td>
           <td>{{ r.batch_count }}</td>
         </tr>
         {% endfor %}

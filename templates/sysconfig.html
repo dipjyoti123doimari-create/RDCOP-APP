@@ -641,43 +641,12 @@ checkMaintLock();
      MODAL: Plant Data
 ══════════════════════════════════════════════════════ -->
 <div id="modal-plant-data" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-plant-data')">
-  <div class="modal-box" style="max-width:860px">
+  <div class="modal-box" style="max-width:860px;min-height:min(680px,90vh)">
     <div class="modal-header">
       <span>🏭 Plant Data</span>
       <button class="modal-close" onclick="closeModal('modal-plant-data')">✕</button>
     </div>
     <div class="modal-body">
-
-      <!-- Sync from Google Sheets -->
-      <div style="margin-bottom:18px;padding-bottom:18px;border-bottom:1px solid var(--border)">
-        <div class="section-title" style="margin-bottom:10px">🔄 Sync from Google Sheets</div>
-        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">
-          Syncs <strong>"Plant Data for TP"</strong> tab. Required columns:
-          Plant Code, Exco Location, Plant, Business Head, Plant Manager, Mixer Theo. Capacity
-        </p>
-        <form method="POST" action="{{ url_for('tp_sync_sheets') }}" id="sc-sync-form">
-          <div class="form-grid" style="align-items:flex-end;gap:12px">
-            <div class="form-group">
-              <label>Google Sheet URL or ID</label>
-              <input type="text" name="sheet_id" value="{{ tp_sheet_id or '' }}" style="min-width:260px"
-                     placeholder="Sheet ID or URL">
-            </div>
-            <div class="form-group">
-              <label>Worksheet / Tab Name</label>
-              <input type="text" name="worksheet" value="{{ tp_worksheet or 'Plant Data for TP' }}" style="min-width:180px">
-            </div>
-            <div class="form-group">
-              <label>&nbsp;</label>
-              <button type="submit" class="btn btn-primary" id="sc-sync-btn">🔄 Sync Now</button>
-            </div>
-          </div>
-        </form>
-        {% if tp_last_sync and tp_last_sync.last_sync %}
-        <div class="alert alert-info" style="margin-top:10px;padding:8px 14px;font-size:12px">
-          🕐 Last synced: <strong>{{ tp_last_sync.last_sync }}</strong> · <strong>{{ tp_last_sync.last_count }}</strong> plant rows
-        </div>
-        {% endif %}
-      </div>
 
       <!-- Manage Plants tabs -->
       <div class="tabs">
@@ -691,18 +660,22 @@ checkMaintLock();
       <!-- Table -->
       <div class="tab-panel active" data-tabpanel="sc-plant" data-tab="table">
         {% if plant_count == 0 %}
-        <div class="glass-card" style="text-align:center;padding:30px">No plant data yet. Sync from Google Sheets above.</div>
+        <div class="glass-card" style="text-align:center;padding:30px">No plant data yet. Use Sync from Google Sheets below.</div>
         {% else %}
-        <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px">{{ plant_count }} plants</p>
-        <div class="table-wrapper" style="max-height:320px;overflow-y:auto">
-          <table>
-            <thead><tr><th>Code</th><th>Exco Location</th><th>Plant Name</th><th>Business Head</th><th>Plant Manager</th><th>Mixer Cap.</th></tr></thead>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <p class="caption" style="margin:0">Currently <strong>{{ plant_count }}</strong> plants</p>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="switchTab('sc-plant','edit')">✏️ Manage Plants</button>
+        </div>
+        <div class="table-wrapper" style="max-height:260px">
+          <table style="width:auto;min-width:100%">
+            <thead><tr><th style="white-space:nowrap">Code</th><th style="white-space:nowrap">Exco Location</th><th style="white-space:nowrap">Plant Name</th><th style="white-space:nowrap">Business Head</th><th style="white-space:nowrap">Plant Manager</th><th style="white-space:nowrap">Mixer Cap.</th><th style="white-space:nowrap">Updated</th></tr></thead>
             <tbody>
               {% for row in plant_rows %}
               <tr>
                 <td>{{ row.plant_code }}</td><td>{{ row.exco_location }}</td>
                 <td>{{ row.plant_name }}</td><td>{{ row.business_head }}</td>
                 <td>{{ row.plant_manager }}</td><td>{{ row.mixer_theo_cap }}</td>
+                <td style="font-size:11px;white-space:nowrap">{{ row.updated_at or '' }}</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -830,6 +803,37 @@ checkMaintLock();
               {% endfor %}
             </tbody>
           </table>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Sync from Google Sheets — bottom of modal -->
+      <div style="margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
+        <div class="section-title" style="margin-bottom:10px">🔄 Sync from Google Sheets</div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">
+          Syncs <strong>"Plant Data for TP"</strong> tab. Required columns:
+          Plant Code, Exco Location, Plant, Business Head, Plant Manager, Mixer Theo. Capacity
+        </p>
+        <form method="POST" action="{{ url_for('tp_sync_sheets') }}" id="sc-sync-form">
+          <div class="form-grid" style="align-items:flex-end;gap:12px">
+            <div class="form-group">
+              <label>Google Sheet URL or ID</label>
+              <input type="text" name="sheet_id" value="{{ tp_sheet_id or '' }}" style="min-width:260px"
+                     placeholder="Sheet ID or URL">
+            </div>
+            <div class="form-group">
+              <label>Worksheet / Tab Name</label>
+              <input type="text" name="worksheet" value="{{ tp_worksheet or 'Plant Data for TP' }}" style="min-width:180px">
+            </div>
+            <div class="form-group">
+              <label>&nbsp;</label>
+              <button type="submit" class="btn btn-primary" id="sc-sync-btn">🔄 Sync Now</button>
+            </div>
+          </div>
+        </form>
+        {% if tp_last_sync and tp_last_sync.last_sync %}
+        <div class="alert alert-info" style="margin-top:10px;padding:8px 14px;font-size:12px">
+          🕐 Last synced: <strong>{{ tp_last_sync.last_sync }}</strong> · <strong>{{ tp_last_sync.last_count }}</strong> plant rows
         </div>
         {% endif %}
       </div>

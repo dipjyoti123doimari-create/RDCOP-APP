@@ -352,12 +352,25 @@ function initSearchableSelects() {
       btn.classList.add('open');
       inp.value = '';
       renderList('');
-      /* position relative to button using fixed coords */
-      var r = btn.getBoundingClientRect();
-      panel.style.top    = (r.bottom + 4) + 'px';
-      panel.style.left   = r.left + 'px';
-      panel.style.width  = r.width + 'px';
+      /* Portal to body and position — flip upward if not enough space below */
       document.body.appendChild(panel);
+      var r          = btn.getBoundingClientRect();
+      var maxPanelH  = 220;
+      var spaceBelow = window.innerHeight - r.bottom - 8;
+      var spaceAbove = r.top - 8;
+      if (spaceBelow >= maxPanelH) {
+        /* enough room below — open downward */
+        panel.style.top       = (r.bottom + 4) + 'px';
+        panel.style.bottom    = '';
+        panel.style.maxHeight = maxPanelH + 'px';
+      } else {
+        /* not enough room below — flip upward */
+        panel.style.top       = '';
+        panel.style.bottom    = (window.innerHeight - r.top + 4) + 'px';
+        panel.style.maxHeight = Math.min(maxPanelH, spaceAbove) + 'px';
+      }
+      panel.style.left  = r.left + 'px';
+      panel.style.width = r.width + 'px';
       inp.focus();
     }
     function closePanel() {
