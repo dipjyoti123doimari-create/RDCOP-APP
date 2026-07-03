@@ -2310,7 +2310,9 @@ def btrtp_reports():
     unique_plants   = sorted({r.get("plant_name", "")     for r in all_rows if r.get("plant_name")})
     unique_batchers = sorted({r.get("batcher_name", "")   for r in all_rows if r.get("batcher_name")})
 
+    all_rows     = _btrtp_filter_and_sort(all_rows)
     batcher_rows = _apply_btrtp_filters(all_rows, excos, bheads, plants, batchers, band, search)
+    batcher_rows = _btrtp_filter_and_sort(batcher_rows)
 
     _mss("btrtp", "report_rows", batcher_rows)
 
@@ -2397,12 +2399,53 @@ def _btrtp_mon_tag(month, year):
     return f"{_cal.month_abbr[month]}'{str(year)[2:]}"
 
 
+_BTRTP_EXCLUDE = {"idsuser", "user", "oem", "admin", "oemadmin", "oem admin",
+                  "ids user", "id user", "system", "sysadmin"}
+
+def _btrtp_filter_and_sort(rows):
+    """Remove system accounts and sort by plant cluster (best plant first,
+    best batcher first within each plant)."""
+    import re as _re
+
+    def _is_system(name):
+        n = (name or "").strip().lower()
+        # exact match or contains any exclude token
+        if n in _BTRTP_EXCLUDE:
+            return True
+        for tok in _BTRTP_EXCLUDE:
+            if tok in n:
+                return True
+        # pure numeric or empty → system/unnamed
+        if not n or _re.fullmatch(r'[\d\s]+', n):
+            return True
+        return False
+
+    rows = [r for r in rows if not _is_system(r.get("batcher_name", ""))]
+
+    # Sort: plants by their max TP% desc, then within each plant by TP% desc
+    from collections import defaultdict
+    plant_max = defaultdict(float)
+    for r in rows:
+        p = r.get("plant_name", "")
+        pct = round(float(r.get("throughput_pct", 0) or 0))
+        if pct > plant_max[p]:
+            plant_max[p] = pct
+
+    rows.sort(key=lambda r: (
+        -plant_max[r.get("plant_name", "")],
+        r.get("plant_name", ""),
+        -round(float(r.get("throughput_pct", 0) or 0))
+    ))
+    return rows
+
+
 def _btrtp_build_excel(batcher_rows, month, year):
     """Build colour-coded Excel bytes for BTRTP batcher results."""
     from openpyxl import Workbook
     from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
 
+    batcher_rows = _btrtp_filter_and_sort(batcher_rows)
     mon_tag = _btrtp_mon_tag(month, year)
 
     RED_FILL   = PatternFill("solid", fgColor="FFB3B3")
@@ -2535,6 +2578,7 @@ def btrtp_send_email():
     if not body:
         body = f"Dear Team,\n\nPlease find the Batcher Throughput Report for {month_name} {year} below."
 
+    rows = _btrtp_filter_and_sort(rows)
     excel_bytes = _btrtp_build_excel(rows, month, year)
     fname = f"RDC_BTRTP_{year}_{month:02d}.xlsx"
 
