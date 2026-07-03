@@ -2600,9 +2600,11 @@ def btrtp_send_email():
     _TH = ('style="background-color:#082B49;color:#ffffff;font-weight:bold;'
            'text-align:center;padding:3px 6px;border:1px solid #808080;'
            'font-size:11px;font-family:Arial,sans-serif;line-height:1.2;white-space:nowrap;"')
-    def _td_b(bg, fg, align="center"):
+    def _td_b(bg, fg, align="center", bot_border="1px solid #999999"):
         return (f'style="background-color:{bg};color:{fg};padding:2px 5px;'
-                f'border:1px solid #999999;text-align:{align};'
+                f'border-left:1px solid #999999;border-right:1px solid #999999;'
+                f'border-top:1px solid #999999;border-bottom:{bot_border};'
+                f'text-align:{align};'
                 f'font-size:11px;font-family:Arial,sans-serif;line-height:1.2;white-space:nowrap;"')
     def _row_color(pct):
         pct = round(pct or 0)  # colour by displayed (rounded) value
@@ -2610,25 +2612,32 @@ def btrtp_send_email():
         if pct < 75: return "#FFE066", "#5C4200"
         return "#92D492", "#1A5C1A"
 
+    # pre-compute last-row-of-cluster indices
+    _cluster_last = {
+        i for i, r in enumerate(rows)
+        if i + 1 >= len(rows) or rows[i + 1].get("plant_name", "") != r.get("plant_name", "")
+    }
+
     head_row = (f'<tr><th {_TH}>Sr.</th><th {_TH}>Batcher ID</th>'
                 f'<th {_TH}>Batcher Name</th><th {_TH}>Plant</th>'
                 f'<th {_TH}>Mixer Cap</th><th {_TH}>Total Qty</th>'
                 f'<th {_TH}>Time (hr)</th><th {_TH}>TP %</th><th {_TH}>Batches</th></tr>')
     body_rows = ""
-    for i, r in enumerate(rows, 1):
+    for i, r in enumerate(rows):
         pct = float(r.get("throughput_pct", 0))
         bg, fg = _row_color(pct)
+        bb = "2px solid #1A1A1A" if i in _cluster_last else "1px solid #999999"
         body_rows += (
             f'<tr>'
-            f'<td {_td_b(bg,fg,"center")}>{i}</td>'
-            f'<td {_td_b(bg,fg,"left")}>{r.get("batcher_id","")}</td>'
-            f'<td {_td_b(bg,fg,"left")}>{r.get("batcher_name","")}</td>'
-            f'<td {_td_b(bg,fg,"left")}>{r.get("plant_name","")}</td>'
-            f'<td {_td_b(bg,fg,"center")}>{round(float(r.get("mixer_theo_cap",0)),1)}</td>'
-            f'<td {_td_b(bg,fg,"center")}>{round(float(r.get("total_quantity",0)),1)}</td>'
-            f'<td {_td_b(bg,fg,"center")}>{round(float(r.get("total_time_hrs",0)),2)}</td>'
-            f'<td {_td_b(bg,fg,"center")}><b>{round(pct)}%</b></td>'
-            f'<td {_td_b(bg,fg,"center")}>{int(r.get("batch_count",0))}</td>'
+            f'<td {_td_b(bg,fg,"center",bb)}>{i+1}</td>'
+            f'<td {_td_b(bg,fg,"left",bb)}>{r.get("batcher_id","")}</td>'
+            f'<td {_td_b(bg,fg,"left",bb)}>{r.get("batcher_name","")}</td>'
+            f'<td {_td_b(bg,fg,"left",bb)}>{r.get("plant_name","")}</td>'
+            f'<td {_td_b(bg,fg,"center",bb)}>{round(float(r.get("mixer_theo_cap",0)),1)}</td>'
+            f'<td {_td_b(bg,fg,"center",bb)}>{round(float(r.get("total_quantity",0)),1)}</td>'
+            f'<td {_td_b(bg,fg,"center",bb)}>{round(float(r.get("total_time_hrs",0)),2)}</td>'
+            f'<td {_td_b(bg,fg,"center",bb)}><b>{round(pct)}%</b></td>'
+            f'<td {_td_b(bg,fg,"center",bb)}>{int(r.get("batch_count",0))}</td>'
             f'</tr>'
         )
     _tbl_css = ('border-collapse:collapse;width:auto;font-family:Arial,sans-serif;'
