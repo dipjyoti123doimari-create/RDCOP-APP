@@ -2400,7 +2400,7 @@ def _btrtp_mon_tag(month, year):
 
 
 _BTRTP_EXCLUDE = {"idsuser", "user", "oem", "admin", "oemadmin", "oem admin",
-                  "ids user", "id user", "system", "sysadmin"}
+                  "ids user", "id user", "system", "sysadmin", "pi"}
 
 def _btrtp_filter_and_sort(rows):
     """Remove system accounts and sort by plant cluster (best plant first,
