@@ -76,8 +76,13 @@ def parse_oracle_df(raw_df: pd.DataFrame) -> tuple:
 
     for _, r in raw_df.iterrows():
         batch_ref = str(r.get("batch_ref", "")).strip()
+        production_date = str(r.get("production_date", "")).strip()
+        plant_code_raw  = str(r.get("plant_code", "")).strip()
+
         if not batch_ref or batch_ref == "nan":
-            skip_log.append({"reason": "Blank batch reference", "batch_ref": batch_ref})
+            skip_log.append({"reason": "Blank batch reference", "batch_ref": batch_ref,
+                             "plant_code": plant_code_raw, "production_date": production_date,
+                             "quantity": "", "time_taken_min": ""})
             continue
 
         raw_time = r.get("time_taken_min", 0)
@@ -89,13 +94,19 @@ def parse_oracle_df(raw_df: pd.DataFrame) -> tuple:
         qty = float(r.get("quantity", 0) or 0)
 
         if time_min == 0:
-            skip_log.append({"reason": "Time taken = 0", "batch_ref": batch_ref, "time": raw_time})
+            skip_log.append({"reason": "Time taken = 0", "batch_ref": batch_ref,
+                             "plant_code": plant_code_raw, "production_date": production_date,
+                             "quantity": round(qty, 1), "time_taken_min": round(time_min, 1)})
             continue
         if time_min > 100:
-            skip_log.append({"reason": f"Time taken > 100 min ({time_min:.1f})", "batch_ref": batch_ref, "time": raw_time})
+            skip_log.append({"reason": f"Time taken > 100 min ({time_min:.1f})", "batch_ref": batch_ref,
+                             "plant_code": plant_code_raw, "production_date": production_date,
+                             "quantity": round(qty, 1), "time_taken_min": round(time_min, 1)})
             continue
         if qty <= 0:
-            skip_log.append({"reason": f"Quantity ≤ 0 ({qty})", "batch_ref": batch_ref, "qty": qty})
+            skip_log.append({"reason": f"Quantity ≤ 0 ({qty})", "batch_ref": batch_ref,
+                             "plant_code": plant_code_raw, "production_date": production_date,
+                             "quantity": round(qty, 1), "time_taken_min": round(time_min, 1)})
             continue
 
         plant_code, mixer_variant, lookup_code = _parse_batch(batch_ref)
