@@ -1559,7 +1559,7 @@ def tp_reports():
                     ora_note = f"Oracle: {len(raw_df):,} rows loaded for {fd} → {td}."
                 else:
                     ora_note = "Oracle returned no rows for this range."
-                    _mss("tp", "skip_log", [])
+                    # Don't clear skip_log — keep entries from the last real Oracle fetch
             except Exception as exc:
                 ora_note = f"Oracle fetch failed: {exc}"
 
@@ -4921,6 +4921,45 @@ def _run_dual_plant_fetch(from_date: str, to_date: str, label: str) -> tuple:
     results.sort(key=lambda r: (r["plant_code"], r["mixer"]))
     database.save_dual_plant_report(label, from_date, to_date, results)
     return results, warns
+
+
+# ── Validation ────────────────────────────────────────────────────────────────
+@app.route("/ecmd/validation")
+@auth.login_required
+def ecmd_validation():
+    calc_warnings = _ms("ecmd", "calc_warnings", [])
+    ctx = _ecmd_ctx()
+    ctx["active_page"] = "validation"
+    return render_template("ecmd_validation.html", calc_warnings=calc_warnings, **ctx)
+
+
+@app.route("/ecmd/validation/download-excel")
+@auth.login_required
+def ecmd_download_validation_excel():
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill, Font, Alignment
+    calc_warnings = _ms("ecmd", "calc_warnings", [])
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "ECMD Calc Warnings"
+    HDR_FILL = PatternFill("solid", fgColor="0A2540")
+    HDR_FONT = Font(bold=True, color="FFFFFF", size=10)
+    YEL_FILL = PatternFill("solid", fgColor="FFF3CD")
+    CTR = Alignment(vertical="center", horizontal="center")
+    LEFT = Alignment(vertical="center", horizontal="left")
+    ws.cell(1, 1, "#").fill = HDR_FILL; ws.cell(1, 1).font = HDR_FONT; ws.cell(1, 1).alignment = CTR
+    ws.cell(1, 2, "Warning Message").fill = HDR_FILL; ws.cell(1, 2).font = HDR_FONT; ws.cell(1, 2).alignment = CTR
+    ws.column_dimensions["A"].width = 6
+    ws.column_dimensions["B"].width = 90
+    for ri, w in enumerate(calc_warnings, 2):
+        ws.cell(ri, 1, ri - 1).fill = YEL_FILL; ws.cell(ri, 1).alignment = CTR
+        ws.cell(ri, 2, w).fill = YEL_FILL; ws.cell(ri, 2).alignment = LEFT
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True,
+                     download_name="ECMD_Calc_Warnings.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @app.route("/ecmd/dual-plant")

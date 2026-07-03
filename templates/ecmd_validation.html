@@ -1,0 +1,43 @@
+{% extends "ecmd_base.html" %}
+{% block title %}Validation / Calc Warnings{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Validation / Calc Warnings</h1>
+  <p>Warnings raised during the last ECMD calculation run</p>
+</div>
+
+{% if not calc_warnings %}
+<div class="glass-card" style="text-align:center;padding:28px">
+  <h3>Nothing to review</h3>
+  <p>No calculation warnings. Run an ECMD calculation to populate this page.</p>
+</div>
+{% else %}
+
+<!-- Toolbar -->
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+  <a href="{{ url_for('ecmd_download_validation_excel') }}" class="btn btn-secondary">⬇️ Download Report (Excel)</a>
+</div>
+
+<!-- Summary KPI -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">Calc Warnings</div>
+    <div class="kpi-value" style="color:#f59e0b">{{ calc_warnings | length | format_int }}</div>
+    <div class="kpi-sub">Raised on last calculation run</div>
+  </div>
+</div>
+
+<!-- Warnings list -->
+<div class="alert alert-info" style="margin-bottom:14px">
+  These warnings were raised during the last ECMD calculation. They do not stop the calculation but may indicate missing data that should be corrected.
+</div>
+{% for w in calc_warnings %}
+<div class="card" style="margin-bottom:10px;padding:14px 16px;border-left:4px solid rgba(245,158,11,0.6)">
+  <span style="font-size:13px">⚠️ {{ w }}</span>
+</div>
+{% endfor %}
+
+{% endif %}
+
+{% endblock %}

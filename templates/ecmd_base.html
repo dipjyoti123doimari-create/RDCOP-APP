@@ -68,6 +68,12 @@
       </a>
       {% endif %}
 
+      <!-- ── Validation ── -->
+      <div class="nav-section-label">LOGS</div>
+      <a href="{{ url_for('ecmd_validation') }}" class="nav-item nav-sub {% if active_page == 'validation' %}active{% endif %}">
+        <span class="nav-icon">⚠️</span><span class="nav-label">Validation Log</span>
+      </a>
+
       <!-- ── Admin ── -->
       {% if not current_user or current_user.role in UEP_ADMIN_ROLES %}
       <div class="nav-section-label">ADMIN</div>
