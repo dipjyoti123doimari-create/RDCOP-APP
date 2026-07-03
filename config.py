@@ -132,7 +132,7 @@ DEDUCTION_RULES = {
     "Non-Civil Trainee":  {"target": 500, "rate": 10},
     "PM & API":           {"target": 50,  "rate": 20},
     "QCI":                {"target": 50,  "rate": 20},
-    "MO":                 {"target": 500, "rate": 20},
+    "MO":                 {"target": 500, "rate": 10},
     "SPE":                {"target": 500, "rate": 20},
     "Production Officer":  {"target": 500, "rate": 20},
     "TL BPO":             {"target": 500, "rate": 20},
