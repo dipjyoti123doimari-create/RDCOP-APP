@@ -4,28 +4,32 @@ mapping_service.py
 Reads the existing Google Sheet to provide:
   - Plant Code  → Plant Name
   - Plant Code  → Plant Manager Email
-  - Plant Code  → Business Manager Email
+  - Plant Code  → BM/EA to MD Email
   - Plant Code  → Business Head Email
   - Plant Code  → CC Emails
   - Batcher Code → Batcher Name
 
+Plant emails live in the SAME "Plant Data for TP" sheet tab as the existing
+TP plant master (extra columns added alongside Plant Code/Plant/Exco Location/
+etc.) — not a separate tab. TP's own sync (google_sheets.sync_tp_plant_data)
+only keeps its 6 required columns, so this module re-reads the raw tab itself
+via fetch_sheet_tab() to pick up the email columns TP's sync discards.
+
 Expected Google Sheet columns (flexible — fuzzy matched):
   Plant Code / Plant_Code / PlantCode
-  Plant Name / Plant_Name / PlantName
+  Plant Name / Plant_Name / PlantName / Plant
   Plant Manager Email / PlantManagerEmail / PM Email
-  Business Manager Email / BusinessManagerEmail / BM Email
+  BM/EA to MD Email / Business Manager Email / BM Email
   Business Head Email / BusinessHeadEmail / BH Email
   CC Email / CC Emails / CCEmail / CC
   Batcher Code / BatcherCode / Employee Code
   Batcher Name / BatcherName / Employee Name
 
-Sheet IDs and tab names are read from module_settings (prefix "sla."):
-  sla.gsheet_id           — Google Sheet ID (same sheet as TP/BTRTP if applicable)
-  sla.plant_mapping_tab   — tab name for plant mapping (default: "SLA Plant Mapping")
+Sheet IDs and tab names are read from module_settings (prefix "sla."),
+defaulting to the TP module's own sheet ID + worksheet name:
+  sla.gsheet_id           — Google Sheet ID (defaults to tp.gsheet_id)
+  sla.plant_mapping_tab   — tab name for plant mapping (defaults to tp.gsheet_worksheet, "Plant Data for TP")
   sla.batcher_mapping_tab — tab name for batcher mapping (default: "SLA Batcher Mapping")
-
-If those tabs don't exist the user must configure them or add them to the
-existing shared Google Sheet.
 """
 
 import pandas as pd
@@ -58,8 +62,12 @@ def _col_val(row, *candidates):
 def _get_cfg():
     def _ms(k, d=""):
         return (database.get_module_setting("sla", k, d) or d).strip()
-    sheet_id   = _ms("gsheet_id", database.get_setting("tp.gsheet_id", "") or "")
-    plant_tab  = _ms("plant_mapping_tab",   "SLA Plant Mapping")
+    # Plant emails live in the same "Plant Data for TP" sheet tab (extra columns
+    # added alongside the existing TP plant-master columns) — not a separate tab.
+    tp_sheet_id  = database.get_module_setting("tp", "gsheet_id", "") or ""
+    tp_worksheet = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP") or "Plant Data for TP"
+    sheet_id    = _ms("gsheet_id", tp_sheet_id)
+    plant_tab   = _ms("plant_mapping_tab",   tp_worksheet)
     batcher_tab = _ms("batcher_mapping_tab", "SLA Batcher Mapping")
     return sheet_id, plant_tab, batcher_tab
 
@@ -187,24 +195,25 @@ def get_plant_mapping() -> dict:
     df = _fetch_tab(sheet_id, plant_tab)
 
     col_code = _find_col(df, "Plant Code", "PlantCode", "Plant_Code") if not df.empty else None
-    col_name = _find_col(df, "Plant Name", "PlantName", "Plant_Name") if not df.empty else None
+    col_name = _find_col(df, "Plant Name", "PlantName", "Plant_Name", "Plant") if not df.empty else None
     col_pm   = _find_col(df, "Plant Manager Email", "PM Email", "PlantManagerEmail", "PMEmail") if not df.empty else None
-    col_bm   = _find_col(df, "Business Manager Email", "BM Email", "BusinessManagerEmail", "BMEmail") if not df.empty else None
+    col_bm   = _find_col(df, "BM/EA to MD Email", "BM/EA to MD", "Business Manager Email",
+                         "BM Email", "BusinessManagerEmail", "BMEmail") if not df.empty else None
     col_bh   = _find_col(df, "Business Head Email", "BH Email", "BusinessHeadEmail", "BHEmail") if not df.empty else None
     col_cc   = _find_col(df, "CC Email", "CC Emails", "CCEmail", "CC", "CCEmails") if not df.empty else None
     col_mc   = _find_col(df, "Mixer Capacity", "MixerCapacity", "Mixer_Capacity",
-                         "Mixer Cap", "MixerCap") if not df.empty else None
+                         "Mixer Cap", "MixerCap", "Mixer Theo. Capacity",
+                         "Mixer Theo Capacity") if not df.empty else None
 
-    # Guard against the public-CSV fallback returning the WRONG tab (e.g. the
-    # default employee-master tab) when "SLA Plant Mapping" doesn't exist.
-    # A valid SLA plant tab must have at least a plant code AND one email column.
+    # Guard against the public-CSV fallback returning the wrong tab.
+    # A valid plant tab must have at least a plant code AND one email column.
     is_valid_sla_tab = bool(col_code and (col_pm or col_bm or col_bh))
     mapping = {}
 
     if not is_valid_sla_tab:
-        # No proper SLA sheet tab → fall back to the existing TP plant master
-        # for plant name + mixer capacity. Emails will be blank (must add the
-        # SLA Plant Mapping tab to enable alert recipients).
+        # Email columns not found in the TP plant sheet → fall back to the
+        # TP plant master for plant name + mixer capacity. Emails will be
+        # blank until the email columns are added to the sheet tab.
         return _fallback_plant_mapping_from_tp()
 
     # TP master mixer caps — used to fill any plant the sheet leaves blank.
