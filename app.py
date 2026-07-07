@@ -489,6 +489,230 @@ def _register_uep_mail_jobs():
                                replace_existing=True, **cron_kwargs)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# RDC MAIL SCHEDULER — shared system for I&D / TP / BTRTP report modules.
+# Mirrors the ECMD/DPU/PFS scheduler exactly: per-module dedicated page with
+# frequency picker (daily/weekly/monthly/twice-monthly) + custom Subject/Body
+# with a {period} placeholder auto-filled with the report month at send time.
+# All settings are stored under each module's own prefix, key "mail_*".
+# ═══════════════════════════════════════════════════════════════════════════
+
+# module id → (route endpoint, page title, icon, default subject, default body)
+# {period} is replaced with the report month label (e.g. "June 2026") at send.
+_RDC_MAIL_MODULES = {
+    "id": {
+        "endpoint": "id_mail_scheduler",
+        "title":    "I&D — Incentive & Deduction Report",
+        "icon":     "📊",
+        "subject":  "Report of Production, Penalty & Incentive summary "
+                    "(PI/QCI, MO, Teamlease & Trainees) - {period}",
+        "body":     "Dear Sir,\n\nPlease find attached the compiled Incentive "
+                    "& Deduction report for {period}.\n\nKindly review the "
+                    "attached Excel file.\n\nRegards,\nRDC Operations",
+    },
+    "tp": {
+        "endpoint": "tp_mail_scheduler",
+        "title":    "TP — Plant Throughput Report",
+        "icon":     "🏭",
+        "subject":  "RDC-TP Plant Throughput Report — {period}",
+        "body":     "Dear Team,\n\nPlease find attached the Plant Throughput "
+                    "Report for {period}.\n\nRegards,\nRDC Operations",
+    },
+    "btrtp": {
+        "endpoint": "btrtp_mail_scheduler",
+        "title":    "BTRTP — Batcher Throughput Report",
+        "icon":     "👷",
+        "subject":  "RDC-BTRTP Batcher Throughput Report — {period}",
+        "body":     "Dear Team,\n\nPlease find attached the Batcher Throughput "
+                    "Report for {period}.\n\nRegards,\nRDC Operations",
+    },
+}
+
+
+def _rdc_mail_redirect(module):
+    cfg = _RDC_MAIL_MODULES.get(module)
+    return redirect(url_for(cfg["endpoint"] if cfg else "page_dashboard"))
+
+
+def _rdc_mail_sched(module):
+    """Read a module's saved mail-scheduler settings (with defaults)."""
+    cfg = _RDC_MAIL_MODULES[module]
+    def _get(key, default=""):
+        return database.get_module_setting(module, key, default)
+    return {
+        "enabled":         _get("mail_enabled", "false") == "true",
+        "time":            _get("mail_time", "08:00"),
+        "to":              _get("mail_to", ""),
+        "cc":              _get("mail_cc", ""),
+        "last_status":     _get("mail_last_status", ""),
+        "freq":            _get("mail_freq", "monthly"),
+        "weekday":         _get("mail_weekday", "0"),
+        "day1":            _get("mail_day1", "last"),
+        "day2":            _get("mail_day2", "last"),
+        "subject":         _get("mail_subject", ""),
+        "body":            _get("mail_body", ""),
+        "default_subject": cfg["subject"],
+        "default_body":    cfg["body"],
+    }
+
+
+def _rdc_mail_texts(module, label):
+    """Return (subject, body_text) for a module, filling {period}/{month}/{date}."""
+    cfg = _RDC_MAIL_MODULES[module]
+    subj = database.get_module_setting(module, "mail_subject", "").strip() or cfg["subject"]
+    body = database.get_module_setting(module, "mail_body", "").strip() or cfg["body"]
+
+    def _fill(text):
+        for ph in ("{period}", "{month}", "{date}"):
+            text = text.replace(ph, label)
+        return text
+
+    return _fill(subj), _fill(body)
+
+
+def _rdc_recent_months(n=12):
+    """List the last n months as [{'month','year','month_name'}] for manual send."""
+    import calendar as _cal
+    out = []
+    today = _date.today()
+    y, m = today.year, today.month
+    for _ in range(n):
+        out.append({"month": m, "year": y, "month_name": _cal.month_name[m]})
+        m -= 1
+        if m == 0:
+            m, y = 12, y - 1
+    return out
+
+
+def _rdc_prev_month():
+    """(month, year) of the month that just ended — used by scheduled sends."""
+    today = _date.today()
+    prev = today.replace(day=1) - timedelta(days=1)
+    return prev.month, prev.year
+
+
+def _rdc_send_report(module, month, year, to_addr, cc_addr):
+    """Build a module's report for month/year fresh and email it.
+    Raises on failure (caller records status / flashes)."""
+    import calendar as _cal
+    label = f"{_cal.month_name[month]} {year}"
+    subject, body = _rdc_mail_texts(module, label)
+
+    import calendar as _cal2
+    fd = str(_date(year, month, 1))
+    td = str(_date(year, month, _cal2.monthrange(year, month)[1]))
+
+    if module == "id":
+        res = calculator.run_calculation(month=month, year=year,
+                                         start_date=fd, end_date=td, persist=False)
+        if res.get("error"):
+            raise RuntimeError(res["error"])
+        rows     = res.get("results_rows", [])
+        unmapped = res.get("unmapped_rows", [])
+        if not rows:
+            raise ValueError(f"No I&D data found for {label}.")
+        df_f   = pd.DataFrame(rows)     if rows     else pd.DataFrame(columns=RESULT_COLS)
+        df_u   = pd.DataFrame(unmapped) if unmapped else pd.DataFrame()
+        val_df = database.read_table("validation_errors")
+        meta   = _build_meta(fd, td, rows, unmapped, "Scheduled report")
+        xlsx   = report_generator.generate_excel_report(df_f, df_u, val_df, meta)
+        fname  = f"incentive_report_{fd}_to_{td}.xlsx"
+        tables_html = report_generator.build_email_tables_html(df_f)
+        import html as _h
+        html_body = (
+            f'<html><body style="margin:0;padding:8px 10px;'
+            f'font-family:Arial,Calibri,sans-serif;font-size:12px;color:#000;">'
+            f'<p style="margin:0 0 3px 0;">{_h.escape(body).replace(chr(10), "<br>")}</p>'
+            f'{tables_html}</body></html>')
+
+    elif module == "tp":
+        plant_rows, loc_rows, warns = tp_calculator.run_tp_calculation(
+            month, year, from_date=fd, to_date=td)
+        if not plant_rows:
+            raise ValueError(f"No TP data found for {label}"
+                             + (f" — {warns[0]}" if warns else "."))
+        xlsx  = _build_tp_excel(plant_rows, loc_rows)
+        fname = f"RDC_TP_{year}_{month:02d}.xlsx"
+        tables_html = _tp_build_html_tables(plant_rows, loc_rows, month, year)
+        import html as _h
+        html_body = (
+            f'<html><body style="margin:0;padding:8px 10px;'
+            f'font-family:Arial,Calibri,sans-serif;font-size:12px;color:#000;">'
+            f'<p style="margin:0 0 6px 0;">{_h.escape(body).replace(chr(10), "<br>")}</p>'
+            f'{tables_html}</body></html>')
+
+    elif module == "btrtp":
+        batcher_rows, warns = btrtp_calculator.run_btrtp_calculation(
+            month, year, from_date=fd, to_date=td)
+        if not batcher_rows:
+            raise ValueError(f"No BTRTP data found for {label}"
+                             + (f" — {warns[0]}" if warns else "."))
+        rows  = _btrtp_filter_and_sort(batcher_rows)
+        xlsx  = _btrtp_build_excel(rows, month, year)
+        fname = f"RDC_BTRTP_{year}_{month:02d}.xlsx"
+        import html as _h
+        html_body = (
+            f'<html><body style="margin:0;padding:8px 10px;'
+            f'font-family:Arial,Calibri,sans-serif;font-size:12px;color:#000;">'
+            f'<p style="margin:0 0 6px 0;">{_h.escape(body).replace(chr(10), "<br>")}</p>'
+            f'</body></html>')
+    else:
+        raise ValueError(f"Unknown module {module}")
+
+    result = email_helper.send_report_email(
+        to_emails=to_addr, cc_emails=cc_addr,
+        subject=subject, body=body,
+        attachment_bytes=xlsx, attachment_name=fname,
+        html_body=html_body,
+    )
+    if not result.get("success"):
+        raise RuntimeError(result.get("error") or "Unknown email send failure.")
+
+
+def _make_rdc_scheduled_sender(module):
+    """Build the scheduled-send callback for a module (sends previous month)."""
+    def _job():
+        with app.app_context():
+            try:
+                to_addr = database.get_module_setting(module, "mail_to", "")
+                cc_addr = database.get_module_setting(module, "mail_cc", "")
+                if not to_addr:
+                    database.set_module_setting(module, "mail_last_status",
+                                                "No recipient configured")
+                    return
+                month, year = _rdc_prev_month()
+                _rdc_send_report(module, month, year, to_addr, cc_addr)
+                database.set_module_setting(
+                    module, "mail_last_status",
+                    f"Sent {_dt.now():%d %b %Y %H:%M}")
+            except Exception as e:
+                database.set_module_setting(module, "mail_last_status", f"Failed: {e}")
+    return _job
+
+
+_RDC_MAIL_SENDERS = {m: _make_rdc_scheduled_sender(m) for m in _RDC_MAIL_MODULES}
+
+
+def _register_rdc_mail_jobs():
+    """Re-register enabled I&D/TP/BTRTP mail jobs on startup (survive restart)."""
+    for module in _RDC_MAIL_MODULES:
+        if database.get_module_setting(module, "mail_enabled", "false") == "true":
+            sched_time = database.get_module_setting(module, "mail_time", "08:00")
+            try:
+                h, m = map(int, sched_time.split(":"))
+            except Exception:
+                h, m = 8, 0
+            freq    = database.get_module_setting(module, "mail_freq", "monthly")
+            weekday = database.get_module_setting(module, "mail_weekday", "0")
+            day1    = database.get_module_setting(module, "mail_day1", "last")
+            day2    = database.get_module_setting(module, "mail_day2", "last")
+            cron_kwargs = _uep_cron_kwargs(freq, weekday, day1, day2)
+            _scheduler.add_job(id=f"{module}_report_mail",
+                               func=_RDC_MAIL_SENDERS[module],
+                               trigger="cron", hour=h, minute=m,
+                               replace_existing=True, **cron_kwargs)
+
+
 _start_scheduler()
 
 # Seed Oracle cache on startup (45s delay — waits for network/VPN to settle)
@@ -5609,6 +5833,139 @@ def _pfs_send_scheduled_email():
             database.set_module_setting("ecmd", "pfs_mail_last_status", f"Failed: {e}")
 
 
+# ── RDC Mail Scheduler routes (I&D / TP / BTRTP) ──────────────────────────────
+
+_RDC_MAIL_BASE = {
+    "id":    "base.html",
+    "tp":    "tp_base.html",
+    "btrtp": "btrtp_base.html",
+}
+
+
+def _render_rdc_mail_scheduler(module, ctx):
+    """Shared render for a module's Mail Scheduler page."""
+    cfg = _RDC_MAIL_MODULES[module]
+    return render_template(
+        "rdc_mail_scheduler.html",
+        base_template=_RDC_MAIL_BASE[module],
+        module=module,
+        page_title=cfg["title"],
+        page_icon=cfg["icon"],
+        email_configured=email_helper.uep_is_configured(),
+        sched=_rdc_mail_sched(module),
+        recent_months=_rdc_recent_months(),
+        **ctx)
+
+
+@app.route("/mail-scheduler")
+def id_mail_scheduler():
+    _ss("active_page", "mail_scheduler")
+    return _render_rdc_mail_scheduler("id", {})
+
+
+@app.route("/tp/mail-scheduler")
+def tp_mail_scheduler():
+    ctx = _tp_ctx()
+    ctx["active_page"] = "mail_scheduler"
+    return _render_rdc_mail_scheduler("tp", ctx)
+
+
+@app.route("/btrtp/mail-scheduler")
+def btrtp_mail_scheduler():
+    ctx = _btrtp_ctx()
+    ctx["active_page"] = "mail_scheduler"
+    return _render_rdc_mail_scheduler("btrtp", ctx)
+
+
+@app.route("/rdc/mail-scheduler/save", methods=["POST"])
+def rdc_mail_scheduler_save():
+    module = request.form.get("module", "")
+    if module not in _RDC_MAIL_MODULES:
+        flash("Unknown module.", "error")
+        return redirect(url_for("page_dashboard"))
+
+    enabled = "true" if request.form.get("enabled") == "on" else "false"
+    freq    = request.form.get("freq", "monthly").strip()
+    weekday = request.form.get("weekday", "0").strip()
+    day1    = request.form.get("day1", "last").strip()
+    day2    = request.form.get("day2", "last").strip()
+
+    database.set_module_setting(module, "mail_enabled", enabled)
+    database.set_module_setting(module, "mail_time",    request.form.get("time", "08:00"))
+    database.set_module_setting(module, "mail_to",      request.form.get("to", "").strip())
+    database.set_module_setting(module, "mail_cc",      request.form.get("cc", "").strip())
+    database.set_module_setting(module, "mail_freq",    freq)
+    database.set_module_setting(module, "mail_weekday", weekday)
+    database.set_module_setting(module, "mail_day1",    day1)
+    database.set_module_setting(module, "mail_day2",    day2)
+    database.set_module_setting(module, "mail_subject", request.form.get("subject", "").strip())
+    database.set_module_setting(module, "mail_body",    request.form.get("body", "").strip())
+
+    job_id = f"{module}_report_mail"
+    try:
+        h, m = map(int, request.form.get("time", "08:00").split(":"))
+    except Exception:
+        h, m = 8, 0
+
+    if enabled == "true":
+        cron_kwargs = _uep_cron_kwargs(freq, weekday, day1, day2)
+        _scheduler.add_job(id=job_id, func=_RDC_MAIL_SENDERS[module],
+                           trigger="cron", hour=h, minute=m,
+                           replace_existing=True, **cron_kwargs)
+    else:
+        try:
+            _scheduler.remove_job(job_id)
+        except Exception:
+            pass
+
+    flash(f"{module.upper()} mail scheduler {'enabled' if enabled == 'true' else 'disabled'}.", "success")
+    return _rdc_mail_redirect(module)
+
+
+@app.route("/rdc/mail-scheduler/send-now", methods=["POST"])
+def rdc_mail_scheduler_send_now():
+    module = request.form.get("module", "")
+    if module not in _RDC_MAIL_MODULES:
+        flash("Unknown module.", "error")
+        return redirect(url_for("page_dashboard"))
+    to_addr = database.get_module_setting(module, "mail_to", "")
+    cc_addr = database.get_module_setting(module, "mail_cc", "")
+    if not to_addr:
+        flash("No recipient configured — save a 'To' address first.", "error")
+        return _rdc_mail_redirect(module)
+    try:
+        month, year = _rdc_prev_month()
+        _rdc_send_report(module, month, year, to_addr, cc_addr)
+        flash(f"{module.upper()} report email sent successfully.", "success")
+    except Exception as e:
+        flash(f"Failed to send {module.upper()} email: {e}", "error")
+    return _rdc_mail_redirect(module)
+
+
+@app.route("/rdc/mail-scheduler/manual-send", methods=["POST"])
+def rdc_mail_scheduler_manual_send():
+    module  = request.form.get("module", "")
+    if module not in _RDC_MAIL_MODULES:
+        flash("Unknown module.", "error")
+        return redirect(url_for("page_dashboard"))
+    to_addr = request.form.get("to", "").strip()
+    cc_addr = request.form.get("cc", "").strip()
+    month   = request.form.get("month", "").strip()   # "6-2026"
+    if not to_addr:
+        flash("Recipient (To) is required for manual send.", "error")
+        return _rdc_mail_redirect(module)
+    if not month:
+        flash("Please select a month for manual send.", "error")
+        return _rdc_mail_redirect(module)
+    try:
+        m, y = map(int, month.split("-"))
+        _rdc_send_report(module, m, y, to_addr, cc_addr)
+        flash(f"{module.upper()} report for {month} sent to {to_addr}.", "success")
+    except Exception as e:
+        flash(f"Manual send failed: {e}", "error")
+    return _rdc_mail_redirect(module)
+
+
 # ── System Config ─────────────────────────────────────────────────────────────
 
 @app.route("/sysconfig")
@@ -6441,6 +6798,7 @@ def sla_api_logs():
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 _register_uep_mail_jobs()
+_register_rdc_mail_jobs()
 
 if __name__ == "__main__":
     print("=" * 60)

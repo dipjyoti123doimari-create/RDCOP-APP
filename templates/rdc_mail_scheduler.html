@@ -1,0 +1,219 @@
+{% extends base_template %}
+{% block title %}Mail Scheduler{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>{{ page_icon }} Auto Mail Scheduler</h1>
+  <p>Configure the automatic report email for this module</p>
+</div>
+
+{% if not email_configured %}
+<div class="alert alert-warning">
+  ⚠️ SMTP not configured. Go to <a href="{{ url_for('sysconfig_page') }}">System Config</a> to set up email before enabling the scheduler.
+</div>
+{% endif %}
+
+<div class="card" style="margin-bottom:18px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="font-size:22px">{{ page_icon }}</span>
+      <div>
+        <div style="font-weight:700;font-size:15px">{{ page_title }}</div>
+        <div style="font-size:11px;color:var(--text-muted)" id="freq-summary">—</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      {% if sched.last_status %}
+      <span style="font-size:11px;color:var(--text-muted);background:var(--surface);
+                   border:1px solid var(--border);border-radius:5px;padding:2px 8px">
+        Last: {{ sched.last_status }}
+      </span>
+      {% endif %}
+      <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:5px;
+        {% if sched.enabled %}background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.3)
+        {% else %}background:rgba(107,114,128,0.12);color:var(--text-muted);border:1px solid var(--border){% endif %}">
+        {{ 'ENABLED' if sched.enabled else 'DISABLED' }}
+      </span>
+    </div>
+  </div>
+
+  <form method="POST" action="{{ url_for('rdc_mail_scheduler_save') }}">
+    <input type="hidden" name="module" value="{{ module }}">
+    <div class="form-grid" style="align-items:flex-end;gap:14px">
+      <div class="form-group">
+        <label>Recipients (To)</label>
+        <input type="text" name="to" value="{{ sched.to }}"
+               placeholder="email1@domain.com, email2@domain.com"
+               style="min-width:260px">
+      </div>
+      <div class="form-group">
+        <label>CC</label>
+        <input type="text" name="cc" value="{{ sched.cc }}"
+               placeholder="cc@domain.com" style="min-width:200px">
+      </div>
+      <div class="form-group">
+        <label>Frequency</label>
+        <select name="freq" id="ms-freq" onchange="msFreqChange()" style="min-width:150px">
+          <option value="daily"         {% if sched.freq == 'daily' %}selected{% endif %}>Daily</option>
+          <option value="weekly"        {% if sched.freq == 'weekly' %}selected{% endif %}>Weekly</option>
+          <option value="monthly"       {% if sched.freq == 'monthly' %}selected{% endif %}>Monthly</option>
+          <option value="twice_monthly" {% if sched.freq == 'twice_monthly' %}selected{% endif %}>Twice Monthly</option>
+        </select>
+      </div>
+      <div class="form-group" id="ms-weekday-field" style="display:none">
+        <label>On</label>
+        <select name="weekday" id="ms-weekday" style="min-width:130px">
+          {% for i, wd in [(0,'Monday'),(1,'Tuesday'),(2,'Wednesday'),(3,'Thursday'),(4,'Friday'),(5,'Saturday'),(6,'Sunday')] %}
+          <option value="{{ i }}" {% if sched.weekday|string == i|string %}selected{% endif %}>{{ wd }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" id="ms-day1-field" style="display:none">
+        <label>On Day</label>
+        <select name="day1" id="ms-day1" style="min-width:110px">
+          <option value="last" {% if sched.day1 == 'last' %}selected{% endif %}>Last day</option>
+          {% for d in range(1, 29) %}
+          <option value="{{ d }}" {% if sched.day1|string == d|string %}selected{% endif %}>{{ d }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" id="ms-day2-field" style="display:none">
+        <label>And Day</label>
+        <select name="day2" id="ms-day2" style="min-width:110px">
+          <option value="last" {% if sched.day2 == 'last' %}selected{% endif %}>Last day</option>
+          {% for d in range(1, 29) %}
+          <option value="{{ d }}" {% if sched.day2|string == d|string %}selected{% endif %}>{{ d }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Send Time</label>
+        <input type="time" name="time" value="{{ sched.time }}" style="min-width:110px">
+      </div>
+      <div class="form-group" style="flex-direction:row;align-items:center;gap:8px;padding-bottom:2px">
+        <label style="margin:0;white-space:nowrap;cursor:pointer">
+          <input type="checkbox" name="enabled" {% if sched.enabled %}checked{% endif %}
+                 style="margin-right:5px">
+          Enable Auto Send
+        </label>
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-top:12px">
+      <label>Email Subject
+        <span style="font-size:10px;color:var(--text-muted)">— type {period} where the month should appear, e.g. "June 2026" · leave blank for default</span>
+      </label>
+      <input type="text" name="subject" value="{{ sched.subject }}"
+             placeholder="{{ sched.default_subject }}" style="width:100%;max-width:680px">
+    </div>
+    <div class="form-group" style="margin-top:10px">
+      <label>Email Body
+        <span style="font-size:10px;color:var(--text-muted)">— plain text, {period} auto-fills the month · leave blank for default</span>
+      </label>
+      <textarea name="body" rows="5" placeholder="{{ sched.default_body }}"
+                style="width:100%;max-width:680px">{{ sched.body }}</textarea>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button type="submit" class="btn btn-primary">💾 Save Settings</button>
+    </div>
+  </form>
+
+  <!-- Send Now -->
+  <form method="POST" action="{{ url_for('rdc_mail_scheduler_send_now') }}"
+        style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+    <input type="hidden" name="module" value="{{ module }}">
+    <div style="display:flex;align-items:center;gap:12px">
+      <button type="submit" class="btn btn-secondary"
+              {% if not email_configured %}disabled title="Configure SMTP first"{% endif %}>
+        📤 Send Now
+      </button>
+      <span style="font-size:11px;color:var(--text-muted)">
+        Immediately sends last month's report to the configured recipients (fetched fresh).
+      </span>
+    </div>
+  </form>
+</div>
+
+<!-- Manual Send -->
+<div class="card" style="margin-bottom:18px;border-color:rgba(99,91,255,0.25)">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+    <span style="font-size:22px">✉️</span>
+    <div>
+      <div style="font-weight:700;font-size:15px">Manual Send</div>
+      <div style="font-size:11px;color:var(--text-muted)">Send this report for any month right now — overrides scheduler recipients</div>
+    </div>
+  </div>
+
+  <form method="POST" action="{{ url_for('rdc_mail_scheduler_manual_send') }}">
+    <input type="hidden" name="module" value="{{ module }}">
+    <div class="form-grid" style="align-items:flex-start;gap:14px">
+      <div class="form-group">
+        <label>Month</label>
+        <select name="month" style="min-width:180px">
+          <option value="">— Select month —</option>
+          {% for m in recent_months %}
+          <option value="{{ m.month }}-{{ m.year }}">{{ m.month_name }} {{ m.year }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Send To <span style="font-size:10px;color:var(--text-muted)">(overrides saved)</span></label>
+        <input type="text" name="to" value="{{ sched.to }}" placeholder="email@domain.com" style="min-width:220px">
+      </div>
+      <div class="form-group">
+        <label>CC <span style="font-size:10px;color:var(--text-muted)">(optional)</span></label>
+        <input type="text" name="cc" value="{{ sched.cc }}" placeholder="cc@domain.com" style="min-width:180px">
+      </div>
+    </div>
+
+    <div style="margin-top:14px;display:flex;align-items:center;gap:12px">
+      <button type="submit" class="btn btn-primary"
+              {% if not email_configured %}disabled title="Configure SMTP first"{% endif %}>
+        📤 Send Now
+      </button>
+      <span style="font-size:11px;color:var(--text-muted)">
+        Data is fetched fresh and calculated for the selected month before sending.
+      </span>
+    </div>
+  </form>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+var WEEKDAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+
+function msFreqChange() {
+  var freq = document.getElementById('ms-freq').value;
+  document.getElementById('ms-weekday-field').style.display = freq === 'weekly' ? '' : 'none';
+  document.getElementById('ms-day1-field').style.display    = (freq === 'monthly' || freq === 'twice_monthly') ? '' : 'none';
+  document.getElementById('ms-day2-field').style.display     = freq === 'twice_monthly' ? '' : 'none';
+  msUpdateSummary();
+}
+
+function msUpdateSummary() {
+  var freq = document.getElementById('ms-freq').value;
+  var el = document.getElementById('freq-summary');
+  var dayLabel = function(v) { return v === 'last' ? 'the last day' : 'day ' + v; };
+  if (freq === 'daily') {
+    el.textContent = 'Runs automatically every day';
+  } else if (freq === 'weekly') {
+    var wd = WEEKDAY_NAMES[parseInt(document.getElementById('ms-weekday').value, 10)] || 'Monday';
+    el.textContent = 'Runs automatically every ' + wd;
+  } else if (freq === 'twice_monthly') {
+    var d1 = document.getElementById('ms-day1').value, d2 = document.getElementById('ms-day2').value;
+    el.textContent = 'Runs automatically on ' + dayLabel(d1) + ' and ' + dayLabel(d2) + ' of each month';
+  } else {
+    var d1m = document.getElementById('ms-day1').value;
+    el.textContent = 'Runs automatically on ' + dayLabel(d1m) + ' of each month';
+  }
+}
+
+document.getElementById('ms-freq').addEventListener('change', msUpdateSummary);
+document.getElementById('ms-weekday').addEventListener('change', msUpdateSummary);
+document.getElementById('ms-day1').addEventListener('change', msUpdateSummary);
+document.getElementById('ms-day2').addEventListener('change', msUpdateSummary);
+msFreqChange();
+</script>
+{% endblock %}
