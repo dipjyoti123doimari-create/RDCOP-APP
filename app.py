@@ -437,6 +437,26 @@ def _start_scheduler():
     _scheduler.start()
 
 
+def _register_uep_mail_jobs():
+    """Re-register any previously enabled ECMD/DPU/PFS auto-send jobs so they
+    survive an app restart. Must run after those functions are defined."""
+    uep_jobs = {
+        "ecmd": ("email_schedule", _ecmd_send_scheduled_email, "last"),
+        "dpu":  ("dpu_mail",       _dpu_send_scheduled_email,  "15,last"),
+        "pfs":  ("pfs_mail",       _pfs_send_scheduled_email,  "15,last"),
+    }
+    for mod, (prefix, func, day) in uep_jobs.items():
+        if database.get_module_setting("ecmd", f"{prefix}_enabled", "false") == "true":
+            sched_time = database.get_module_setting("ecmd", f"{prefix}_time", "08:00")
+            try:
+                h, m = map(int, sched_time.split(":"))
+            except Exception:
+                h, m = 8, 0
+            _scheduler.add_job(id=f"ecmd_{mod}_mail", func=func,
+                               trigger="cron", day=day, hour=h, minute=m,
+                               replace_existing=True)
+
+
 _start_scheduler()
 
 # Seed Oracle cache on startup (45s delay — waits for network/VPN to settle)
@@ -5249,18 +5269,18 @@ def ecmd_mail_scheduler_save():
     if enabled == "true":
         if module == "ecmd":
             # Monthly — runs on last day of month
-            scheduler.add_job(id=job_id, func=_ecmd_send_scheduled_email,
+            _scheduler.add_job(id=job_id, func=_ecmd_send_scheduled_email,
                               trigger="cron", day="last", hour=h, minute=m,
                               replace_existing=True)
         else:
             # Fortnightly — runs on 15th and last day
             func = _dpu_send_scheduled_email if module == "dpu" else _pfs_send_scheduled_email
-            scheduler.add_job(id=job_id, func=func,
+            _scheduler.add_job(id=job_id, func=func,
                               trigger="cron", day="15,last", hour=h, minute=m,
                               replace_existing=True)
     else:
         try:
-            scheduler.remove_job(job_id)
+            _scheduler.remove_job(job_id)
         except Exception:
             pass
 
@@ -5375,19 +5395,45 @@ def _send_pfs_email(rows, label, to_addr, cc_addr):
 
 
 def _send_ecmd_report_email(month, year, to_addr, cc_addr):
+    """Build the real Energy/DG Excel report from saved ecmd_results and email it."""
     from calendar import month_name
     label = f"{month_name[month]} {year}"
-    body = f"<h3>ECMD Monthly Energy Report — {label}</h3><p>Please find the report attached.</p>"
-    email_helper.send_uep_email(to=to_addr, cc=cc_addr,
-                            subject=f"RDC-UEP ECMD Report — {label}",
-                            body=body, html=True)
+
+    plant_rows = database.get_ecmd_results_for_month(month, year)
+    if not plant_rows:
+        raise ValueError(f"No calculated ECMD data found for {label}.")
+    loc_rows = ecmd_calculator.build_location_summary(plant_rows)
+
+    excel_bytes = _ecmd_build_excel(plant_rows, loc_rows, month, year)
+    fname = f"RDC_ECMD_{year}_{month:02d}.xlsx"
+    subject = f"RDC-UEP ECMD Report — {label}"
+    body = f"Dear Team,\n\nPlease find attached the Energy Consumption & Mixer DG Ratio Report for {label}.\n\nRegards,\nRDC Operations"
+
+    result = email_helper.send_report_email(
+        to_emails=to_addr, cc_emails=cc_addr,
+        subject=subject, body=body,
+        attachment_bytes=excel_bytes, attachment_name=fname,
+    )
+    if not result.get("success"):
+        raise RuntimeError(result.get("error") or "Unknown email send failure.")
 
 
 def _ecmd_send_scheduled_email():
-    """Send ECMD monthly report email (existing logic reused)."""
+    """Send ECMD monthly report email for the month that just ended, using saved ecmd_results."""
     with app.app_context():
         try:
             today = date.today()
+            prev = today.replace(day=1) - timedelta(days=1)
+            month, year = prev.month, prev.year
+
+            to_addr = database.get_module_setting("ecmd", "email_schedule_to", "")
+            cc_addr = database.get_module_setting("ecmd", "email_schedule_cc", "")
+            if not to_addr:
+                database.set_module_setting("ecmd", "email_schedule_last_status",
+                                            "No recipient configured")
+                return
+
+            _send_ecmd_report_email(month, year, to_addr, cc_addr)
             database.set_module_setting("ecmd", "email_schedule_last_status",
                                         f"Sent {today.strftime('%d %b %Y')}")
         except Exception as e:
@@ -6324,6 +6370,8 @@ def sla_api_logs():
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
+
+_register_uep_mail_jobs()
 
 if __name__ == "__main__":
     print("=" * 60)
