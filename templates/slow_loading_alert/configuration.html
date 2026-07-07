@@ -62,27 +62,89 @@
 {% if is_super_admin %}
 <div style="display:flex;flex-direction:column;gap:16px">
 
-  <!-- Alert toggles -->
+  <!-- Alert mailer on/off + test mode -->
+  <div class="card">
+    <div class="card-header">Alert Mailer</div>
+    <div style="display:flex;flex-direction:column;gap:12px;padding:4px 0">
+
+      {% if settings.test_mode == 'true' %}
+      <div class="alert alert-warning" style="margin:0">
+        🧪 <strong>Test mode is ON</strong> — hourly alerts and daily summaries are sent
+        <strong>only to each plant's CC Emails</strong>. Plant Managers, BM/EA-to-MD and
+        Business Heads are <strong>not</strong> emailed. Turn this off to go live.
+      </div>
+      {% endif %}
+
+      <!-- Hourly Alert on/off -->
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div>
+          <div style="font-weight:600;font-size:13px">Hourly Alert</div>
+          <div style="font-size:11px;color:var(--text-muted)">
+            Status:
+            {% if settings.hourly_alert_enabled == 'true' %}
+              <span style="color:#34d399;font-weight:600">✅ Enabled</span>
+            {% else %}
+              <span style="color:var(--text-muted);font-weight:600">⏸ Disabled</span>
+            {% endif %}
+          </div>
+        </div>
+        <form method="POST" action="{{ url_for('sla_toggle_setting', which='hourly') }}" style="margin:0">
+          <button type="submit" class="btn btn-sm {% if settings.hourly_alert_enabled == 'true' %}btn-danger{% else %}btn-primary{% endif %}">
+            {% if settings.hourly_alert_enabled == 'true' %}🔴 Disable{% else %}🟢 Enable{% endif %}
+          </button>
+        </form>
+      </div>
+
+      <!-- Daily Summary on/off -->
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--border);padding-top:12px">
+        <div>
+          <div style="font-weight:600;font-size:13px">Daily Summary</div>
+          <div style="font-size:11px;color:var(--text-muted)">
+            Status:
+            {% if settings.daily_summary_enabled == 'true' %}
+              <span style="color:#34d399;font-weight:600">✅ Enabled</span>
+            {% else %}
+              <span style="color:var(--text-muted);font-weight:600">⏸ Disabled</span>
+            {% endif %}
+          </div>
+        </div>
+        <form method="POST" action="{{ url_for('sla_toggle_setting', which='daily') }}" style="margin:0">
+          <button type="submit" class="btn btn-sm {% if settings.daily_summary_enabled == 'true' %}btn-danger{% else %}btn-primary{% endif %}">
+            {% if settings.daily_summary_enabled == 'true' %}🔴 Disable{% else %}🟢 Enable{% endif %}
+          </button>
+        </form>
+      </div>
+
+      <!-- Test mode on/off -->
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--border);padding-top:12px">
+        <div>
+          <div style="font-weight:600;font-size:13px">Test Mode (CC-only)</div>
+          <div style="font-size:11px;color:var(--text-muted)">
+            {% if settings.test_mode == 'true' %}
+              <span style="color:#fbbf24;font-weight:600">🧪 ON — mails go to CC Emails only</span>
+            {% else %}
+              <span style="color:#34d399;font-weight:600">🚀 OFF — live recipients (PM/BM/BH)</span>
+            {% endif %}
+          </div>
+        </div>
+        <form method="POST" action="{{ url_for('sla_toggle_setting', which='test') }}" style="margin:0">
+          <button type="submit" class="btn btn-sm {% if settings.test_mode == 'true' %}btn-primary{% else %}btn-secondary{% endif %}">
+            {% if settings.test_mode == 'true' %}🚀 Go Live{% else %}🧪 Enable Test Mode{% endif %}
+          </button>
+        </form>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Alert schedule details -->
   <div class="card">
     <div class="card-header">Alert Schedule</div>
     <form method="POST" action="{{ url_for('sla_save_settings') }}">
+    <!-- Preserve current enable states (toggled via the Alert Mailer buttons above) -->
+    <input type="hidden" name="hourly_alert_enabled" value="{{ settings.hourly_alert_enabled }}">
+    <input type="hidden" name="daily_summary_enabled" value="{{ settings.daily_summary_enabled }}">
     <div style="display:flex;flex-direction:column;gap:10px;padding:4px 0">
-
-      <div class="form-group">
-        <label class="form-label">Hourly Alert</label>
-        <select name="hourly_alert_enabled" class="form-control">
-          <option value="true"  {% if settings.hourly_alert_enabled == 'true' %}selected{% endif %}>Enabled</option>
-          <option value="false" {% if settings.hourly_alert_enabled == 'false' %}selected{% endif %}>Disabled</option>
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Daily Summary</label>
-        <select name="daily_summary_enabled" class="form-control">
-          <option value="true"  {% if settings.daily_summary_enabled == 'true' %}selected{% endif %}>Enabled</option>
-          <option value="false" {% if settings.daily_summary_enabled == 'false' %}selected{% endif %}>Disabled</option>
-        </select>
-      </div>
 
       <div class="form-group">
         <label class="form-label">Daily Summary Time (HH:MM)</label>

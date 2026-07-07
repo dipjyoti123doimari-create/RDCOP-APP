@@ -6320,7 +6320,11 @@ def sla_configuration():
         "oracle_grade_name_col", "oracle_master_so_col", "oracle_master_ln_col",
         "oracle_mixer_cap_col",
     ]
+    # These flags default to "true" when never set.
+    _default_true = {"hourly_alert_enabled", "daily_summary_enabled", "test_mode"}
     settings = {k: database.get_module_setting("sla", k, "") for k in _setting_keys}
+    for k in _default_true:
+        settings[k] = database.get_module_setting("sla", k, "true")
     is_super_admin = g.current_user.get("role") == auth.SUPER_ADMIN
     return render_template("slow_loading_alert/configuration.html",
                            thresholds=thresholds, settings=settings,
@@ -6367,6 +6371,33 @@ def sla_save_settings():
         v = request.form.get(k, "")
         database.set_module_setting("sla", k, v)
     flash("SLA settings saved.", "success")
+    return redirect(url_for("sla_configuration"))
+
+
+# One-click enable/disable toggles for the alert mailer.
+_SLA_TOGGLE_KEYS = {
+    "hourly": ("hourly_alert_enabled",  "true",  "Hourly alert"),
+    "daily":  ("daily_summary_enabled", "true",  "Daily summary"),
+    # test_mode default is ON — while on, mails go only to the CC Emails.
+    "test":   ("test_mode",             "true",  "Test mode (CC-only)"),
+}
+
+
+@app.route("/sla/settings/toggle/<which>", methods=["POST"])
+@auth.login_required
+def sla_toggle_setting(which):
+    if g.current_user.get("role") != auth.SUPER_ADMIN:
+        return render_template("access_denied.html", current_user=g.current_user,
+                               required_roles=[auth.SUPER_ADMIN]), 403
+    cfg = _SLA_TOGGLE_KEYS.get(which)
+    if not cfg:
+        flash("Unknown setting.", "error")
+        return redirect(url_for("sla_configuration"))
+    key, default, label = cfg
+    current = database.get_module_setting("sla", key, default)
+    new_val = "false" if current == "true" else "true"
+    database.set_module_setting("sla", key, new_val)
+    flash(f"{label} {'enabled' if new_val == 'true' else 'disabled'}.", "success")
     return redirect(url_for("sla_configuration"))
 
 

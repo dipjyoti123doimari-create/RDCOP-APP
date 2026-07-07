@@ -17,6 +17,12 @@ import database
 import email_helper
 
 
+def _test_mode() -> bool:
+    """While test mode is ON, alert/summary mails go only to the plant's
+    CC Emails (as To) — PM / BM/EA-to-MD / BH are suppressed. Default ON."""
+    return database.get_module_setting("sla", "test_mode", "true") == "true"
+
+
 # ── Severity colours ──────────────────────────────────────────────────────────
 _SEV_COLOR = {
     "RED":   "#FF4444",
@@ -143,28 +149,35 @@ def send_hourly_alert(plant_code: str, plant_name: str, records: list,
     bm_email = (records[0].get("_bm_email", "") or "").strip()
     cc_raw   = records[0].get("_cc_emails", "")
 
-    # To = Plant Manager. CC = BM/EA-to-MD + CC Emails.
-    to_emails = pm_email
-    cc_list, seen = [], {pm_email.lower()} if pm_email else set()
-    for e in ([bm_email] + email_helper._split_emails(cc_raw)):
-        e = (e or "").strip()
-        if e and e.lower() not in seen:
-            seen.add(e.lower())
-            cc_list.append(e)
-    cc_email = ",".join(cc_list)
-
-    # If no Plant Manager, fall back to sending to the CC recipients directly
-    # so the alert is never silently dropped.
-    if not to_emails:
-        to_emails = cc_email
+    if _test_mode():
+        # Test mode → send only to the plant's CC Emails (as To).
+        to_emails = ",".join(email_helper._split_emails(cc_raw))
         cc_email = ""
+    else:
+        # To = Plant Manager. CC = BM/EA-to-MD + CC Emails.
+        to_emails = pm_email
+        cc_list, seen = [], {pm_email.lower()} if pm_email else set()
+        for e in ([bm_email] + email_helper._split_emails(cc_raw)):
+            e = (e or "").strip()
+            if e and e.lower() not in seen:
+                seen.add(e.lower())
+                cc_list.append(e)
+        cc_email = ",".join(cc_list)
+
+        # If no Plant Manager, fall back to sending to the CC recipients directly
+        # so the alert is never silently dropped.
+        if not to_emails:
+            to_emails = cc_email
+            cc_email = ""
+
     if not to_emails:
         database.sla_log_email(
             "HOURLY", alert_date, alert_hour, plant_code, plant_name,
             "", "",
             f"Slow Loading Alert | {plant_name} | {alert_date} {alert_hour:02d}:00",
             len(records), "FAILED",
-            "No Plant Manager, BM/EA-to-MD, or CC email configured."
+            ("No CC email configured." if _test_mode()
+             else "No Plant Manager, BM/EA-to-MD, or CC email configured.")
         )
         return False
 
@@ -239,29 +252,40 @@ def send_daily_summary(bh_email: str, pm_emails: list, bm_emails: list,
 
     plant_names = list(plant_records.keys())
 
-    # To: Plant Managers only (de-duplicated, order preserved)
-    to_list, seen = [], set()
-    for e in pm_emails:
-        e = (e or "").strip()
-        if e and e.lower() not in seen:
-            seen.add(e.lower())
-            to_list.append(e)
+    if _test_mode():
+        # Test mode → send only to the plants' CC Emails (as To).
+        to_list, seen = [], set()
+        for e in email_helper._split_emails(cc_email):
+            e = (e or "").strip()
+            if e and e.lower() not in seen:
+                seen.add(e.lower())
+                to_list.append(e)
+        cc_list = []
+    else:
+        # To: Plant Managers only (de-duplicated, order preserved)
+        to_list, seen = [], set()
+        for e in pm_emails:
+            e = (e or "").strip()
+            if e and e.lower() not in seen:
+                seen.add(e.lower())
+                to_list.append(e)
 
-    # CC: BM/EA-to-MD + existing CC emails + the Business Head
-    # (de-duplicated, and never someone already in To)
-    cc_list = []
-    for e in (bm_emails + email_helper._split_emails(cc_email) + [bh_email]):
-        e = (e or "").strip()
-        if e and e.lower() not in seen and e.lower() not in {c.lower() for c in cc_list}:
-            cc_list.append(e)
+        # CC: BM/EA-to-MD + existing CC emails + the Business Head
+        # (de-duplicated, and never someone already in To)
+        cc_list = []
+        for e in (bm_emails + email_helper._split_emails(cc_email) + [bh_email]):
+            e = (e or "").strip()
+            if e and e.lower() not in seen and e.lower() not in {c.lower() for c in cc_list}:
+                cc_list.append(e)
+
+        # If there are no PM/BM recipients, fall back to sending to the BH
+        # directly so the summary is never silently dropped.
+        if not to_list:
+            to_list = cc_list
+            cc_list = []
 
     if not to_list and not cc_list:
         return False
-    # If there are no PM/BM recipients, fall back to sending to the BH directly
-    # so the summary is never silently dropped.
-    if not to_list:
-        to_list = cc_list
-        cc_list = []
 
     to_emails = ",".join(to_list)
     cc_emails = ",".join(cc_list)
