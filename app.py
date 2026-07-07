@@ -437,24 +437,56 @@ def _start_scheduler():
     _scheduler.start()
 
 
+_UEP_WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+def _uep_cron_kwargs(freq, weekday, day1, day2):
+    """Translate a frequency choice into APScheduler cron trigger kwargs.
+
+    freq: daily | weekly | monthly | twice_monthly
+    weekday: 0-6 (Mon-Sun), used when freq == weekly
+    day1/day2: day-of-month int or 'last', used when freq in (monthly, twice_monthly)
+    """
+    if freq == "daily":
+        return {}
+    if freq == "weekly":
+        try:
+            wd = _UEP_WEEKDAYS[int(weekday)]
+        except Exception:
+            wd = "mon"
+        return {"day_of_week": wd}
+    if freq == "twice_monthly":
+        d1 = day1 or "1"
+        d2 = day2 or "last"
+        return {"day": f"{d1},{d2}"}
+    # monthly (default)
+    return {"day": day1 or "last"}
+
+
 def _register_uep_mail_jobs():
     """Re-register any previously enabled ECMD/DPU/PFS auto-send jobs so they
     survive an app restart. Must run after those functions are defined."""
     uep_jobs = {
-        "ecmd": ("email_schedule", _ecmd_send_scheduled_email, "last"),
-        "dpu":  ("dpu_mail",       _dpu_send_scheduled_email,  "15,last"),
-        "pfs":  ("pfs_mail",       _pfs_send_scheduled_email,  "15,last"),
+        "ecmd": ("email_schedule", _ecmd_send_scheduled_email, "monthly"),
+        "dpu":  ("dpu_mail",       _dpu_send_scheduled_email,  "twice_monthly"),
+        "pfs":  ("pfs_mail",       _pfs_send_scheduled_email,  "twice_monthly"),
     }
-    for mod, (prefix, func, day) in uep_jobs.items():
+    for mod, (prefix, func, default_freq) in uep_jobs.items():
         if database.get_module_setting("ecmd", f"{prefix}_enabled", "false") == "true":
             sched_time = database.get_module_setting("ecmd", f"{prefix}_time", "08:00")
             try:
                 h, m = map(int, sched_time.split(":"))
             except Exception:
                 h, m = 8, 0
+            freq    = database.get_module_setting("ecmd", f"{prefix}_freq", default_freq)
+            weekday = database.get_module_setting("ecmd", f"{prefix}_weekday", "0")
+            default_day1 = "15" if default_freq == "twice_monthly" else "last"
+            day1    = database.get_module_setting("ecmd", f"{prefix}_day1", default_day1)
+            day2    = database.get_module_setting("ecmd", f"{prefix}_day2", "last")
+            cron_kwargs = _uep_cron_kwargs(freq, weekday, day1, day2)
             _scheduler.add_job(id=f"ecmd_{mod}_mail", func=func,
-                               trigger="cron", day=day, hour=h, minute=m,
-                               replace_existing=True)
+                               trigger="cron", hour=h, minute=m,
+                               replace_existing=True, **cron_kwargs)
 
 
 _start_scheduler()
@@ -5203,7 +5235,7 @@ def _ms_redirect(module):
     return redirect(url_for(_MS_ENDPOINT.get(module, "ecmd_mail_scheduler_ecmd")))
 
 
-def _ms_sched(prefix):
+def _ms_sched(prefix, default_freq="monthly"):
     def _get(key, default=""):
         return database.get_module_setting("ecmd", key, default)
     return {
@@ -5212,6 +5244,10 @@ def _ms_sched(prefix):
         "to":          _get(f"{prefix}_to", ""),
         "cc":          _get(f"{prefix}_cc", ""),
         "last_status": _get(f"{prefix}_last_status", ""),
+        "freq":        _get(f"{prefix}_freq", default_freq),
+        "weekday":     _get(f"{prefix}_weekday", "0"),
+        "day1":        _get(f"{prefix}_day1", "15" if default_freq == "twice_monthly" else "last"),
+        "day2":        _get(f"{prefix}_day2", "last"),
     }
 
 
@@ -5236,7 +5272,7 @@ def ecmd_mail_scheduler_dpu():
     dpu_periods = [p["period_label"] for p in database.get_dual_plant_periods()]
     return render_template("ecmd_mail_scheduler_dpu.html",
                            email_configured=email_helper.uep_is_configured(),
-                           sched=_ms_sched("dpu_mail"),
+                           sched=_ms_sched("dpu_mail", default_freq="twice_monthly"),
                            dpu_periods=dpu_periods,
                            **ctx)
 
@@ -5249,7 +5285,7 @@ def ecmd_mail_scheduler_pfs():
     pfs_periods = [p["period_label"] for p in database.get_invoice_pending_periods()]
     return render_template("ecmd_mail_scheduler_pfs.html",
                            email_configured=email_helper.uep_is_configured(),
-                           sched=_ms_sched("pfs_mail"),
+                           sched=_ms_sched("pfs_mail", default_freq="twice_monthly"),
                            pfs_periods=pfs_periods,
                            **ctx)
 
@@ -5264,10 +5300,19 @@ def ecmd_mail_scheduler_save():
         return redirect(url_for("ecmd_mail_scheduler_ecmd"))
 
     enabled = "true" if request.form.get("enabled") == "on" else "false"
+    freq    = request.form.get("freq", "monthly").strip()
+    weekday = request.form.get("weekday", "0").strip()
+    day1    = request.form.get("day1", "last").strip()
+    day2    = request.form.get("day2", "last").strip()
+
     database.set_module_setting("ecmd", f"{prefix}_enabled", enabled)
     database.set_module_setting("ecmd", f"{prefix}_time",    request.form.get("time", "08:00"))
     database.set_module_setting("ecmd", f"{prefix}_to",      request.form.get("to", "").strip())
     database.set_module_setting("ecmd", f"{prefix}_cc",      request.form.get("cc", "").strip())
+    database.set_module_setting("ecmd", f"{prefix}_freq",    freq)
+    database.set_module_setting("ecmd", f"{prefix}_weekday", weekday)
+    database.set_module_setting("ecmd", f"{prefix}_day1",    day1)
+    database.set_module_setting("ecmd", f"{prefix}_day2",    day2)
 
     # Re-register or cancel scheduler job
     job_id = f"ecmd_{module}_mail"
@@ -5278,17 +5323,13 @@ def ecmd_mail_scheduler_save():
         h, m = 8, 0
 
     if enabled == "true":
-        if module == "ecmd":
-            # Monthly — runs on last day of month
-            _scheduler.add_job(id=job_id, func=_ecmd_send_scheduled_email,
-                              trigger="cron", day="last", hour=h, minute=m,
-                              replace_existing=True)
-        else:
-            # Fortnightly — runs on 15th and last day
-            func = _dpu_send_scheduled_email if module == "dpu" else _pfs_send_scheduled_email
-            _scheduler.add_job(id=job_id, func=func,
-                              trigger="cron", day="15,last", hour=h, minute=m,
-                              replace_existing=True)
+        func = {"ecmd": _ecmd_send_scheduled_email,
+                "dpu":  _dpu_send_scheduled_email,
+                "pfs":  _pfs_send_scheduled_email}[module]
+        cron_kwargs = _uep_cron_kwargs(freq, weekday, day1, day2)
+        _scheduler.add_job(id=job_id, func=func,
+                          trigger="cron", hour=h, minute=m,
+                          replace_existing=True, **cron_kwargs)
     else:
         try:
             _scheduler.remove_job(job_id)

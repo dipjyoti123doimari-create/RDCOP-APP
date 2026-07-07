@@ -19,7 +19,7 @@
       <span style="font-size:22px">⚡</span>
       <div>
         <div style="font-weight:700;font-size:15px">ECMD — Monthly Energy Report</div>
-        <div style="font-size:11px;color:var(--text-muted)">Runs automatically on the last day of each month</div>
+        <div style="font-size:11px;color:var(--text-muted)" id="freq-summary">—</div>
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:10px">
@@ -50,6 +50,41 @@
         <label>CC</label>
         <input type="text" name="cc" value="{{ sched.cc }}"
                placeholder="cc@domain.com" style="min-width:200px">
+      </div>
+      <div class="form-group">
+        <label>Frequency</label>
+        <select name="freq" id="ms-freq" onchange="msFreqChange()" style="min-width:150px">
+          <option value="daily"         {% if sched.freq == 'daily' %}selected{% endif %}>Daily</option>
+          <option value="weekly"        {% if sched.freq == 'weekly' %}selected{% endif %}>Weekly</option>
+          <option value="monthly"       {% if sched.freq == 'monthly' %}selected{% endif %}>Monthly</option>
+          <option value="twice_monthly" {% if sched.freq == 'twice_monthly' %}selected{% endif %}>Twice Monthly</option>
+        </select>
+      </div>
+      <div class="form-group" id="ms-weekday-field" style="display:none">
+        <label>On</label>
+        <select name="weekday" id="ms-weekday" style="min-width:130px">
+          {% for i, wd in [(0,'Monday'),(1,'Tuesday'),(2,'Wednesday'),(3,'Thursday'),(4,'Friday'),(5,'Saturday'),(6,'Sunday')] %}
+          <option value="{{ i }}" {% if sched.weekday|string == i|string %}selected{% endif %}>{{ wd }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" id="ms-day1-field" style="display:none">
+        <label id="ms-day1-label">On Day</label>
+        <select name="day1" id="ms-day1" style="min-width:110px">
+          <option value="last" {% if sched.day1 == 'last' %}selected{% endif %}>Last day</option>
+          {% for d in range(1, 29) %}
+          <option value="{{ d }}" {% if sched.day1|string == d|string %}selected{% endif %}>{{ d }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" id="ms-day2-field" style="display:none">
+        <label>And Day</label>
+        <select name="day2" id="ms-day2" style="min-width:110px">
+          <option value="last" {% if sched.day2 == 'last' %}selected{% endif %}>Last day</option>
+          {% for d in range(1, 29) %}
+          <option value="{{ d }}" {% if sched.day2|string == d|string %}selected{% endif %}>{{ d }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="form-group">
         <label>Send Time</label>
@@ -128,4 +163,43 @@
   </form>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+var WEEKDAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+
+function msFreqChange() {
+  var freq = document.getElementById('ms-freq').value;
+  document.getElementById('ms-weekday-field').style.display = freq === 'weekly' ? '' : 'none';
+  document.getElementById('ms-day1-field').style.display    = (freq === 'monthly' || freq === 'twice_monthly') ? '' : 'none';
+  document.getElementById('ms-day2-field').style.display     = freq === 'twice_monthly' ? '' : 'none';
+  document.getElementById('ms-day1-label').textContent = freq === 'twice_monthly' ? 'On Day' : 'On Day';
+  msUpdateSummary();
+}
+
+function msUpdateSummary() {
+  var freq = document.getElementById('ms-freq').value;
+  var el = document.getElementById('freq-summary');
+  var dayLabel = function(v) { return v === 'last' ? 'the last day' : 'day ' + v; };
+  if (freq === 'daily') {
+    el.textContent = 'Runs automatically every day';
+  } else if (freq === 'weekly') {
+    var wd = WEEKDAY_NAMES[parseInt(document.getElementById('ms-weekday').value, 10)] || 'Monday';
+    el.textContent = 'Runs automatically every ' + wd;
+  } else if (freq === 'twice_monthly') {
+    var d1 = document.getElementById('ms-day1').value, d2 = document.getElementById('ms-day2').value;
+    el.textContent = 'Runs automatically on ' + dayLabel(d1) + ' and ' + dayLabel(d2) + ' of each month';
+  } else {
+    var d1m = document.getElementById('ms-day1').value;
+    el.textContent = 'Runs automatically on ' + dayLabel(d1m) + ' of each month';
+  }
+}
+
+document.getElementById('ms-freq').addEventListener('change', msUpdateSummary);
+document.getElementById('ms-weekday').addEventListener('change', msUpdateSummary);
+document.getElementById('ms-day1').addEventListener('change', msUpdateSummary);
+document.getElementById('ms-day2').addEventListener('change', msUpdateSummary);
+msFreqChange();
+</script>
 {% endblock %}
