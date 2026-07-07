@@ -5248,6 +5248,10 @@ def _ms_sched(prefix, default_freq="monthly"):
         "weekday":     _get(f"{prefix}_weekday", "0"),
         "day1":        _get(f"{prefix}_day1", "15" if default_freq == "twice_monthly" else "last"),
         "day2":        _get(f"{prefix}_day2", "last"),
+        "subject":         _get(f"{prefix}_subject", ""),
+        "body":            _get(f"{prefix}_body", ""),
+        "default_subject": _UEP_MAIL_DEFAULTS[prefix][0],
+        "default_body":    _UEP_MAIL_DEFAULTS[prefix][1],
     }
 
 
@@ -5313,6 +5317,8 @@ def ecmd_mail_scheduler_save():
     database.set_module_setting("ecmd", f"{prefix}_weekday", weekday)
     database.set_module_setting("ecmd", f"{prefix}_day1",    day1)
     database.set_module_setting("ecmd", f"{prefix}_day2",    day2)
+    database.set_module_setting("ecmd", f"{prefix}_subject", request.form.get("subject", "").strip())
+    database.set_module_setting("ecmd", f"{prefix}_body",    request.form.get("body", "").strip())
 
     # Re-register or cancel scheduler job
     job_id = f"ecmd_{module}_mail"
@@ -5406,9 +5412,54 @@ def ecmd_mail_scheduler_manual_send():
     return _ms_redirect(module)
 
 
+# Default subject/body per module — used when the admin leaves the custom
+# template fields blank. {period} is replaced with the month (ECMD) or the
+# fortnight/date-range label (DPU/PFS) at send time.
+_UEP_MAIL_DEFAULTS = {
+    "email_schedule": (
+        "RDC-UEP ECMD Report — {period}",
+        "Dear Team,\n\nPlease find attached the Energy Consumption & "
+        "Mixer DG Ratio Report for {period}.\n\nRegards,\nRDC Operations",
+    ),
+    "dpu_mail": (
+        "RDC-UEP DPU Report — {period}",
+        "Dear Team,\n\nPlease find below the Dual Plant Utilisation "
+        "Report for {period}.\n\nRegards,\nRDC Operations",
+    ),
+    "pfs_mail": (
+        "RDC-UEP PFS Report — {period}",
+        "Dear Team,\n\nPlease find below the Pending Final Submission "
+        "Report for {period}.\n\nRegards,\nRDC Operations",
+    ),
+}
+
+
+def _uep_mail_texts(prefix, label):
+    """Return (subject, body_text) for a module's mail — saved templates
+    (or defaults) with {period}/{month}/{date} placeholders filled in."""
+    d_subj, d_body = _UEP_MAIL_DEFAULTS[prefix]
+    subj = database.get_module_setting("ecmd", f"{prefix}_subject", "").strip() or d_subj
+    body = database.get_module_setting("ecmd", f"{prefix}_body", "").strip() or d_body
+
+    def _fill(text):
+        for ph in ("{period}", "{month}", "{date}"):
+            text = text.replace(ph, label)
+        return text
+
+    return _fill(subj), _fill(body)
+
+
+def _uep_body_html(body_text):
+    """Convert the plain-text body template into a safe HTML intro block."""
+    import html as _html
+    return "<p>" + _html.escape(body_text).replace("\n", "<br>") + "</p>"
+
+
 def _send_dpu_email(rows, label, to_addr, cc_addr):
+    subject, body_text = _uep_mail_texts("dpu_mail", label)
+    intro = _uep_body_html(body_text)
     if not rows:
-        body = f"<h3>Dual Plant Utilisation — {label}</h3><p>No data found for this period.</p>"
+        body = intro + "<p>No data found for this period.</p>"
     else:
         rows_html = "".join(
             f"<tr><td>{r['plant_name'] or r['plant_code']}</td>"
@@ -5417,18 +5468,21 @@ def _send_dpu_email(rows, label, to_addr, cc_addr):
             f"<td style='text-align:right'>{r['pct_share']:.1f}%</td></tr>"
             for r in rows
         )
-        body = (f"<h3>Dual Plant Utilisation — {label}</h3>"
+        body = (intro +
+                f"<h3>Dual Plant Utilisation — {label}</h3>"
                 f"<table border='1' cellpadding='5' style='border-collapse:collapse'>"
                 f"<tr><th>Plant</th><th>Code</th><th>Mixer</th><th>Qty (MT)</th><th>% Share</th></tr>"
                 f"{rows_html}</table>")
     email_helper.send_uep_email(to=to_addr, cc=cc_addr,
-                            subject=f"RDC-UEP DPU Report — {label}",
+                            subject=subject,
                             body=body, html=True)
 
 
 def _send_pfs_email(rows, label, to_addr, cc_addr):
+    subject, body_text = _uep_mail_texts("pfs_mail", label)
+    intro = _uep_body_html(body_text)
     if not rows:
-        body = f"<h3>Pending Final Submission — {label}</h3><p>✅ No pending invoices found.</p>"
+        body = intro + "<p>✅ No pending invoices found.</p>"
     else:
         rows_html = "".join(
             f"<tr><td>{i}</td><td>{r['plant_name'] or r['plant_code']}</td>"
@@ -5436,13 +5490,14 @@ def _send_pfs_email(rows, label, to_addr, cc_addr):
             f"<td style='text-align:right'>{r['quantity']:,.2f}</td></tr>"
             for i, r in enumerate(rows, 1)
         )
-        body = (f"<h3>Pending Final Submission — {label}</h3>"
+        body = (intro +
+                f"<h3>Pending Final Submission — {label}</h3>"
                 f"<p>⚠️ {len(rows)} plant(s) have pending final submission.</p>"
                 f"<table border='1' cellpadding='5' style='border-collapse:collapse'>"
                 f"<tr><th>Sr.</th><th>Plant</th><th>Code</th><th>Qty (MT)</th></tr>"
                 f"{rows_html}</table>")
     email_helper.send_uep_email(to=to_addr, cc=cc_addr,
-                            subject=f"RDC-UEP PFS Report — {label}",
+                            subject=subject,
                             body=body, html=True)
 
 
@@ -5458,8 +5513,7 @@ def _send_ecmd_report_email(month, year, to_addr, cc_addr):
 
     excel_bytes = _ecmd_build_excel(plant_rows, loc_rows, month, year)
     fname = f"RDC_ECMD_{year}_{month:02d}.xlsx"
-    subject = f"RDC-UEP ECMD Report — {label}"
-    body = f"Dear Team,\n\nPlease find attached the Energy Consumption & Mixer DG Ratio Report for {label}.\n\nRegards,\nRDC Operations"
+    subject, body = _uep_mail_texts("email_schedule", label)
 
     result = email_helper.send_report_email(
         to_emails=to_addr, cc_emails=cc_addr,
@@ -5520,25 +5574,7 @@ def _dpu_send_scheduled_email():
                                             "No recipient configured")
                 return
 
-            # Build simple HTML table
-            rows_html = "".join(
-                f"<tr><td>{r['plant_name'] or r['plant_code']}</td>"
-                f"<td>{r['plant_code']}</td><td>{r['mixer']}</td>"
-                f"<td style='text-align:right'>{r['quantity']:,.2f}</td>"
-                f"<td style='text-align:right'>{r['pct_share']:.1f}%</td></tr>"
-                for r in rows
-            )
-            body = (f"<h3>Dual Plant Utilisation — {label}</h3>"
-                    f"<table border='1' cellpadding='5' style='border-collapse:collapse'>"
-                    f"<tr><th>Plant</th><th>Code</th><th>Mixer</th>"
-                    f"<th>Qty (MT)</th><th>% Share</th></tr>"
-                    f"{rows_html}</table>")
-
-            email_helper.send_uep_email(
-                to=to_addr, cc=cc_addr,
-                subject=f"RDC-UEP DPU Report — {label}",
-                body=body, html=True
-            )
+            _send_dpu_email(rows, label, to_addr, cc_addr)
             database.set_module_setting("ecmd", "dpu_mail_last_status",
                                         f"Sent {today.strftime('%d %b %Y')}")
         except Exception as e:
@@ -5566,26 +5602,7 @@ def _pfs_send_scheduled_email():
                                             "No recipient configured")
                 return
 
-            if not rows:
-                body = f"<h3>Pending Final Submission — {label}</h3><p>✅ No pending invoices found.</p>"
-            else:
-                rows_html = "".join(
-                    f"<tr><td>{i}</td><td>{r['plant_name'] or r['plant_code']}</td>"
-                    f"<td>{r['plant_code']}</td>"
-                    f"<td style='text-align:right'>{r['quantity']:,.2f}</td></tr>"
-                    for i, r in enumerate(rows, 1)
-                )
-                body = (f"<h3>Pending Final Submission — {label}</h3>"
-                        f"<p>⚠️ {len(rows)} plant(s) have pending final submission.</p>"
-                        f"<table border='1' cellpadding='5' style='border-collapse:collapse'>"
-                        f"<tr><th>Sr.</th><th>Plant</th><th>Code</th><th>Qty (MT)</th></tr>"
-                        f"{rows_html}</table>")
-
-            email_helper.send_uep_email(
-                to=to_addr, cc=cc_addr,
-                subject=f"RDC-UEP PFS Report — {label}",
-                body=body, html=True
-            )
+            _send_pfs_email(rows, label, to_addr, cc_addr)
             database.set_module_setting("ecmd", "pfs_mail_last_status",
                                         f"Sent {today.strftime('%d %b %Y')}")
         except Exception as e:

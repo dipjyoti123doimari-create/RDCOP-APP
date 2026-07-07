@@ -98,6 +98,20 @@
         </label>
       </div>
     </div>
+    <div class="form-group" style="margin-top:12px">
+      <label>Email Subject
+        <span style="font-size:10px;color:var(--text-muted)">— type {period} where the date range should appear, e.g. "1-15 Jul 2026" · leave blank for default</span>
+      </label>
+      <input type="text" name="subject" value="{{ sched.subject }}"
+             placeholder="{{ sched.default_subject }}" style="width:100%;max-width:680px">
+    </div>
+    <div class="form-group" style="margin-top:10px">
+      <label>Email Body
+        <span style="font-size:10px;color:var(--text-muted)">— plain text, {period} auto-fills the date range · shown above the data table · leave blank for default</span>
+      </label>
+      <textarea name="body" rows="5" placeholder="{{ sched.default_body }}"
+                style="width:100%;max-width:680px">{{ sched.body }}</textarea>
+    </div>
     <div style="display:flex;gap:10px;margin-top:14px">
       <button type="submit" class="btn btn-primary">💾 Save Settings</button>
     </div>
