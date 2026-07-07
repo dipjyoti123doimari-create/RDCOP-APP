@@ -140,49 +140,6 @@ def _retention_job():
         pass
 
 
-def _scheduled_email_job():
-    """Fires on 1st of each month — sends previous month's report."""
-    if database.get_setting("email_schedule_enabled", "false") != "true":
-        return
-    today         = _date.today()
-    first_this    = today.replace(day=1)
-    last_prev     = first_this - timedelta(days=1)
-    first_prev    = last_prev.replace(day=1)
-    from_s, to_s  = str(first_prev), str(last_prev)
-    try:
-        res = calculator.run_calculation(
-            month=first_prev.month, year=first_prev.year,
-            start_date=from_s, end_date=to_s, persist=False,
-        )
-        if res["error"]:
-            database.set_setting("email_schedule_last_status",
-                f"FAIL {_dt.now():%Y-%m-%d %H:%M} — {res['error']}")
-            return
-        rows     = res.get("results_rows", [])
-        unmapped = res.get("unmapped_rows", [])
-        month_label = first_prev.strftime("%B %Y")
-        meta    = _build_meta(from_s, to_s, rows, unmapped, "Scheduled monthly report")
-        df_f    = pd.DataFrame(rows)    if rows     else pd.DataFrame(columns=RESULT_COLS)
-        df_u    = pd.DataFrame(unmapped) if unmapped else pd.DataFrame()
-        val_df  = database.read_table("validation_errors")
-        xlsx    = report_generator.generate_excel_report(df_f, df_u, val_df, meta)
-        fname   = f"incentive_report_{from_s}_to_{to_s}.xlsx"
-        to_addr = database.get_setting("email_schedule_to", "")
-        cc_addr = database.get_setting("email_schedule_cc", "")
-        result  = email_helper.send_report_email(
-            to_emails=to_addr, cc_emails=cc_addr,
-            subject=email_helper.compose_report_subject(month_label),
-            body=email_helper.compose_report_body(month_label),
-            attachment_bytes=xlsx, attachment_name=fname,
-        )
-        status = (f"OK {_dt.now():%Y-%m-%d %H:%M} — sent to {to_addr}" if result["success"]
-                  else f"FAIL {_dt.now():%Y-%m-%d %H:%M} — {result.get('error','')}")
-        database.set_setting("email_schedule_last_status", status)
-    except Exception as exc:
-        database.set_setting("email_schedule_last_status",
-            f"ERROR {_dt.now():%Y-%m-%d %H:%M} — {exc}")
-
-
 def _build_tp_excel(plant_rows, location_rows) -> bytes:
     """Build the RDC-TP report workbook (Plant + Location sheets) as bytes."""
     plant_df = pd.DataFrame(plant_rows)[[
@@ -352,67 +309,13 @@ def _startup_oracle_fetch():
     print("[startup-fetch] done")
 
 
-def _tp_scheduled_email_job():
-    """Fires on 1st of each month — emails the previous month's TP report."""
-    if database.get_module_setting("tp", "email_schedule_enabled", "false") != "true":
-        return
-    today      = _date.today()
-    first_this = today.replace(day=1)
-    last_prev  = first_this - timedelta(days=1)
-    first_prev = last_prev.replace(day=1)
-    fd, td     = str(first_prev), str(last_prev)
-    try:
-        month, year = first_prev.month, first_prev.year
-        plant_rows, loc_rows, _w = tp_calculator.run_tp_calculation(
-            month, year, from_date=fd, to_date=td)
-        if not plant_rows:
-            database.set_module_setting("tp", "email_schedule_last_status",
-                f"FAIL {_dt.now():%Y-%m-%d %H:%M} — no data for {fd} → {td}")
-            return
-        import calendar
-        label   = f"{calendar.month_name[month]} {year}"
-        subject = f"RDC-TP Plant Throughput Report — {label}"
-        body    = (f"Dear Team,\n\nPlease find attached the Plant Throughput Report "
-                   f"for {label}.\n\nRegards,\nRDC Operations")
-        res = email_helper.send_report_email(
-            to_emails=database.get_module_setting("tp", "email_schedule_to", ""),
-            cc_emails=database.get_module_setting("tp", "email_schedule_cc", ""),
-            subject=subject, body=body,
-            attachment_bytes=_build_tp_excel(plant_rows, loc_rows),
-            attachment_name=f"RDC_TP_{year}_{month:02d}.xlsx",
-        )
-        status = (f"OK {_dt.now():%Y-%m-%d %H:%M} — sent" if res["success"]
-                  else f"FAIL {_dt.now():%Y-%m-%d %H:%M} — {res.get('error','')}")
-        database.set_module_setting("tp", "email_schedule_last_status", status)
-    except Exception as exc:
-        database.set_module_setting("tp", "email_schedule_last_status",
-            f"ERROR {_dt.now():%Y-%m-%d %H:%M} — {exc}")
-
-
 def _start_scheduler():
     global _scheduler
-    sched_time = database.get_setting("email_schedule_time", "08:00")
-    try:
-        h, m = map(int, sched_time.split(":"))
-    except Exception:
-        h, m = 8, 0
     _scheduler = BackgroundScheduler(daemon=True)
-    _scheduler.add_job(_scheduled_email_job,
-                       CronTrigger(day=1, hour=h, minute=m),
-                       id="monthly_report", replace_existing=True)
     # Daily rolling retention for all modules' Oracle data (runs 00:05 + on 1st).
     _scheduler.add_job(_retention_job,
                        CronTrigger(hour=0, minute=5),
                        id="oracle_retention", replace_existing=True)
-    # RDC-TP monthly report (own schedule time).
-    tp_time = database.get_module_setting("tp", "email_schedule_time", "08:00")
-    try:
-        th, tm = map(int, tp_time.split(":"))
-    except Exception:
-        th, tm = 8, 0
-    _scheduler.add_job(_tp_scheduled_email_job,
-                       CronTrigger(day=1, hour=th, minute=tm),
-                       id="tp_monthly_email", replace_existing=True)
     # Shared daily Oracle fetch — one query feeds I&D, TP, and BTRTP.
     _scheduler.add_job(_shared_oracle_fetch_job,
                        CronTrigger(hour=0, minute=10),
@@ -2268,12 +2171,6 @@ def tp_settings():
     email_configured = bool(smtp.get("host") and smtp.get("sender"))
     ora_configured   = oracle_connector.is_configured()
     last_sync        = google_sheets.get_tp_last_sync_info()
-    # Monthly-email schedule (TP-scoped)
-    sched_enabled     = database.get_module_setting("tp", "email_schedule_enabled", "false") == "true"
-    sched_time        = database.get_module_setting("tp", "email_schedule_time", "08:00")
-    sched_to          = database.get_module_setting("tp", "email_schedule_to", "")
-    sched_cc          = database.get_module_setting("tp", "email_schedule_cc", "")
-    sched_last_status  = database.get_module_setting("tp", "email_schedule_last_status", "")
     tp_email_to        = database.get_module_setting("tp", "email_default_to", "")
     tp_email_cc        = database.get_module_setting("tp", "email_default_cc", "")
     tp_email_subject   = database.get_module_setting("tp", "email_default_subject", "")
@@ -2285,9 +2182,6 @@ def tp_settings():
                            plant_col=plant_col, batch_col=batch_col, time_col=time_col,
                            smtp=smtp, email_configured=email_configured,
                            ora_configured=ora_configured, last_sync=last_sync,
-                           sched_enabled=sched_enabled, sched_time=sched_time,
-                           sched_to=sched_to, sched_cc=sched_cc,
-                           sched_last_status=sched_last_status,
                            tp_email_to=tp_email_to, tp_email_cc=tp_email_cc,
                            tp_email_subject=tp_email_subject, tp_email_body=tp_email_body,
                            **ctx)
@@ -2316,25 +2210,6 @@ def tp_save_worksheet():
     return redirect(url_for("tp_settings", m="sheet"))
 
 
-@app.route("/tp/settings/save-schedule", methods=["POST"])
-def tp_save_email_schedule():
-    sched_time = request.form.get("sched_time", "08:00").strip()
-    database.set_module_settings_bulk("tp", {
-        "email_schedule_time": sched_time,
-        "email_schedule_to":   request.form.get("sched_to", "").strip(),
-        "email_schedule_cc":   request.form.get("sched_cc", "").strip(),
-    })
-    if _scheduler:
-        try:
-            h, m = map(int, sched_time.split(":"))
-        except Exception:
-            h, m = 8, 0
-        _scheduler.reschedule_job("tp_monthly_email",
-                                  trigger=CronTrigger(day=1, hour=h, minute=m))
-    flash("TP schedule settings saved.", "success")
-    return redirect(url_for("tp_settings", m="schedule"))
-
-
 @app.route("/tp/settings/save-email-defaults", methods=["POST"])
 def tp_save_email_defaults():
     database.set_module_settings_bulk("tp", {
@@ -2345,15 +2220,6 @@ def tp_save_email_defaults():
     })
     flash("TP email defaults saved.", "success")
     return redirect(url_for("tp_settings", m="email"))
-
-
-@app.route("/tp/settings/toggle-schedule", methods=["POST"])
-def tp_toggle_email_schedule():
-    current = database.get_module_setting("tp", "email_schedule_enabled", "false")
-    new_val = "false" if current == "true" else "true"
-    database.set_module_setting("tp", "email_schedule_enabled", new_val)
-    flash(f"RDC-TP scheduled monthly report {'enabled' if new_val == 'true' else 'disabled'}.", "success")
-    return redirect(url_for("tp_settings", m="schedule"))
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -3500,22 +3366,13 @@ def page_settings():
     last_cache_clear   = database.get_setting("last_cache_clear_date", "")
     cache_cleared_today = last_cache_clear == str(_date.today())
 
-    sched_enabled     = database.get_setting("email_schedule_enabled", "false") == "true"
-    sched_time        = database.get_setting("email_schedule_time", "08:00")
-    sched_to          = database.get_setting("email_schedule_to", "")
-    sched_cc          = database.get_setting("email_schedule_cc", "")
-    sched_last_status = database.get_setting("email_schedule_last_status", "")
-
     return render_template("settings.html",
                            smtp=smtp, email_configured=email_configured,
                            ora=ora, ora_configured=ora_configured,
                            db_size_mb=cache_helpers.get_db_size_mb(),
                            bg_auto=bg_auto(), bg_animate=bg_animate(), bg_theme=bg_theme(),
                            last_cache_clear=last_cache_clear,
-                           cache_cleared_today=cache_cleared_today,
-                           sched_enabled=sched_enabled, sched_time=sched_time,
-                           sched_to=sched_to, sched_cc=sched_cc,
-                           sched_last_status=sched_last_status)
+                           cache_cleared_today=cache_cleared_today)
 
 
 # ── ACTIONS ───────────────────────────────────────────────────────────────────
@@ -4273,38 +4130,6 @@ def restart_server():
     return jsonify({"ok": True})
 
 
-@app.route("/action/save-email-schedule", methods=["POST"])
-def save_email_schedule():
-    sched_time = request.form.get("sched_time", "08:00").strip()
-    sched_to   = request.form.get("sched_to",   "").strip()
-    sched_cc   = request.form.get("sched_cc",   "").strip()
-    database.set_settings_bulk({
-        "email_schedule_time": sched_time,
-        "email_schedule_to":   sched_to,
-        "email_schedule_cc":   sched_cc,
-    })
-    if _scheduler:
-        try:
-            h, m = map(int, sched_time.split(":"))
-        except Exception:
-            h, m = 8, 0
-        _scheduler.reschedule_job(
-            "monthly_report",
-            trigger=CronTrigger(day=1, hour=h, minute=m),
-        )
-    flash("Schedule settings saved.", "success")
-    return redirect(url_for("page_settings"))
-
-
-@app.route("/action/toggle-email-schedule", methods=["POST"])
-def toggle_email_schedule():
-    current = database.get_setting("email_schedule_enabled", "false")
-    new_val = "false" if current == "true" else "true"
-    database.set_setting("email_schedule_enabled", new_val)
-    flash(f"Scheduled monthly report {'enabled' if new_val == 'true' else 'disabled'}.", "success")
-    return redirect(url_for("page_settings"))
-
-
 # ═══════════════════════════════════════════════════════════════════════════
 # RDC-ECMD MODULE — Energy Consumption & Mixer DG Ratio
 # ═══════════════════════════════════════════════════════════════════════════
@@ -4981,11 +4806,6 @@ def ecmd_settings():
     uep_smtp         = email_helper.get_uep_smtp_config()
     uep_smtp_configured = email_helper.uep_is_configured()
     ora_configured   = oracle_connector.is_configured()
-    sched_enabled    = database.get_module_setting("ecmd", "email_schedule_enabled", "false") == "true"
-    sched_time       = database.get_module_setting("ecmd", "email_schedule_time", "08:00")
-    sched_to         = database.get_module_setting("ecmd", "email_schedule_to", "")
-    sched_cc         = database.get_module_setting("ecmd", "email_schedule_cc", "")
-    sched_last_status = database.get_module_setting("ecmd", "email_schedule_last_status", "")
     ecmd_email_to      = database.get_module_setting("ecmd", "email_default_to", "")
     ecmd_email_cc      = database.get_module_setting("ecmd", "email_default_cc", "")
     ecmd_email_subject = database.get_module_setting("ecmd", "email_default_subject", "")
@@ -5002,9 +4822,6 @@ def ecmd_settings():
                            smtp=smtp, email_configured=email_configured,
                            uep_smtp=uep_smtp, uep_smtp_configured=uep_smtp_configured,
                            ora_configured=ora_configured,
-                           sched_enabled=sched_enabled, sched_time=sched_time,
-                           sched_to=sched_to, sched_cc=sched_cc,
-                           sched_last_status=sched_last_status,
                            ecmd_email_to=ecmd_email_to, ecmd_email_cc=ecmd_email_cc,
                            ecmd_email_subject=ecmd_email_subject,
                            ecmd_email_body=ecmd_email_body,
@@ -5051,39 +4868,6 @@ def ecmd_set_allowed_months():
         database.set_ecmd_allowed_months(pairs)
         flash(f"Month {month}/{year} unlocked for data entry.", "success")
     return redirect(url_for("ecmd_settings"))
-
-
-@app.route("/ecmd/settings/save-schedule", methods=["POST"])
-@auth.uep_admin_required
-def ecmd_save_schedule():
-    sched_time = request.form.get("sched_time", "08:00").strip()
-    database.set_module_settings_bulk("ecmd", {
-        "email_schedule_time": sched_time,
-        "email_schedule_to":   request.form.get("sched_to", "").strip(),
-        "email_schedule_cc":   request.form.get("sched_cc", "").strip(),
-    })
-    if _scheduler:
-        try:
-            h, m = map(int, sched_time.split(":"))
-        except Exception:
-            h, m = 8, 0
-        try:
-            _scheduler.reschedule_job("ecmd_monthly_email",
-                                      trigger=CronTrigger(day=1, hour=h, minute=m))
-        except Exception:
-            pass
-    flash("ECMD schedule settings saved.", "success")
-    return redirect(url_for("ecmd_settings", m="schedule"))
-
-
-@app.route("/ecmd/settings/toggle-schedule", methods=["POST"])
-@auth.uep_admin_required
-def ecmd_toggle_schedule():
-    current = database.get_module_setting("ecmd", "email_schedule_enabled", "false")
-    new_val = "false" if current == "true" else "true"
-    database.set_module_setting("ecmd", "email_schedule_enabled", new_val)
-    flash(f"RDC-ECMD scheduled report {'enabled' if new_val == 'true' else 'disabled'}.", "success")
-    return redirect(url_for("ecmd_settings", m="schedule"))
 
 
 @app.route("/ecmd/settings/save-email-defaults", methods=["POST"])

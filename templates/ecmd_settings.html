@@ -36,14 +36,11 @@
   </div>
 
   <!-- Scheduled Monthly Report -->
-  <div class="settings-tile" onclick="document.getElementById('modal-schedule').style.display='flex'">
+  <div class="settings-tile" onclick="window.location.href='{{ url_for('ecmd_mail_scheduler_ecmd') }}'">
     <div class="settings-tile-icon">🕐</div>
     <div class="settings-tile-info">
       <div class="settings-tile-title">Scheduled Report</div>
-      <div class="settings-tile-desc">
-        {% if sched_enabled %}Enabled — {{ sched_time }} on 1st of month{% else %}Disabled{% endif %}
-        {% if sched_last_status %}<br><small>{{ sched_last_status[:60] }}</small>{% endif %}
-      </div>
+      <div class="settings-tile-desc">Configured on the Mail Scheduler page →</div>
     </div>
     <span class="settings-tile-arrow">›</span>
   </div>
@@ -192,52 +189,6 @@
   </div>
 </div>
 
-
-<!-- ── Scheduled Report Modal ────────────────────────────────────────────── -->
-<div class="modal-overlay" id="modal-schedule" style="display:none">
-  <div class="modal-box">
-    <div class="modal-header">
-      <span class="modal-title">🕐 Scheduled Monthly Report</span>
-      <button class="modal-close" onclick="document.getElementById('modal-schedule').style.display='none'">✕</button>
-    </div>
-
-    <div class="alert alert-{{ 'success' if sched_enabled else 'warning' }}">
-      Status: <strong>{{ 'Enabled' if sched_enabled else 'Disabled' }}</strong>
-      {% if sched_last_status %} · Last: {{ sched_last_status }}{% endif %}
-    </div>
-
-    <form method="POST" action="{{ url_for('ecmd_save_schedule') }}" style="margin-bottom:12px">
-      <div class="form-grid">
-        <div class="form-group">
-          <label>Send Time (1st of month)</label>
-          <input type="time" name="sched_time" value="{{ sched_time }}">
-        </div>
-        <div class="form-group">
-          <label>To</label>
-          <input type="text" name="sched_to" value="{{ sched_to }}" placeholder="to@example.com">
-        </div>
-        <div class="form-group">
-          <label>CC</label>
-          <input type="text" name="sched_cc" value="{{ sched_cc }}" placeholder="cc@example.com">
-        </div>
-      </div>
-      <div class="btn-group">
-        <button type="submit" class="btn btn-primary">💾 Save Schedule</button>
-      </div>
-    </form>
-
-    <form method="POST" action="{{ url_for('ecmd_toggle_schedule') }}">
-      <button type="submit" class="btn {% if sched_enabled %}btn-danger{% else %}btn-secondary{% endif %} btn-sm">
-        {% if sched_enabled %}🔴 Disable Schedule{% else %}🟢 Enable Schedule{% endif %}
-      </button>
-    </form>
-
-    <div style="margin-top:10px">
-      <button type="button" class="btn btn-secondary"
-              onclick="document.getElementById('modal-schedule').style.display='none'">Close</button>
-    </div>
-  </div>
-</div>
 
 
 <!-- ── UEP SMTP Modal ────────────────────────────────────────────────────── -->
