@@ -185,57 +185,52 @@ def run_daily_summary_job(summary_date: str = None, preview_only: bool = False) 
         for r in records:
             by_plant_code[r["plant_code"]].append(r)
 
+        # Plants whose Business Head email is blank aren't in bh_plant_map — group
+        # them under an empty-BH cluster so their PM/BM still get the summary.
+        _bh_covered = {c for codes in bh_plant_map.values() for c in codes}
+        _orphan = [c for c in by_plant_code if c not in _bh_covered]
+        if _orphan:
+            bh_plant_map = dict(bh_plant_map)
+            bh_plant_map.setdefault("", []).extend(_orphan)
+
         if preview_only:
             summary["preview"] = records
             return summary
 
-        # Send BH emails (each BH gets all their plants in one email)
+        # One clustered daily summary per Business Head (all their plants).
+        # To  = every Plant Manager + BM/EA-to-MD across the BH's plants.
+        # CC  = the plants' CC Emails + the Business Head.
         for bh_email, codes in bh_plant_map.items():
             bh_plant_records = {}
-            for code in codes:
-                recs = by_plant_code.get(code, [])
-                if recs:
-                    pname = recs[0].get("plant_name", code)
-                    bh_plant_records[pname] = recs
-            if not bh_plant_records:
-                continue
-
-            # Collect all CC emails across these plants
+            pm_emails, bm_emails = [], []
             cc_set = set()
             for code in codes:
+                recs = by_plant_code.get(code, [])
+                if not recs:
+                    continue
+                pname = recs[0].get("plant_name", code)
+                bh_plant_records[pname] = recs
+
                 info = plant_map.get(code, {})
+                pm = (info.get("pm_email", "") or "").strip()
+                bm = (info.get("bm_email", "") or "").strip()
+                if pm:
+                    pm_emails.append(pm)
+                if bm:
+                    bm_emails.append(bm)
                 for e in (info.get("cc_emails", "") or "").split(","):
                     e = e.strip()
                     if e:
                         cc_set.add(e)
 
+            if not bh_plant_records:
+                continue
+
             success = email_service.send_daily_summary(
-                bh_email=bh_email, pm_emails=[], bm_emails=[],
+                bh_email=bh_email,
+                pm_emails=pm_emails, bm_emails=bm_emails,
                 cc_email=",".join(cc_set),
                 plant_records=bh_plant_records,
-                summary_date=summary_date,
-            )
-            if success:
-                summary["total_sent"] += 1
-
-        # Send per-plant PM + BM emails
-        for plant_code, recs in by_plant_code.items():
-            info = plant_map.get(plant_code, {})
-            pm_email = info.get("pm_email", "")
-            bm_email = info.get("bm_email", "")
-            bh_email = info.get("bh_email", "")
-            cc_email = info.get("cc_emails", "")
-            pname = recs[0].get("plant_name", plant_code)
-
-            pm_bm_to = list(filter(None, [pm_email, bm_email]))
-            if not pm_bm_to:
-                continue
-            success = email_service.send_daily_summary(
-                bh_email="",
-                pm_emails=[pm_email] if pm_email else [],
-                bm_emails=[bm_email] if bm_email else [],
-                cc_email=cc_email,
-                plant_records={pname: recs},
                 summary_date=summary_date,
             )
             if success:

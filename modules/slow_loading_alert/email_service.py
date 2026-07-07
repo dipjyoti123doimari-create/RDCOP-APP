@@ -139,18 +139,32 @@ def send_hourly_alert(plant_code: str, plant_name: str, records: list,
     if not records:
         return False
 
-    pm_email = records[0].get("_pm_email", "")
-    bm_email = records[0].get("_bm_email", "")
-    cc_email = records[0].get("_cc_emails", "")
+    pm_email = (records[0].get("_pm_email", "") or "").strip()
+    bm_email = (records[0].get("_bm_email", "") or "").strip()
+    cc_raw   = records[0].get("_cc_emails", "")
 
-    to_emails = ",".join(filter(None, [pm_email, bm_email]))
+    # To = Plant Manager. CC = BM/EA-to-MD + CC Emails.
+    to_emails = pm_email
+    cc_list, seen = [], {pm_email.lower()} if pm_email else set()
+    for e in ([bm_email] + email_helper._split_emails(cc_raw)):
+        e = (e or "").strip()
+        if e and e.lower() not in seen:
+            seen.add(e.lower())
+            cc_list.append(e)
+    cc_email = ",".join(cc_list)
+
+    # If no Plant Manager, fall back to sending to the CC recipients directly
+    # so the alert is never silently dropped.
+    if not to_emails:
+        to_emails = cc_email
+        cc_email = ""
     if not to_emails:
         database.sla_log_email(
             "HOURLY", alert_date, alert_hour, plant_code, plant_name,
-            "", cc_email,
+            "", "",
             f"Slow Loading Alert | {plant_name} | {alert_date} {alert_hour:02d}:00",
             len(records), "FAILED",
-            "No Plant Manager or Business Manager email configured."
+            "No Plant Manager, BM/EA-to-MD, or CC email configured."
         )
         return False
 
@@ -215,32 +229,58 @@ def build_daily_html(summary_date: str, plant_records: dict) -> str:
 def send_daily_summary(bh_email: str, pm_emails: list, bm_emails: list,
                         cc_email: str, plant_records: dict,
                         summary_date: str) -> bool:
-    """Send the daily summary to BH, all PMs and BMs for the plants in plant_records."""
+    """Send one clustered daily summary for a Business Head's plants.
+
+    To = all Plant Managers across the BH's plants.
+    CC = all BM/EA-to-MD + the plants' CC Emails + the Business Head.
+    """
     if not plant_records:
         return False
 
     plant_names = list(plant_records.keys())
-    to_list = list(filter(None, [bh_email] + pm_emails + bm_emails))
-    if not to_list:
+
+    # To: Plant Managers only (de-duplicated, order preserved)
+    to_list, seen = [], set()
+    for e in pm_emails:
+        e = (e or "").strip()
+        if e and e.lower() not in seen:
+            seen.add(e.lower())
+            to_list.append(e)
+
+    # CC: BM/EA-to-MD + existing CC emails + the Business Head
+    # (de-duplicated, and never someone already in To)
+    cc_list = []
+    for e in (bm_emails + email_helper._split_emails(cc_email) + [bh_email]):
+        e = (e or "").strip()
+        if e and e.lower() not in seen and e.lower() not in {c.lower() for c in cc_list}:
+            cc_list.append(e)
+
+    if not to_list and not cc_list:
         return False
+    # If there are no PM/BM recipients, fall back to sending to the BH directly
+    # so the summary is never silently dropped.
+    if not to_list:
+        to_list = cc_list
+        cc_list = []
 
     to_emails = ",".join(to_list)
+    cc_emails = ",".join(cc_list)
     region_label = plant_names[0] if len(plant_names) == 1 else f"{len(plant_names)} Plants"
     subject = f"Daily Slow Loading Summary | {region_label} | {summary_date}"
     html_body = build_daily_html(summary_date, plant_records)
 
     total_cases = sum(len(v) for v in plant_records.values())
     try:
-        _send_html(to_emails, cc_email, subject, html_body)
+        _send_html(to_emails, cc_emails, subject, html_body)
         database.sla_log_email(
             "DAILY_SUMMARY", summary_date, 0, "", region_label,
-            to_emails, cc_email, subject, total_cases, "SENT"
+            to_emails, cc_emails, subject, total_cases, "SENT"
         )
         return True
     except Exception as exc:
         database.sla_log_email(
             "DAILY_SUMMARY", summary_date, 0, "", region_label,
-            to_emails, cc_email, subject, total_cases, "FAILED", str(exc)
+            to_emails, cc_emails, subject, total_cases, "FAILED", str(exc)
         )
         return False
 
