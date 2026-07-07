@@ -5190,56 +5190,67 @@ def ecmd_invoice_pending_fetch():
 
 # ── UEP Mail Scheduler ────────────────────────────────────────────────────────
 
-@app.route("/ecmd/mail-scheduler", methods=["GET"])
-@auth.uep_admin_required
-def ecmd_mail_scheduler():
-    def _ms(key, default=""):
+# Each module (ECMD/DPU/PFS) gets its own page under its own sidebar section,
+# since each runs on independent timing/recipients.
+_MS_ENDPOINT = {
+    "ecmd": "ecmd_mail_scheduler_ecmd",
+    "dpu":  "ecmd_mail_scheduler_dpu",
+    "pfs":  "ecmd_mail_scheduler_pfs",
+}
+
+
+def _ms_redirect(module):
+    return redirect(url_for(_MS_ENDPOINT.get(module, "ecmd_mail_scheduler_ecmd")))
+
+
+def _ms_sched(prefix):
+    def _get(key, default=""):
         return database.get_module_setting("ecmd", key, default)
-
-    email_configured = email_helper.uep_is_configured()
-
-    # ECMD monthly report scheduler
-    ecmd_sched = {
-        "enabled":     _ms("email_schedule_enabled", "false") == "true",
-        "time":        _ms("email_schedule_time", "08:00"),
-        "to":          _ms("email_schedule_to", ""),
-        "cc":          _ms("email_schedule_cc", ""),
-        "last_status": _ms("email_schedule_last_status", ""),
-    }
-    # DPU fortnightly scheduler
-    dpu_sched = {
-        "enabled":     _ms("dpu_mail_enabled", "false") == "true",
-        "time":        _ms("dpu_mail_time", "08:00"),
-        "to":          _ms("dpu_mail_to", ""),
-        "cc":          _ms("dpu_mail_cc", ""),
-        "last_status": _ms("dpu_mail_last_status", ""),
-    }
-    # PFS fortnightly scheduler
-    pfs_sched = {
-        "enabled":     _ms("pfs_mail_enabled", "false") == "true",
-        "time":        _ms("pfs_mail_time", "08:00"),
-        "to":          _ms("pfs_mail_to", ""),
-        "cc":          _ms("pfs_mail_cc", ""),
-        "last_status": _ms("pfs_mail_last_status", ""),
+    return {
+        "enabled":     _get(f"{prefix}_enabled", "false") == "true",
+        "time":        _get(f"{prefix}_time", "08:00"),
+        "to":          _get(f"{prefix}_to", ""),
+        "cc":          _get(f"{prefix}_cc", ""),
+        "last_status": _get(f"{prefix}_last_status", ""),
     }
 
-    # Periods available in DB for manual send
-    dpu_periods = [p["period_label"] for p in database.get_dual_plant_periods()]
-    pfs_periods = [p["period_label"] for p in database.get_invoice_pending_periods()]
 
-    # ECMD: list months that have calculated data
-    ecmd_months = database.get_ecmd_calculated_months() if hasattr(database, "get_ecmd_calculated_months") else []
-
+@app.route("/ecmd/mail-scheduler/ecmd", methods=["GET"])
+@auth.uep_admin_required
+def ecmd_mail_scheduler_ecmd():
     ctx = _ecmd_ctx()
-    ctx["active_page"] = "mail_scheduler"
-    return render_template("ecmd_mail_scheduler.html",
-                           email_configured=email_configured,
-                           ecmd_sched=ecmd_sched,
-                           dpu_sched=dpu_sched,
-                           pfs_sched=pfs_sched,
-                           dpu_periods=dpu_periods,
-                           pfs_periods=pfs_periods,
+    ctx["active_page"] = "mail_scheduler_ecmd"
+    ecmd_months = database.get_ecmd_calculated_months() if hasattr(database, "get_ecmd_calculated_months") else []
+    return render_template("ecmd_mail_scheduler_ecmd.html",
+                           email_configured=email_helper.uep_is_configured(),
+                           sched=_ms_sched("email_schedule"),
                            ecmd_months=ecmd_months,
+                           **ctx)
+
+
+@app.route("/ecmd/mail-scheduler/dpu", methods=["GET"])
+@auth.uep_admin_required
+def ecmd_mail_scheduler_dpu():
+    ctx = _ecmd_ctx()
+    ctx["active_page"] = "mail_scheduler_dpu"
+    dpu_periods = [p["period_label"] for p in database.get_dual_plant_periods()]
+    return render_template("ecmd_mail_scheduler_dpu.html",
+                           email_configured=email_helper.uep_is_configured(),
+                           sched=_ms_sched("dpu_mail"),
+                           dpu_periods=dpu_periods,
+                           **ctx)
+
+
+@app.route("/ecmd/mail-scheduler/pfs", methods=["GET"])
+@auth.uep_admin_required
+def ecmd_mail_scheduler_pfs():
+    ctx = _ecmd_ctx()
+    ctx["active_page"] = "mail_scheduler_pfs"
+    pfs_periods = [p["period_label"] for p in database.get_invoice_pending_periods()]
+    return render_template("ecmd_mail_scheduler_pfs.html",
+                           email_configured=email_helper.uep_is_configured(),
+                           sched=_ms_sched("pfs_mail"),
+                           pfs_periods=pfs_periods,
                            **ctx)
 
 
@@ -5250,7 +5261,7 @@ def ecmd_mail_scheduler_save():
     prefix = {"ecmd": "email_schedule", "dpu": "dpu_mail", "pfs": "pfs_mail"}.get(module)
     if not prefix:
         flash("Unknown module.", "error")
-        return redirect(url_for("ecmd_mail_scheduler"))
+        return redirect(url_for("ecmd_mail_scheduler_ecmd"))
 
     enabled = "true" if request.form.get("enabled") == "on" else "false"
     database.set_module_setting("ecmd", f"{prefix}_enabled", enabled)
@@ -5285,7 +5296,7 @@ def ecmd_mail_scheduler_save():
             pass
 
     flash(f"{module.upper()} mail scheduler {'enabled' if enabled == 'true' else 'disabled'}.", "success")
-    return redirect(url_for("ecmd_mail_scheduler"))
+    return _ms_redirect(module)
 
 
 @app.route("/ecmd/mail-scheduler/send-now", methods=["POST"])
@@ -5301,11 +5312,11 @@ def ecmd_mail_scheduler_send_now():
             _pfs_send_scheduled_email()
         else:
             flash("Unknown module.", "error")
-            return redirect(url_for("ecmd_mail_scheduler"))
+            return _ms_redirect(module)
         flash(f"{module.upper()} report email sent successfully.", "success")
     except Exception as e:
         flash(f"Failed to send {module.upper()} email: {e}", "error")
-    return redirect(url_for("ecmd_mail_scheduler"))
+    return _ms_redirect(module)
 
 
 @app.route("/ecmd/mail-scheduler/manual-send", methods=["POST"])
@@ -5321,14 +5332,14 @@ def ecmd_mail_scheduler_manual_send():
 
     if not to_addr:
         flash("Recipient (To) is required for manual send.", "error")
-        return redirect(url_for("ecmd_mail_scheduler"))
+        return _ms_redirect(module)
 
     try:
         if module == "ecmd":
             # Send ECMD monthly report for chosen month
             if not month:
                 flash("Please select a month for ECMD manual send.", "error")
-                return redirect(url_for("ecmd_mail_scheduler"))
+                return _ms_redirect(module)
             m, y = map(int, month.split("-"))
             _send_ecmd_report_email(m, y, to_addr, cc_addr)
             flash(f"ECMD report for {month} sent to {to_addr}.", "success")
@@ -5336,7 +5347,7 @@ def ecmd_mail_scheduler_manual_send():
         elif module in ("dpu", "pfs"):
             if not from_date or not to_date:
                 flash("From date and To date are required.", "error")
-                return redirect(url_for("ecmd_mail_scheduler"))
+                return _ms_redirect(module)
             if not label:
                 label = f"{from_date} to {to_date}"
             if module == "dpu":
@@ -5351,7 +5362,7 @@ def ecmd_mail_scheduler_manual_send():
     except Exception as e:
         flash(f"Manual send failed: {e}", "error")
 
-    return redirect(url_for("ecmd_mail_scheduler"))
+    return _ms_redirect(module)
 
 
 def _send_dpu_email(rows, label, to_addr, cc_addr):

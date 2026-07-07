@@ -47,23 +47,30 @@
       <a href="{{ url_for('ecmd_reports') }}" class="nav-item nav-sub {% if active_page in ('calculate','reports') %}active{% endif %}">
         <span class="nav-icon">⚡</span><span class="nav-label">Calculate &amp; Reports</span>
       </a>
+      {% if not current_user or current_user.role in UEP_ADMIN_ROLES %}
+      <a href="{{ url_for('ecmd_mail_scheduler_ecmd') }}" class="nav-item nav-sub {% if active_page == 'mail_scheduler_ecmd' %}active{% endif %}">
+        <span class="nav-icon">📧</span><span class="nav-label">Mail Scheduler</span>
+      </a>
+      {% endif %}
 
       <!-- ── DPU sub-module ── -->
       <div class="nav-section-label">DPU</div>
       <a href="{{ url_for('ecmd_dual_plant') }}" class="nav-item nav-sub {% if active_page == 'dual_plant' %}active{% endif %}">
         <span class="nav-icon">🏭</span><span class="nav-label">Dual Plant Utilisation</span>
       </a>
+      {% if not current_user or current_user.role in UEP_ADMIN_ROLES %}
+      <a href="{{ url_for('ecmd_mail_scheduler_dpu') }}" class="nav-item nav-sub {% if active_page == 'mail_scheduler_dpu' %}active{% endif %}">
+        <span class="nav-icon">📧</span><span class="nav-label">Mail Scheduler</span>
+      </a>
+      {% endif %}
 
       <!-- ── PFS sub-module ── -->
       <div class="nav-section-label">PFS</div>
       <a href="{{ url_for('ecmd_invoice_pending') }}" class="nav-item nav-sub {% if active_page == 'invoice_pending' %}active{% endif %}">
         <span class="nav-icon">📋</span><span class="nav-label">Pending Final Submission</span>
       </a>
-
-      <!-- ── Auto Mail Scheduler ── -->
       {% if not current_user or current_user.role in UEP_ADMIN_ROLES %}
-      <div class="nav-section-label">AUTO MAIL</div>
-      <a href="{{ url_for('ecmd_mail_scheduler') }}" class="nav-item nav-sub {% if active_page == 'mail_scheduler' %}active{% endif %}">
+      <a href="{{ url_for('ecmd_mail_scheduler_pfs') }}" class="nav-item nav-sub {% if active_page == 'mail_scheduler_pfs' %}active{% endif %}">
         <span class="nav-icon">📧</span><span class="nav-label">Mail Scheduler</span>
       </a>
       {% endif %}
