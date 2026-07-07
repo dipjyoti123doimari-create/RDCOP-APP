@@ -70,9 +70,26 @@
       {% if settings.test_mode == 'true' %}
       <div class="alert alert-warning" style="margin:0">
         🧪 <strong>Test mode is ON</strong> — hourly alerts and daily summaries are sent
-        <strong>only to each plant's CC Emails</strong>. Plant Managers, BM/EA-to-MD and
-        Business Heads are <strong>not</strong> emailed. Turn this off to go live.
+        {% if settings.test_recipient %}
+          <strong>only to {{ settings.test_recipient }}</strong>
+        {% else %}
+          <strong>only to each plant's CC Emails</strong>
+        {% endif %}.
+        Plant Managers, BM/EA-to-MD and Business Heads are <strong>not</strong> emailed.
+        Turn this off to go live.
       </div>
+      <form method="POST" action="{{ url_for('sla_save_settings') }}" style="display:flex;gap:8px;align-items:flex-end">
+        <input type="hidden" name="hourly_alert_enabled" value="{{ settings.hourly_alert_enabled }}">
+        <input type="hidden" name="daily_summary_enabled" value="{{ settings.daily_summary_enabled }}">
+        <input type="hidden" name="daily_summary_time" value="{{ settings.daily_summary_time or '07:00' }}">
+        <input type="hidden" name="min_threshold_min" value="{{ settings.min_threshold_min or '4' }}">
+        <input type="hidden" name="global_cc" value="{{ settings.global_cc or '' }}">
+        <div class="form-group" style="margin:0;flex:1">
+          <label class="form-label">Test Recipient Override <span style="font-weight:400;color:var(--text-muted)">(only this address gets test-mode mail; leave blank to use each plant's CC Emails)</span></label>
+          <input type="email" name="test_recipient" value="{{ settings.test_recipient or '' }}" class="form-control" placeholder="e.g. dipjyoti.doimari@rdc.in">
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">💾 Save</button>
+      </form>
       {% endif %}
 
       <!-- Hourly Alert on/off -->

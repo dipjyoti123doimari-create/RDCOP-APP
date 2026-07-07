@@ -204,6 +204,7 @@ def run_daily_summary_job(summary_date: str = None, preview_only: bool = False) 
             bh_plant_records = {}
             pm_emails, bm_emails = [], []
             cc_set = set()
+            locations, seen_loc = [], set()
             for code in codes:
                 recs = by_plant_code.get(code, [])
                 if not recs:
@@ -222,11 +223,16 @@ def run_daily_summary_job(summary_date: str = None, preview_only: bool = False) 
                     e = e.strip()
                     if e:
                         cc_set.add(e)
+                loc = (info.get("exco_location", "") or "").strip()
+                if loc and loc not in seen_loc:
+                    seen_loc.add(loc)
+                    locations.append(loc)
 
             if not bh_plant_records:
                 continue
 
             success = email_service.send_daily_summary(
+                locations=locations,
                 bh_email=bh_email,
                 pm_emails=pm_emails, bm_emails=bm_emails,
                 cc_email=",".join(cc_set),

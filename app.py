@@ -6312,7 +6312,7 @@ def sla_configuration():
     thresholds = database.sla_get_all_thresholds()
     _setting_keys = [
         "hourly_alert_enabled", "daily_summary_enabled", "daily_summary_time",
-        "min_threshold_min", "global_cc", "gsheet_id", "plant_mapping_tab",
+        "min_threshold_min", "global_cc", "test_recipient", "gsheet_id", "plant_mapping_tab",
         "batcher_mapping_tab",
         "oracle_plant_col", "oracle_salesorder_col", "oracle_linenumber_col",
         "oracle_grade_col", "oracle_batcher_col", "oracle_truck_col",
@@ -6366,7 +6366,7 @@ def sla_save_settings():
         return render_template("access_denied.html", current_user=g.current_user,
                                required_roles=[auth.SUPER_ADMIN]), 403
     keys = ["hourly_alert_enabled", "daily_summary_enabled", "daily_summary_time",
-            "min_threshold_min", "global_cc"]
+            "min_threshold_min", "global_cc", "test_recipient"]
     for k in keys:
         v = request.form.get(k, "")
         database.set_module_setting("sla", k, v)

@@ -204,6 +204,8 @@ def get_plant_mapping() -> dict:
     col_mc   = _find_col(df, "Mixer Capacity", "MixerCapacity", "Mixer_Capacity",
                          "Mixer Cap", "MixerCap", "Mixer Theo. Capacity",
                          "Mixer Theo Capacity") if not df.empty else None
+    col_loc  = _find_col(df, "Exco Location", "ExcoLocation", "Exco_Location",
+                         "Location") if not df.empty else None
 
     # Guard against the public-CSV fallback returning the wrong tab.
     # A valid plant tab must have at least a plant code AND one email column.
@@ -235,6 +237,8 @@ def get_plant_mapping() -> dict:
         mapping[code] = {
             "plant_name":     str(row.get(col_name, "") if col_name else "").strip()
                               or tp_fallback.get(code, {}).get("plant_name", ""),
+            "exco_location":  str(row.get(col_loc, "") if col_loc else "").strip()
+                              or tp_fallback.get(code, {}).get("exco_location", ""),
             "pm_email":       str(row.get(col_pm,   "") if col_pm   else "").strip(),
             "bm_email":       str(row.get(col_bm,   "") if col_bm   else "").strip(),
             "bh_email":       str(row.get(col_bh,   "") if col_bh   else "").strip(),

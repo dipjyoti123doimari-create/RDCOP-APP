@@ -23,6 +23,18 @@ def _test_mode() -> bool:
     return database.get_module_setting("sla", "test_mode", "true") == "true"
 
 
+def _test_recipients(cc_raw: str) -> list:
+    """Recipients to use while test mode is ON.
+
+    If a single test_recipient override is configured, use ONLY that address
+    (ignores the plant's CC Emails entirely). Otherwise falls back to the
+    plant's CC Emails list."""
+    override = database.get_module_setting("sla", "test_recipient", "").strip()
+    if override:
+        return [override]
+    return email_helper._split_emails(cc_raw)
+
+
 # ── Severity colours ──────────────────────────────────────────────────────────
 _SEV_COLOR = {
     "RED":   "#FF4444",
@@ -150,8 +162,8 @@ def send_hourly_alert(plant_code: str, plant_name: str, records: list,
     cc_raw   = records[0].get("_cc_emails", "")
 
     if _test_mode():
-        # Test mode → send only to the plant's CC Emails (as To).
-        to_emails = ",".join(email_helper._split_emails(cc_raw))
+        # Test mode → send only to the test recipient(s) (as To).
+        to_emails = ",".join(_test_recipients(cc_raw))
         cc_email = ""
     else:
         # To = Plant Manager. CC = BM/EA-to-MD + CC Emails.
@@ -206,16 +218,21 @@ def build_daily_html(summary_date: str, plant_records: dict) -> str:
     plant_records: {plant_name: [record, ...]}
     """
     total = sum(len(v) for v in plant_records.values())
-    plant_counts = [(pn, len(rs)) for pn, rs in plant_records.items()]
+    plant_counts = [
+        (pn, len(rs), sum(float(r.get("delay_minutes", 0) or 0) for r in rs))
+        for pn, rs in plant_records.items()
+    ]
     plant_summary_rows = "".join(
         f'<tr><td style="padding:2px 8px">{pn}</td>'
-        f'<td style="padding:2px 8px;text-align:right;font-weight:600">{cnt}</td></tr>'
-        for pn, cnt in plant_counts
+        f'<td style="padding:2px 8px;text-align:right;font-weight:600">{cnt}</td>'
+        f'<td style="padding:2px 8px;text-align:right;font-weight:600">{total_delay:.0f}</td></tr>'
+        for pn, cnt, total_delay in plant_counts
     )
     plant_summary = (
         '<table style="border-collapse:collapse;font-size:11px;margin-bottom:10px">'
         '<tr><th style="background:#082B49;color:#fff;padding:3px 8px">Plant</th>'
-        '<th style="background:#082B49;color:#fff;padding:3px 8px">Cases</th></tr>'
+        '<th style="background:#082B49;color:#fff;padding:3px 8px">Cases</th>'
+        '<th style="background:#082B49;color:#fff;padding:3px 8px">Total Extra Time (min)</th></tr>'
         f'{plant_summary_rows}</table>'
     )
 
@@ -241,7 +258,7 @@ def build_daily_html(summary_date: str, plant_records: dict) -> str:
 
 def send_daily_summary(bh_email: str, pm_emails: list, bm_emails: list,
                         cc_email: str, plant_records: dict,
-                        summary_date: str) -> bool:
+                        summary_date: str, locations: list = None) -> bool:
     """Send one clustered daily summary for a Business Head's plants.
 
     To = all Plant Managers across the BH's plants.
@@ -253,9 +270,9 @@ def send_daily_summary(bh_email: str, pm_emails: list, bm_emails: list,
     plant_names = list(plant_records.keys())
 
     if _test_mode():
-        # Test mode → send only to the plants' CC Emails (as To).
+        # Test mode → send only to the test recipient(s) (as To).
         to_list, seen = [], set()
-        for e in email_helper._split_emails(cc_email):
+        for e in _test_recipients(cc_email):
             e = (e or "").strip()
             if e and e.lower() not in seen:
                 seen.add(e.lower())
@@ -290,7 +307,8 @@ def send_daily_summary(bh_email: str, pm_emails: list, bm_emails: list,
     to_emails = ",".join(to_list)
     cc_emails = ",".join(cc_list)
     region_label = plant_names[0] if len(plant_names) == 1 else f"{len(plant_names)} Plants"
-    subject = f"Daily Slow Loading Summary | {region_label} | {summary_date}"
+    location_label = ", ".join(locations) if locations else region_label
+    subject = f"Daily Slow Loading Summary | {location_label} | {summary_date}"
     html_body = build_daily_html(summary_date, plant_records)
 
     total_cases = sum(len(v) for v in plant_records.values())
