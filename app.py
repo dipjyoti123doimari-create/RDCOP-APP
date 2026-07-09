@@ -651,7 +651,7 @@ def bg_theme():
 # Enforce login for every request except /login, /logout and static assets.
 # This is the "minimum disruption" approach — existing routes need no changes.
 
-_AUTH_EXEMPT = {"/login", "/logout"}
+_AUTH_EXEMPT = {"/login", "/logout", "/api/v1/reports"}
 
 @app.before_request
 def _require_login():
@@ -3372,7 +3372,8 @@ def page_settings():
                            db_size_mb=cache_helpers.get_db_size_mb(),
                            bg_auto=bg_auto(), bg_animate=bg_animate(), bg_theme=bg_theme(),
                            last_cache_clear=last_cache_clear,
-                           cache_cleared_today=cache_cleared_today)
+                           cache_cleared_today=cache_cleared_today,
+                           api_key=database.get_setting("external_api_key", ""))
 
 
 # ── ACTIONS ───────────────────────────────────────────────────────────────────
@@ -3938,6 +3939,15 @@ def clear_cache():
     return redirect(url_for("page_settings"))
 
 
+@app.route("/action/regenerate-api-key", methods=["POST"])
+def regenerate_api_key():
+    import secrets
+    new_key = secrets.token_urlsafe(32)
+    database.set_setting("external_api_key", new_key)
+    flash("New API key generated. Update any app already using the old key.", "success")
+    return redirect(url_for("page_settings"))
+
+
 # ── AJAX endpoint (topbar theme) ─────────────────────────────────────────────
 
 @app.route("/api/bg-settings", methods=["POST"])
@@ -3978,6 +3988,42 @@ def api_oracle_status():
 def api_progress():
     with _progress_lock:
         return jsonify(dict(_progress))
+
+
+# ── External data-sharing API (read-only, protected by X-API-Key header) ────
+@app.route("/api/v1/reports")
+@auth.api_key_required
+def api_v1_reports():
+    """
+    Read-only JSON feed of persisted incentive/deduction results, for other
+    apps to consume. Reads only from the already-calculated calculation_results
+    table — never triggers a fresh calculation.
+
+    Query params (all optional):
+      month=7&year=2026        filter to one month/year
+      plant=Guwahati           filter to one plant (exact match)
+      category=Driver          filter to one category (exact match)
+    """
+    df = database.read_table("calculation_results")
+    if df.empty:
+        return jsonify({"count": 0, "results": []})
+
+    month = request.args.get("month", type=int)
+    year = request.args.get("year", type=int)
+    plant = request.args.get("plant")
+    category = request.args.get("category")
+
+    if month:
+        df = df[df["month"] == month]
+    if year:
+        df = df[df["year"] == year]
+    if plant:
+        df = df[df["plant"] == plant]
+    if category:
+        df = df[df["category"] == category]
+
+    rows = df.to_dict(orient="records")
+    return jsonify({"count": len(rows), "results": rows})
 
 
 @app.route("/tp/api/table-columns")

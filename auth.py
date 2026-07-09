@@ -317,6 +317,24 @@ def viewer_or_above(f):
     return login_required(f)
 
 
+def api_key_required(f):
+    """
+    Protects external data-sharing API routes (/api/v1/...).
+    Caller must send header:  X-API-Key: <key>
+    The key is generated/stored via database.get_setting("external_api_key").
+    This is separate from the user-session login used by the rest of the app.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        import database  # local import avoids a circular import with database.py
+        expected = database.get_setting("external_api_key", "")
+        supplied = request.headers.get("X-API-Key", "")
+        if not expected or supplied != expected:
+            return {"error": "Invalid or missing X-API-Key header"}, 401
+        return f(*args, **kwargs)
+    return decorated
+
+
 def can_write(f):
     """Only roles that may mutate data (SUPER_ADMIN)."""
     return role_required(SUPER_ADMIN)(f)
