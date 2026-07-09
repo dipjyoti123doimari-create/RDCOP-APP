@@ -3372,8 +3372,7 @@ def page_settings():
                            db_size_mb=cache_helpers.get_db_size_mb(),
                            bg_auto=bg_auto(), bg_animate=bg_animate(), bg_theme=bg_theme(),
                            last_cache_clear=last_cache_clear,
-                           cache_cleared_today=cache_cleared_today,
-                           api_key=database.get_setting("external_api_key", ""))
+                           cache_cleared_today=cache_cleared_today)
 
 
 # ── ACTIONS ───────────────────────────────────────────────────────────────────
@@ -3940,12 +3939,13 @@ def clear_cache():
 
 
 @app.route("/action/regenerate-api-key", methods=["POST"])
+@auth.admin_required
 def regenerate_api_key():
     import secrets
     new_key = secrets.token_urlsafe(32)
     database.set_setting("external_api_key", new_key)
     flash("New API key generated. Update any app already using the old key.", "success")
-    return redirect(url_for("page_settings"))
+    return redirect(url_for("sysconfig_page"))
 
 
 # ── AJAX endpoint (topbar theme) ─────────────────────────────────────────────
@@ -5915,6 +5915,7 @@ def sysconfig_page():
                            today=str(_date.today()),
                            today_first=str(_date.today().replace(day=1)),
                            bg_auto=bg_auto(), bg_animate=bg_animate(), bg_theme=bg_theme(),
+                           api_key=database.get_setting("external_api_key", ""),
                            active_page="sysconfig")
 
 

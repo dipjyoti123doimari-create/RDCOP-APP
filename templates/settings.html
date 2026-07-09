@@ -57,18 +57,6 @@
     <span class="settings-tile-arrow">›</span>
   </div>
 
-  <!-- External API -->
-  <div class="settings-tile" onclick="openModal('modal-api')">
-    <div class="settings-tile-icon">🔗</div>
-    <div class="settings-tile-info">
-      <div class="settings-tile-title">External API</div>
-      <div class="settings-tile-status {% if api_key %}status-ok{% else %}status-warn{% endif %}">
-        {% if api_key %}✅ Key generated — share with the other app{% else %}⚠️ No key generated yet{% endif %}
-      </div>
-    </div>
-    <span class="settings-tile-arrow">›</span>
-  </div>
-
 </div>
 
 
@@ -202,48 +190,6 @@
         <strong>Hard Refresh</strong> forces the browser to reload all CSS, JS and fonts fresh.
       </p>
       <button class="btn btn-primary btn-sm" onclick="hardRefresh()">🔄 Restart Server &amp; Refresh</button>
-    </div>
-  </div>
-</div>
-
-
-<!-- ══════════════════════════════════════════════════════════════
-     MODAL: External API
-══════════════════════════════════════════════════════════════ -->
-<div id="modal-api" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-api')">
-  <div class="modal-box" style="max-width:640px">
-    <div class="modal-header">
-      <span>🔗 External API</span>
-      <button class="modal-close" onclick="closeModal('modal-api')">✕</button>
-    </div>
-    <div class="modal-body">
-      <p class="caption" style="margin-bottom:12px">
-        Lets another app read persisted incentive/deduction report data. Read-only —
-        no other app can change data through this key.
-      </p>
-
-      {% if api_key %}
-      <div class="form-group">
-        <label>API Key (send as header <code>X-API-Key</code>)</label>
-        <input type="text" value="{{ api_key }}" readonly onclick="this.select()">
-      </div>
-      <div class="form-group">
-        <label>Endpoint</label>
-        <input type="text" value="{{ request.url_root.rstrip('/') }}/api/v1/reports" readonly onclick="this.select()">
-      </div>
-      <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px">
-        Optional filters as query params: <code>?month=7&amp;year=2026&amp;plant=Guwahati&amp;category=Driver</code>
-      </p>
-      <form method="POST" action="{{ url_for('regenerate_api_key') }}"
-            onsubmit="return confirm('Regenerating will break any app already using the old key. Continue?');">
-        <button type="submit" class="btn btn-secondary">🔄 Regenerate Key</button>
-      </form>
-      {% else %}
-      <div class="alert alert-warning" style="margin-bottom:12px">⚠️ No API key generated yet.</div>
-      <form method="POST" action="{{ url_for('regenerate_api_key') }}">
-        <button type="submit" class="btn btn-primary">🔑 Generate API Key</button>
-      </form>
-      {% endif %}
     </div>
   </div>
 </div>
