@@ -396,7 +396,10 @@
 
       {% if maint_count > 0 %}
       <hr class="divider">
-      <div class="section-title" style="font-size:13px;margin-bottom:8px">📋 Months Uploaded</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div class="section-title" style="font-size:13px;margin:0">📋 Months Uploaded</div>
+        <a href="{{ url_for('sysconfig_download_maintenance') }}" class="btn btn-sm btn-secondary" style="padding:3px 12px;font-size:11px">⬇️ Download All (Excel)</a>
+      </div>
       <div class="metric-grid-3" style="margin-bottom:12px">
         <div class="metric-mini"><div class="metric-label">Total Plant-Month Rows</div><div class="metric-value">{{ maint_count | format_int }}</div></div>
         <div class="metric-mini"><div class="metric-label">Avg Cost (Rs/cum)</div><div class="metric-value" style="font-size:18px">{{ maint_avg }}</div></div>
@@ -411,13 +414,17 @@
               {% if g.month %}<span style="margin-left:8px;font-size:11px;padding:1px 7px;border-radius:10px;background:rgba(16,185,129,0.15);color:#34d399">🔒 Locked</span>{% endif %}
             </span>
             {% if g.month %}
-            <form method="POST" action="{{ url_for('delete_maintenance_month') }}"
-                  onsubmit="return confirm('Delete ALL maintenance cost data for {{ g.label }}?')">
-              <input type="hidden" name="month" value="{{ g.month }}">
-              <input type="hidden" name="year"  value="{{ g.year }}">
-              <input type="hidden" name="_next" value="sysconfig">
-              <button type="submit" class="btn btn-sm" style="background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);padding:3px 10px;font-size:11px">🗑️ Delete</button>
-            </form>
+            <div style="display:flex;gap:6px">
+              <a href="{{ url_for('sysconfig_download_maintenance', month=g.month, year=g.year) }}"
+                 class="btn btn-sm" style="background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);padding:3px 10px;font-size:11px">⬇️ Download</a>
+              <form method="POST" action="{{ url_for('delete_maintenance_month') }}"
+                    onsubmit="return confirm('Delete ALL maintenance cost data for {{ g.label }}?')">
+                <input type="hidden" name="month" value="{{ g.month }}">
+                <input type="hidden" name="year"  value="{{ g.year }}">
+                <input type="hidden" name="_next" value="sysconfig">
+                <button type="submit" class="btn btn-sm" style="background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);padding:3px 10px;font-size:11px">🗑️ Delete</button>
+              </form>
+            </div>
             {% endif %}
           </div>
           <div class="table-wrapper">

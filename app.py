@@ -6220,6 +6220,69 @@ def sysconfig_fetch_gl_maintenance():
     return redirect(url_for("sysconfig_page") + "?m=maintenance")
 
 
+@app.route("/sysconfig/download-maintenance")
+@auth.login_required
+def sysconfig_download_maintenance():
+    """Download saved maintenance cost data as Excel. Without month/year params
+    it exports every month; with them, only that month."""
+    import calendar as _cal5
+    month = request.args.get("month", type=int)
+    year  = request.args.get("year",  type=int)
+
+    conn = database.get_connection()
+    try:
+        if month and year:
+            df = pd.read_sql_query(
+                "SELECT * FROM maintenance_cost WHERE month = ? AND year = ? "
+                "ORDER BY ytd_maintenance_cost DESC",
+                conn, params=(month, year)
+            )
+            fname = f"Maintenance_Cost_{_cal5.month_abbr[month]}_{year}.xlsx"
+        else:
+            df = pd.read_sql_query(
+                "SELECT * FROM maintenance_cost ORDER BY year DESC, month DESC, "
+                "ytd_maintenance_cost DESC",
+                conn
+            )
+            fname = "Maintenance_Cost_All_Months.xlsx"
+    finally:
+        conn.close()
+
+    if df.empty:
+        flash("No maintenance cost data to download.", "warning")
+        return redirect(url_for("sysconfig_page") + "?m=maintenance")
+
+    # Friendlier headers + tidy column order for the exported sheet.
+    df = df.drop(columns=["id"], errors="ignore")
+    rename = {
+        "plant_code": "Plant Code", "location_code": "Location Code",
+        "org_code": "Org Code", "org_name": "Org Name",
+        "month": "Month", "year": "Year", "source": "Source",
+        "ytd_maintenance_cost": "YTD Maint. Cost (Rs/cum)",
+        "ptd_total_rm_cost": "PTD Total R&M Cost", "ptd_volume": "PTD Volume",
+        "ptd_rm_cost_per_cum": "PTD Cost/cum",
+        "ytd_total_rm_cost": "YTD Total R&M Cost", "ytd_volume": "YTD Volume",
+        "ly_total_rm_cost": "LY Total R&M Cost", "ly_volume": "LY Volume",
+        "ly_rm_cost_per_cum": "LY Cost/cum",
+        "oracle_period_name": "Oracle Period", "uploaded_at": "Saved At",
+    }
+    order = ["Plant Code", "Location Code", "Org Name", "Month", "Year",
+             "PTD Cost/cum", "YTD Maint. Cost (Rs/cum)", "LY Cost/cum",
+             "PTD Total R&M Cost", "PTD Volume",
+             "YTD Total R&M Cost", "YTD Volume",
+             "LY Total R&M Cost", "LY Volume",
+             "Source", "Oracle Period", "Saved At"]
+    df = df.rename(columns=rename)
+    df = df[[c for c in order if c in df.columns]]
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df.to_excel(writer, sheet_name="Maintenance Cost", index=False)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name=fname,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
 @app.route("/sysconfig/action/upload-backend", methods=["POST"])
 @auth.login_required
 def sysconfig_upload_backend():
