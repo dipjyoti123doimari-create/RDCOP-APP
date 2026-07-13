@@ -422,11 +422,12 @@
           </div>
           <div class="table-wrapper">
             <table>
-              <thead><tr><th>Plant Code</th><th>Org Name</th><th>PTD Cost/cum</th><th>YTD Cost/cum</th><th>LY Cost/cum</th><th>Source</th><th>Uploaded At</th></tr></thead>
+              <thead><tr><th>Plant Code</th><th>Loc Code</th><th>Org Name</th><th>PTD Cost/cum</th><th>YTD Cost/cum</th><th>LY Cost/cum</th><th>Source</th><th>Uploaded At</th></tr></thead>
               <tbody>
                 {% for row in g.rows %}
                 <tr>
                   <td>{{ row.plant_code }}</td>
+                  <td style="font-size:11px;color:#8ea0b4">{{ row.location_code or "—" }}</td>
                   <td>{{ row.org_name or "—" }}</td>
                   <td>{{ row.ptd_rm_cost_per_cum if row.ptd_rm_cost_per_cum is not none else "—" }}</td>
                   <td>{{ row.ytd_maintenance_cost }}</td>

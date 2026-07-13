@@ -103,6 +103,7 @@ TABLE_SCHEMAS = {
             ytd_maintenance_cost REAL,
             uploaded_at          TEXT,
             source               TEXT,
+            location_code        TEXT,
             org_code             TEXT,
             org_name             TEXT,
             ptd_total_rm_cost    REAL,
@@ -657,7 +658,7 @@ def init_db():
 
         # Migration: add Oracle GL-sourced columns to maintenance_cost
         _gl_cols = {
-            "source": "TEXT", "org_code": "TEXT", "org_name": "TEXT",
+            "source": "TEXT", "location_code": "TEXT", "org_code": "TEXT", "org_name": "TEXT",
             "ptd_total_rm_cost": "REAL", "ptd_volume": "REAL", "ptd_rm_cost_per_cum": "REAL",
             "ytd_total_rm_cost": "REAL", "ytd_volume": "REAL",
             "ly_total_rm_cost": "REAL", "ly_volume": "REAL", "ly_rm_cost_per_cum": "REAL",
@@ -666,6 +667,25 @@ def init_db():
         for _col, _type in _gl_cols.items():
             if _col not in existing_cols:
                 cur.execute(f"ALTER TABLE maintenance_cost ADD COLUMN {_col} {_type}")
+
+        # Migration: older DBs have a single-column `plant_code TEXT UNIQUE`
+        # constraint, which wrongly forbids the same plant appearing in two
+        # different months. Rebuild the table with the intended composite
+        # UNIQUE(plant_code, month, year) if that legacy constraint is present.
+        cur.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='maintenance_cost'")
+        _row = cur.fetchone()
+        _tbl_sql = (_row[0] if _row else "") or ""
+        if "plant_code           TEXT UNIQUE" in _tbl_sql or "plant_code TEXT UNIQUE" in _tbl_sql:
+            cur.execute("PRAGMA table_info(maintenance_cost)")
+            _cols = [r[1] for r in cur.fetchall() if r[1] != "id"]
+            _collist = ", ".join(_cols)
+            cur.execute("ALTER TABLE maintenance_cost RENAME TO maintenance_cost_old")
+            cur.execute(TABLE_SCHEMAS["maintenance_cost"])
+            cur.execute(
+                f"INSERT INTO maintenance_cost ({_collist}) "
+                f"SELECT {_collist} FROM maintenance_cost_old"
+            )
+            cur.execute("DROP TABLE maintenance_cost_old")
 
         # Index for fast date-range queries on the shared Oracle raw cache
         cur.execute("""CREATE INDEX IF NOT EXISTS idx_oracle_raw_date
@@ -759,6 +779,12 @@ def save_gl_maintenance_cost(df, month: int, year: int, period_name: str) -> int
                 ptd_total_rm_cost, ptd_volume, ptd_rm_cost_per_cum,
                 ytd_total_rm_cost, ytd_volume, ytd_rm_cost_per_cum,
                 ly_total_rm_cost, ly_volume, ly_rm_cost_per_cum
+
+    plant_code is set to the Oracle org_code (e.g. 'KL2', 'GU1') so it matches
+    how employees are mapped in Master Data. The raw GL location_code (segment3,
+    e.g. '4002') is kept in the location_code column for reference.
+    Rows with no org_code (unmapped location) fall back to the location_code so
+    the row is never lost.
     Returns the number of rows saved.
     """
     now = datetime.now().isoformat(timespec="seconds")
@@ -771,12 +797,14 @@ def save_gl_maintenance_cost(df, month: int, year: int, period_name: str) -> int
         )
         rows = [
             {
-                "plant_code":           str(row["location_code"]),
+                "plant_code":           (str(row.get("org_code", "") or "").strip()
+                                         or str(row["location_code"])),
                 "month":                month,
                 "year":                 year,
                 "ytd_maintenance_cost": float(row["ytd_rm_cost_per_cum"]),
                 "uploaded_at":          now,
                 "source":               "oracle",
+                "location_code":        str(row.get("location_code", "") or ""),
                 "org_code":             str(row.get("org_code", "") or ""),
                 "org_name":             str(row.get("org_name", "") or ""),
                 "ptd_total_rm_cost":    float(row["ptd_total_rm_cost"]),
