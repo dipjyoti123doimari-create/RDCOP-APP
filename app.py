@@ -193,12 +193,48 @@ def _build_tp_excel(plant_rows, location_rows) -> bytes:
     return buf.read()
 
 
+
+# Guards against the same Oracle fetch running twice at once (e.g. a startup
+# thread overlapping the daily cron, or two stray server instances) — this is
+# what previously duplicated oracle_raw_data and doubled the calculated
+# volume/incentive. Also enforces a minimum gap between fetch attempts.
+_oracle_fetch_lock = threading.Lock()
+_oracle_fetch_last_run: dict = {"shared": 0.0, "gl_maintenance": 0.0}
+_ORACLE_FETCH_MIN_GAP_SEC = 1.0
+
+
+def _run_oracle_fetch_once(key: str, fn):
+    """
+    Run `fn` (a no-arg fetch job) only if no other Oracle fetch is already in
+    progress. If one just ran less than _ORACLE_FETCH_MIN_GAP_SEC ago, pause
+    for that gap first rather than firing immediately back-to-back.
+    Returns True if fn ran, False if skipped (another fetch was in progress).
+    """
+    import time as _time
+    if not _oracle_fetch_lock.acquire(blocking=False):
+        print(f"[{key}] skipped — another Oracle fetch is already running.")
+        return False
+    try:
+        elapsed = _time.monotonic() - _oracle_fetch_last_run.get(key, 0.0)
+        if elapsed < _ORACLE_FETCH_MIN_GAP_SEC:
+            _time.sleep(_ORACLE_FETCH_MIN_GAP_SEC - elapsed)
+        fn()
+        _oracle_fetch_last_run[key] = _time.monotonic()
+        return True
+    finally:
+        _oracle_fetch_lock.release()
+
+
 def _shared_oracle_fetch_job():
     """
     Single daily Oracle fetch for ALL modules (replaces 3 separate jobs).
     Fetches previous month (full) + current month (1st → today) in one query.
     Stores to oracle_raw_data — shared by I&D, TP, BTRTP calculators.
     """
+    _run_oracle_fetch_once("oracle-fetch", _shared_oracle_fetch_job_impl)
+
+
+def _shared_oracle_fetch_job_impl():
     if not oracle_connector.is_configured():
         return
     import calendar as _cal
@@ -235,6 +271,10 @@ def _gl_maintenance_cost_job():
     the current month and save it into maintenance_cost (source='oracle'),
     replacing only that month's rows — history for older months is untouched.
     """
+    _run_oracle_fetch_once("gl-maintenance", _gl_maintenance_cost_job_impl)
+
+
+def _gl_maintenance_cost_job_impl():
     if not oracle_connector.is_configured():
         return
     today = _date.today()
@@ -6201,8 +6241,18 @@ def sysconfig_fetch_gl_maintenance():
         flash("Oracle is not configured — set it up first.", "error")
         return redirect(url_for("sysconfig_page") + "?m=maintenance")
     import calendar as _cal4
+    import time as _time4
     today = _date.today()
+    # Share the same lock as the cron/startup jobs so a manual click can never
+    # race a background fetch and duplicate rows. Wait briefly for the lock
+    # rather than failing immediately if one is already running.
+    if not _oracle_fetch_lock.acquire(timeout=10):
+        flash("Another Oracle fetch is already running — please try again shortly.", "warning")
+        return redirect(url_for("sysconfig_page") + "?m=maintenance")
     try:
+        elapsed = _time4.monotonic() - _oracle_fetch_last_run.get("gl_maintenance", 0.0)
+        if elapsed < _ORACLE_FETCH_MIN_GAP_SEC:
+            _time4.sleep(_ORACLE_FETCH_MIN_GAP_SEC - elapsed)
         period_name = oracle_connector.resolve_gl_period_name(today)
         gl_df, warns = oracle_connector.fetch_gl_maintenance_cost(period_name)
         for w in warns:
@@ -6215,8 +6265,11 @@ def sysconfig_fetch_gl_maintenance():
                                  _dt.now().isoformat(timespec="seconds"))
             flash(f"Fetched {saved:,} location rows from Oracle GL for "
                   f"{_cal4.month_name[today.month]} {today.year} (period '{period_name}').", "success")
+        _oracle_fetch_last_run["gl_maintenance"] = _time4.monotonic()
     except Exception as exc:
         flash(f"Oracle fetch failed: {exc}", "error")
+    finally:
+        _oracle_fetch_lock.release()
     return redirect(url_for("sysconfig_page") + "?m=maintenance")
 
 
