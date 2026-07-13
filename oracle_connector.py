@@ -899,6 +899,16 @@ def fetch_gl_maintenance_cost(period_name: str = None) -> tuple:
                         "ytd_total_rm_cost", "ytd_volume", "ytd_rm_cost_per_cum",
                         "ly_total_rm_cost", "ly_volume", "ly_rm_cost_per_cum"]:
             df[num_col] = pd.to_numeric(df[num_col], errors="coerce")
+
+        # Business rule: a negative YTD cost/cum is treated as unusable —
+        # fall back to the PTD cost/cum for that plant. This drives both the
+        # saved ytd_rm_cost_per_cum and the SPE threshold (via ytd_maintenance_cost).
+        _neg_ytd = df["ytd_rm_cost_per_cum"] < 0
+        if _neg_ytd.any():
+            warnings.append(f"{int(_neg_ytd.sum())} plant(s) had negative YTD cost/cum — "
+                            f"used PTD cost/cum instead.")
+            df.loc[_neg_ytd, "ytd_rm_cost_per_cum"] = df.loc[_neg_ytd, "ptd_rm_cost_per_cum"]
+
         df["location_code"] = df["location_code"].astype(str).str.strip()
         df["org_code"] = df["org_code"].fillna("").astype(str).str.strip()
         df["org_name"] = df["org_name"].fillna("").astype(str).str.strip()
