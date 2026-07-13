@@ -484,20 +484,31 @@ def save_oracle_raw_data(df: pd.DataFrame, replace: bool = True) -> int:
             "time_taken_min":  float(row["time_taken_min"]),
             "fetched_at":      now,
         })
-    if replace:
-        # Clear rows in the same date range before inserting
-        if rows:
-            min_d = min(r["production_date"] for r in rows)
-            max_d = max(r["production_date"] for r in rows)
-            conn = database.get_connection()
-            try:
-                conn.execute(
-                    "DELETE FROM oracle_raw_data WHERE production_date >= ? AND production_date <= ?",
-                    (min_d, max_d)
-                )
-                conn.commit()
-            finally:
-                conn.close()
+    if replace and rows:
+        # Clear + insert in ONE transaction so two concurrent fetch jobs
+        # (e.g. the startup thread racing the daily cron) can't interleave
+        # their deletes and inserts and leave duplicated rows behind.
+        min_d = min(r["production_date"] for r in rows)
+        max_d = max(r["production_date"] for r in rows)
+        cols = list(rows[0].keys())
+        placeholders = ", ".join(["?"] * len(cols))
+        sql = f"INSERT INTO oracle_raw_data ({', '.join(cols)}) VALUES ({placeholders})"
+        conn = database.get_connection()
+        conn.isolation_level = None  # take manual control of the transaction
+        try:
+            conn.execute("BEGIN IMMEDIATE")  # write-lock now; blocks a racing fetch
+            conn.execute(
+                "DELETE FROM oracle_raw_data WHERE production_date >= ? AND production_date <= ?",
+                (min_d, max_d)
+            )
+            conn.executemany(sql, [[r[c] for c in cols] for r in rows])
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+        return len(rows)
     return database.insert_rows("oracle_raw_data", rows)
 
 
