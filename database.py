@@ -90,7 +90,8 @@ TABLE_SCHEMAS = {
         )
     """,
 
-    # Rows read from the uploaded Maintenance Cost Excel (Phase 4)
+    # Rows read from the uploaded Maintenance Cost Excel (Phase 4), or fetched
+    # automatically from Oracle GL balances (RM + oil cost per cum by location).
     # month + year added so each calendar month can hold its own cost file.
     # UNIQUE on (plant_code, month, year) — one cost per plant per month.
     "maintenance_cost": """
@@ -101,6 +102,18 @@ TABLE_SCHEMAS = {
             year                 INTEGER,
             ytd_maintenance_cost REAL,
             uploaded_at          TEXT,
+            source               TEXT,
+            org_code             TEXT,
+            org_name             TEXT,
+            ptd_total_rm_cost    REAL,
+            ptd_volume           REAL,
+            ptd_rm_cost_per_cum  REAL,
+            ytd_total_rm_cost    REAL,
+            ytd_volume           REAL,
+            ly_total_rm_cost     REAL,
+            ly_volume            REAL,
+            ly_rm_cost_per_cum   REAL,
+            oracle_period_name   TEXT,
             UNIQUE(plant_code, month, year)
         )
     """,
@@ -642,6 +655,18 @@ def init_db():
         if "year" not in existing_cols:
             cur.execute("ALTER TABLE maintenance_cost ADD COLUMN year  INTEGER")
 
+        # Migration: add Oracle GL-sourced columns to maintenance_cost
+        _gl_cols = {
+            "source": "TEXT", "org_code": "TEXT", "org_name": "TEXT",
+            "ptd_total_rm_cost": "REAL", "ptd_volume": "REAL", "ptd_rm_cost_per_cum": "REAL",
+            "ytd_total_rm_cost": "REAL", "ytd_volume": "REAL",
+            "ly_total_rm_cost": "REAL", "ly_volume": "REAL", "ly_rm_cost_per_cum": "REAL",
+            "oracle_period_name": "TEXT",
+        }
+        for _col, _type in _gl_cols.items():
+            if _col not in existing_cols:
+                cur.execute(f"ALTER TABLE maintenance_cost ADD COLUMN {_col} {_type}")
+
         # Index for fast date-range queries on the shared Oracle raw cache
         cur.execute("""CREATE INDEX IF NOT EXISTS idx_oracle_raw_date
                        ON oracle_raw_data(production_date)""")
@@ -721,6 +746,59 @@ def delete_maintenance_month(month: int, year: int) -> int:
         )
         conn.commit()
         return cur.rowcount
+    finally:
+        conn.close()
+
+
+def save_gl_maintenance_cost(df, month: int, year: int, period_name: str) -> int:
+    """
+    Save maintenance cost rows fetched from Oracle GL for a specific month+year.
+    Replaces any existing rows for that month+year (same as the Excel upload
+    path), leaving other months untouched — so history stays queryable later.
+    df columns: location_code, org_code, org_name,
+                ptd_total_rm_cost, ptd_volume, ptd_rm_cost_per_cum,
+                ytd_total_rm_cost, ytd_volume, ytd_rm_cost_per_cum,
+                ly_total_rm_cost, ly_volume, ly_rm_cost_per_cum
+    Returns the number of rows saved.
+    """
+    now = datetime.now().isoformat(timespec="seconds")
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM maintenance_cost WHERE month = ? AND year = ?",
+            (month, year)
+        )
+        rows = [
+            {
+                "plant_code":           str(row["location_code"]),
+                "month":                month,
+                "year":                 year,
+                "ytd_maintenance_cost": float(row["ytd_rm_cost_per_cum"]),
+                "uploaded_at":          now,
+                "source":               "oracle",
+                "org_code":             str(row.get("org_code", "") or ""),
+                "org_name":             str(row.get("org_name", "") or ""),
+                "ptd_total_rm_cost":    float(row["ptd_total_rm_cost"]),
+                "ptd_volume":           float(row["ptd_volume"]),
+                "ptd_rm_cost_per_cum":  float(row["ptd_rm_cost_per_cum"]),
+                "ytd_total_rm_cost":    float(row["ytd_total_rm_cost"]),
+                "ytd_volume":           float(row["ytd_volume"]),
+                "ly_total_rm_cost":     float(row["ly_total_rm_cost"]),
+                "ly_volume":            float(row["ly_volume"]),
+                "ly_rm_cost_per_cum":   float(row["ly_rm_cost_per_cum"]),
+                "oracle_period_name":   period_name,
+            }
+            for _, row in df.iterrows()
+        ]
+        if rows:
+            columns = list(rows[0].keys())
+            placeholders = ", ".join(["?"] * len(columns))
+            sql = (f"INSERT INTO maintenance_cost ({', '.join(columns)}) "
+                   f"VALUES ({placeholders})")
+            cur.executemany(sql, [list(r.values()) for r in rows])
+        conn.commit()
+        return len(rows)
     finally:
         conn.close()
 

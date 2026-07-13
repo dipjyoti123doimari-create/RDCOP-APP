@@ -229,6 +229,31 @@ def _shared_oracle_fetch_job():
 
 
 
+def _gl_maintenance_cost_job():
+    """
+    Monthly: pull R&M (maintenance) cost per cum from Oracle GL balances for
+    the current month and save it into maintenance_cost (source='oracle'),
+    replacing only that month's rows — history for older months is untouched.
+    """
+    if not oracle_connector.is_configured():
+        return
+    today = _date.today()
+    try:
+        period_name = oracle_connector.resolve_gl_period_name(today)
+        gl_df, warnings = oracle_connector.fetch_gl_maintenance_cost(period_name)
+        for w in warnings:
+            print(f"[gl-maintenance] {w}")
+        if not gl_df.empty:
+            saved = database.save_gl_maintenance_cost(gl_df, today.month, today.year, period_name)
+            database.set_setting("sysconfig_last_gl_maintenance_fetch",
+                                 _dt.now().isoformat(timespec="seconds"))
+            print(f"[gl-maintenance] done — {saved} rows saved for period '{period_name}'")
+        else:
+            print(f"[gl-maintenance] no rows returned for period '{period_name}'")
+    except Exception as exc:
+        print(f"[gl-maintenance] error: {exc}")
+
+
 def _auto_calc_one_period(month, year, fd, td, label):
     """Calculate all 3 modules for a single period. Called for both prev and current month."""
     import calendar as _cal2
@@ -306,6 +331,7 @@ def _startup_oracle_fetch():
     print("[startup-fetch] Oracle reachable — running shared fetch for all modules")
     _shared_oracle_fetch_job()
     _auto_calculate_current_month()
+    _gl_maintenance_cost_job()
     print("[startup-fetch] done")
 
 
@@ -324,6 +350,12 @@ def _start_scheduler():
     _scheduler.add_job(_auto_calculate_current_month,
                        CronTrigger(hour=0, minute=30),
                        id="auto_calculate_current_month", replace_existing=True)
+    # GL maintenance cost (R&M cost per cum) — pulled once a day so PTD stays
+    # current through the month; saved under the current month's key so
+    # earlier months' saved snapshots are never touched.
+    _scheduler.add_job(_gl_maintenance_cost_job,
+                       CronTrigger(hour=0, minute=45),
+                       id="gl_maintenance_cost_fetch", replace_existing=True)
     # SLA — hourly slow loading alert.
     _scheduler.add_job(sla_scheduler.run_hourly_alert_job,
                        CronTrigger(minute=0),  # fires at top of every hour
@@ -2952,6 +2984,11 @@ def page_data_uploader():
                 "plant_code":           r["plant_code"],
                 "ytd_maintenance_cost": r["ytd_maintenance_cost"],
                 "uploaded_at":          r.get("uploaded_at", ""),
+                "source":               r.get("source") or "excel",
+                "org_name":             r.get("org_name", ""),
+                "ptd_rm_cost_per_cum":  r.get("ptd_rm_cost_per_cum"),
+                "ly_rm_cost_per_cum":   r.get("ly_rm_cost_per_cum"),
+                "oracle_period_name":   r.get("oracle_period_name", ""),
             })
     maint_month_groups = sorted(maint_months_data.values(),
                                 key=lambda g: (g["year"], g["month"]), reverse=True)
@@ -5809,6 +5846,7 @@ def sysconfig_page():
     has_creds        = google_sheets.credentials_exist()
     auto_sync        = database.get_setting("gsheet_auto_sync", "false") == "true"
     last_oracle_fetch = database.get_setting("sysconfig_last_oracle_fetch", "")
+    last_gl_maintenance_fetch = database.get_setting("sysconfig_last_gl_maintenance_fetch", "")
 
     m_count = database.get_table_counts().get("master_data", 0)
     master_cols, master_rows = [], []
@@ -5848,6 +5886,11 @@ def sysconfig_page():
                 "plant_code":           r["plant_code"],
                 "ytd_maintenance_cost": r["ytd_maintenance_cost"],
                 "uploaded_at":          r.get("uploaded_at", ""),
+                "source":               r.get("source") or "excel",
+                "org_name":             r.get("org_name", ""),
+                "ptd_rm_cost_per_cum":  r.get("ptd_rm_cost_per_cum"),
+                "ly_rm_cost_per_cum":   r.get("ly_rm_cost_per_cum"),
+                "oracle_period_name":   r.get("oracle_period_name", ""),
             })
         maint_month_groups = sorted(maint_months_data.values(),
                                     key=lambda g: (g["year"], g["month"]), reverse=True)
@@ -5890,6 +5933,7 @@ def sysconfig_page():
                            smtp=smtp, email_configured=email_configured,
                            ora=ora, ora_configured=ora_configured,
                            last_oracle_fetch=last_oracle_fetch,
+                           last_gl_maintenance_fetch=last_gl_maintenance_fetch,
                            last_sync=last_sync, has_creds=has_creds, auto_sync=auto_sync,
                            last_master_sync=last_master_sync,
                            m_count=m_count, master_cols=master_cols, master_rows=master_rows,
@@ -6143,6 +6187,34 @@ def sysconfig_upload_maintenance():
         flash(f"Saved {saved:,} plant maintenance cost rows for {_cal3.month_name[month]} {year}.", "success")
     except Exception as exc:
         flash(f"Upload failed: {exc}", "error")
+    return redirect(url_for("sysconfig_page") + "?m=maintenance")
+
+
+@app.route("/sysconfig/action/fetch-gl-maintenance", methods=["POST"])
+@auth.login_required
+def sysconfig_fetch_gl_maintenance():
+    """Manual trigger — pulls R&M cost per cum from Oracle GL for the current
+    month right now, instead of waiting for the nightly cron job."""
+    if not oracle_connector.is_configured():
+        flash("Oracle is not configured — set it up first.", "error")
+        return redirect(url_for("sysconfig_page") + "?m=maintenance")
+    import calendar as _cal4
+    today = _date.today()
+    try:
+        period_name = oracle_connector.resolve_gl_period_name(today)
+        gl_df, warns = oracle_connector.fetch_gl_maintenance_cost(period_name)
+        for w in warns:
+            flash(w, "warning")
+        if gl_df.empty:
+            flash(f"No GL maintenance cost rows returned for period '{period_name}'.", "error")
+        else:
+            saved = database.save_gl_maintenance_cost(gl_df, today.month, today.year, period_name)
+            database.set_setting("sysconfig_last_gl_maintenance_fetch",
+                                 _dt.now().isoformat(timespec="seconds"))
+            flash(f"Fetched {saved:,} location rows from Oracle GL for "
+                  f"{_cal4.month_name[today.month]} {today.year} (period '{period_name}').", "success")
+    except Exception as exc:
+        flash(f"Oracle fetch failed: {exc}", "error")
     return redirect(url_for("sysconfig_page") + "?m=maintenance")
 
 

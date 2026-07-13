@@ -320,8 +320,24 @@
       <p class="caption" style="margin-bottom:4px">Plant-wise YTD maintenance cost per month. Determines which SPE rate (low/high cost) applies.</p>
       <p class="caption" style="margin-bottom:12px;color:#5a7a9a">📌 Used by: I&amp;D (cost threshold &gt; ₹18/cum → high-cost rate)</p>
 
-      <div class="section-title" style="font-size:13px;margin-bottom:8px">📤 Upload Maintenance Cost File</div>
-      <p class="caption" style="margin-bottom:12px">Required columns: <strong>Plant Code, YTD Maintenance Cost</strong>. Select the month this file belongs to.</p>
+      <div class="card" style="margin-bottom:14px;border:1px solid rgba(52,211,153,0.3);background:rgba(52,211,153,0.06)">
+        <div class="section-title" style="font-size:13px;margin-bottom:6px">🔄 Auto-Fetch from Oracle GL</div>
+        <p class="caption" style="margin-bottom:8px">
+          Pulls R&amp;M (maintenance) cost per cum — PTD / YTD / LY — by plant location directly from Oracle GL balances.
+          Runs automatically every night; the current month's snapshot is refreshed in place, older months are kept untouched.
+        </p>
+        <p class="caption" style="margin-bottom:10px">
+          Last Oracle fetch: <strong>{{ last_gl_maintenance_fetch or "Never" }}</strong>
+        </p>
+        <form method="POST" action="{{ url_for('sysconfig_fetch_gl_maintenance') }}" style="display:inline">
+          <button type="submit" class="btn btn-primary btn-sm" {% if not ora_configured %}disabled title="Configure Oracle first"{% endif %}>
+            ⚡ Fetch from Oracle Now
+          </button>
+        </form>
+      </div>
+
+      <div class="section-title" style="font-size:13px;margin-bottom:8px">📤 Upload Maintenance Cost File (manual override)</div>
+      <p class="caption" style="margin-bottom:12px">Required columns: <strong>Plant Code, YTD Maintenance Cost</strong>. Select the month this file belongs to. Use this only if Oracle data needs a correction.</p>
       <form method="POST" action="{{ url_for('sysconfig_upload_maintenance') }}" enctype="multipart/form-data" id="maint-upload-form">
         <div class="form-grid" style="margin-bottom:12px">
           <div class="form-group">
@@ -406,10 +422,24 @@
           </div>
           <div class="table-wrapper">
             <table>
-              <thead><tr><th>Plant Code</th><th>YTD Maint. Cost</th><th>Uploaded At</th></tr></thead>
+              <thead><tr><th>Plant Code</th><th>Org Name</th><th>PTD Cost/cum</th><th>YTD Cost/cum</th><th>LY Cost/cum</th><th>Source</th><th>Uploaded At</th></tr></thead>
               <tbody>
                 {% for row in g.rows %}
-                <tr><td>{{ row.plant_code }}</td><td>{{ row.ytd_maintenance_cost }}</td><td style="font-size:11px;color:#8ea0b4">{{ row.uploaded_at }}</td></tr>
+                <tr>
+                  <td>{{ row.plant_code }}</td>
+                  <td>{{ row.org_name or "—" }}</td>
+                  <td>{{ row.ptd_rm_cost_per_cum if row.ptd_rm_cost_per_cum is not none else "—" }}</td>
+                  <td>{{ row.ytd_maintenance_cost }}</td>
+                  <td>{{ row.ly_rm_cost_per_cum if row.ly_rm_cost_per_cum is not none else "—" }}</td>
+                  <td>
+                    {% if row.source == "oracle" %}
+                    <span style="font-size:11px;padding:1px 7px;border-radius:10px;background:rgba(52,211,153,0.15);color:#34d399">🔄 Oracle{% if row.oracle_period_name %} ({{ row.oracle_period_name }}){% endif %}</span>
+                    {% else %}
+                    <span style="font-size:11px;padding:1px 7px;border-radius:10px;background:rgba(148,163,184,0.15);color:#94a3b8">📤 Excel</span>
+                    {% endif %}
+                  </td>
+                  <td style="font-size:11px;color:#8ea0b4">{{ row.uploaded_at }}</td>
+                </tr>
                 {% endfor %}
               </tbody>
             </table>
