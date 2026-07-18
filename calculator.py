@@ -615,6 +615,32 @@ def run_calculation(month: int, year: int,
             database.set_setting("last_calc_mapped",     str(len(results)))
             database.set_setting("last_calc_unmapped",   str(len(unmapped_agg)))
 
+        # Maintenance-cost anomaly signal for the automated report gate.
+        # The report's maintenance cost MUST come from its own month/year.
+        # None  -> cost is correctly this month's data (normal, send freely).
+        # dict  -> anomaly: month is missing or a different month was applied;
+        #          the automated send must warn + wait for approval, never send
+        #          silently. Carries a human-readable reason for the warning mail.
+        if maint_applied_label == "None (₹0)":
+            maint_anomaly = {
+                "kind":     "missing",
+                "expected": calc_month_label,
+                "applied":  "None (all plants ₹0)",
+                "reason":   (f"No maintenance cost data found for {calc_month_label}. "
+                             f"All plants would be calculated with ₹0 cost."),
+            }
+        elif _m_used != month or _y_used != year:
+            maint_anomaly = {
+                "kind":     "mismatch",
+                "expected": calc_month_label,
+                "applied":  maint_applied_label,
+                "reason":   (f"Maintenance cost month mismatch: report is for "
+                             f"{calc_month_label} but the only maintenance data available "
+                             f"is from {maint_applied_label}."),
+            }
+        else:
+            maint_anomaly = None
+
         return {
             "total_employees": len(aggregated),
             "mapped":          len(results),
@@ -625,6 +651,7 @@ def run_calculation(month: int, year: int,
             "results_rows":    results,
             "unmapped_rows":   unmapped_rows,
             "calc_warnings":   calc_warnings,
+            "maint_anomaly":   maint_anomaly,
             "preflight_errors": [],
             "error":           None,
         }
@@ -635,6 +662,7 @@ def run_calculation(month: int, year: int,
             "total_incentive": 0, "total_deduction": 0,
             "generated_at": _now(), "results_rows": [],
             "calc_warnings": [],
+            "maint_anomaly": None,
             "preflight_errors": [],
             "error": str(exc),
         }

@@ -566,9 +566,145 @@ def _rdc_prev_month():
     return prev.month, prev.year
 
 
-def _rdc_send_report(module, month, year, to_addr, cc_addr):
+# ─── Maintenance-cost anomaly → approval-gated send ────────────────────────────
+# When an automated I&D report's maintenance cost is not from its own month, we
+# hold the send, store the small send-params under a random token (in app_settings
+# as JSON — no report bytes stored, the report is regenerated on approve), and
+# email a warning with Approve / Reject links to the approver.
+
+# Who approves the held report. Fixed per the operations rule.
+_MAINT_APPROVER = "dipjyoti.doimari@rdc.in"
+_MAINT_HOLD_PREFIX = "maint_hold_"   # app_settings key prefix for pending holds
+
+
+def _app_base_url():
+    """Absolute base URL for building approve/reject links inside emails.
+    Uses the configured public URL if set, else Flask's request context, else
+    a localhost fallback (port 2001)."""
+    configured = (database.get_setting("app_base_url", "") or "").strip()
+    if configured:
+        return configured.rstrip("/")
+    try:
+        from flask import request as _rq
+        if _rq:
+            return _rq.url_root.rstrip("/")
+    except Exception:
+        pass
+    return "http://127.0.0.1:2001"
+
+
+def _maint_hold_and_notify(module, month, year, to_addr, cc_addr, anomaly):
+    """Persist a pending held send and email the Approve/Reject warning.
+    Returns the token string."""
+    import json as _json
+    import secrets as _secrets
+    import calendar as _cal
+
+    token = _secrets.token_urlsafe(16)
+    payload = {
+        "module":  module,
+        "month":   int(month),
+        "year":    int(year),
+        "to":      to_addr or "",
+        "cc":      cc_addr or "",
+        "anomaly": anomaly,
+        "status":  "pending",
+        "created": _dt.now().isoformat(timespec="seconds"),
+    }
+    database.set_setting(_MAINT_HOLD_PREFIX + token, _json.dumps(payload))
+
+    label   = f"{_cal.month_name[month]} {year}"
+    base    = _app_base_url()
+    approve = f"{base}/id/mail-approve/{token}"
+    reject  = f"{base}/id/mail-reject/{token}"
+
+    subject = f"[ACTION NEEDED] Maintenance cost anomaly — {label} I&D report held"
+    body = (
+        f"Dear Dipjyoti,\n\n"
+        f"The automated I&D report for {label} was NOT sent because of a "
+        f"maintenance-cost anomaly:\n\n"
+        f"  • {anomaly.get('reason','')}\n"
+        f"  • Expected month : {anomaly.get('expected', label)}\n"
+        f"  • Applied instead: {anomaly.get('applied','')}\n\n"
+        f"The report is on hold. Please choose:\n\n"
+        f"  APPROVE (send anyway with the above cost):\n    {approve}\n\n"
+        f"  REJECT (do not send):\n    {reject}\n\n"
+        f"Intended recipient of the report: {to_addr or '(default)'}\n"
+    )
+    html = (
+        '<div style="font-family:Arial,sans-serif;font-size:13px;color:#0A2540;'
+        'line-height:1.5;max-width:640px">'
+        f'<p>Dear Dipjyoti,</p>'
+        f'<p>The automated I&amp;D report for <b>{label}</b> was <b>NOT sent</b> '
+        f'because of a maintenance-cost anomaly:</p>'
+        f'<ul><li>{anomaly.get("reason","")}</li>'
+        f'<li>Expected month: <b>{anomaly.get("expected", label)}</b></li>'
+        f'<li>Applied instead: <b>{anomaly.get("applied","")}</b></li></ul>'
+        f'<p>The report is on hold. Please choose:</p>'
+        f'<p><a href="{approve}" style="background:#1a7f37;color:#fff;'
+        f'padding:9px 18px;border-radius:6px;text-decoration:none;font-weight:bold">'
+        f'✔ APPROVE &amp; SEND</a>&nbsp;&nbsp;&nbsp;'
+        f'<a href="{reject}" style="background:#b42318;color:#fff;'
+        f'padding:9px 18px;border-radius:6px;text-decoration:none;font-weight:bold">'
+        f'&#10007; REJECT</a></p>'
+        f'<p style="color:#555;font-size:12px">Intended recipient of the report: '
+        f'{to_addr or "(default)"}</p>'
+        '</div>'
+    )
+    email_helper.send_report_email(
+        to_emails=_MAINT_APPROVER, cc_emails="",
+        subject=subject, body=body, html_body=html,
+    )
+    return token
+
+
+def _maint_hold_get(token):
+    """Load a pending hold payload by token, or None if missing/invalid."""
+    import json as _json
+    raw = database.get_setting(_MAINT_HOLD_PREFIX + (token or ""), "")
+    if not raw:
+        return None
+    try:
+        return _json.loads(raw)
+    except Exception:
+        return None
+
+
+def _maint_hold_set_status(token, status):
+    """Update a hold's status (approved/rejected/sent) — keeps an audit trail."""
+    import json as _json
+    payload = _maint_hold_get(token)
+    if not payload:
+        return
+    payload["status"] = status
+    payload["decided"] = _dt.now().isoformat(timespec="seconds")
+    database.set_setting(_MAINT_HOLD_PREFIX + token, _json.dumps(payload))
+
+
+class MaintApprovalRequired(Exception):
+    """Raised when an I&D report's maintenance cost is NOT from its own month.
+
+    The automated report must never silently borrow another month's (or ₹0)
+    maintenance cost. Instead the send is held and a warning/approval mail is
+    sent to the approver; the report only goes out after an explicit Approve.
+    """
+    def __init__(self, token, anomaly):
+        self.token = token
+        self.anomaly = anomaly
+        super().__init__(anomaly.get("reason", "Maintenance cost anomaly"))
+
+
+def _rdc_send_report(module, month, year, to_addr, cc_addr,
+                     allow_maint_anomaly=False):
     """Build a module's report for month/year fresh and email it.
-    Raises on failure (caller records status / flashes)."""
+    Raises on failure (caller records status / flashes).
+
+    For module 'id', the maintenance cost MUST come from the report's own
+    month/year. If it does not (month missing, or a different month applied)
+    and allow_maint_anomaly is False, the send is HELD: a warning/approval
+    mail goes to the approver and MaintApprovalRequired is raised. The report
+    is only sent once someone Approves (which re-calls this with
+    allow_maint_anomaly=True)."""
     import calendar as _cal
     label = f"{_cal.month_name[month]} {year}"
     subject, body = _rdc_mail_texts(module, label)
@@ -586,6 +722,15 @@ def _rdc_send_report(module, month, year, to_addr, cc_addr):
         unmapped = res.get("unmapped_rows", [])
         if not rows:
             raise ValueError(f"No I&D data found for {label}.")
+
+        # ── Maintenance-cost month gate ──────────────────────────────────────
+        # The report's maintenance cost must be from its own month. On anomaly,
+        # hold the send and ask the approver — never send silently.
+        anomaly = res.get("maint_anomaly")
+        if anomaly and not allow_maint_anomaly:
+            token = _maint_hold_and_notify(module, month, year, to_addr,
+                                           cc_addr, anomaly)
+            raise MaintApprovalRequired(token, anomaly)
         df_f   = pd.DataFrame(rows)     if rows     else pd.DataFrame(columns=RESULT_COLS)
         df_u   = pd.DataFrame(unmapped) if unmapped else pd.DataFrame()
         val_df = database.read_table("validation_errors")
@@ -660,6 +805,11 @@ def _make_rdc_scheduled_sender(module):
                 database.set_module_setting(
                     module, "mail_last_status",
                     f"Sent {_dt.now():%d %b %Y %H:%M}")
+            except MaintApprovalRequired as hold:
+                # Not a failure — report held for approval, warning mail sent.
+                database.set_module_setting(
+                    module, "mail_last_status",
+                    f"Held for approval (maintenance cost) {_dt.now():%d %b %Y %H:%M}")
             except Exception as e:
                 database.set_module_setting(module, "mail_last_status", f"Failed: {e}")
     return _job
@@ -730,6 +880,12 @@ def _require_login():
     if request.path.startswith("/static/"):
         return
     if request.path in _AUTH_EXEMPT:
+        return
+    # Maintenance-cost approval links are clicked from an email (no session).
+    # Security is the unguessable single-use token in the URL, so these are
+    # exempt from the login guard.
+    if (request.path.startswith("/id/mail-approve/")
+            or request.path.startswith("/id/mail-reject/")):
         return
     user = auth.get_current_user()
     if user is None:
@@ -6145,6 +6301,9 @@ def rdc_mail_scheduler_send_now():
         month, year = _rdc_prev_month()
         _rdc_send_report(module, month, year, to_addr, cc_addr)
         flash(f"{module.upper()} report email sent successfully.", "success")
+    except MaintApprovalRequired as hold:
+        flash(f"⚠️ Report held: {hold.anomaly.get('reason','maintenance cost anomaly')} "
+              f"An approval mail was sent to {_MAINT_APPROVER}.", "warning")
     except Exception as e:
         flash(f"Failed to send {module.upper()} email: {e}", "error")
     return _rdc_mail_redirect(module)
@@ -6169,9 +6328,74 @@ def rdc_mail_scheduler_manual_send():
         m, y = map(int, month.split("-"))
         _rdc_send_report(module, m, y, to_addr, cc_addr)
         flash(f"{module.upper()} report for {month} sent to {to_addr}.", "success")
+    except MaintApprovalRequired as hold:
+        flash(f"⚠️ Report held: {hold.anomaly.get('reason','maintenance cost anomaly')} "
+              f"An approval mail was sent to {_MAINT_APPROVER}.", "warning")
     except Exception as e:
         flash(f"Manual send failed: {e}", "error")
     return _rdc_mail_redirect(module)
+
+
+@app.route("/id/mail-approve/<token>")
+def id_mail_approve(token):
+    """Approve a held I&D report (maintenance-cost anomaly) and send it now."""
+    hold = _maint_hold_get(token)
+    if not hold:
+        return _maint_decision_page("Link expired or invalid",
+            "This approval link is no longer valid. It may have already been "
+            "used, or the hold was cleared.", ok=False)
+    if hold.get("status") == "sent":
+        return _maint_decision_page("Already sent",
+            "This report has already been approved and sent.", ok=True)
+    if hold.get("status") == "rejected":
+        return _maint_decision_page("Already rejected",
+            "This report was rejected and will not be sent.", ok=False)
+    try:
+        _rdc_send_report(hold["module"], hold["month"], hold["year"],
+                         hold["to"], hold["cc"], allow_maint_anomaly=True)
+        _maint_hold_set_status(token, "sent")
+        import calendar as _cal
+        label = f"{_cal.month_name[hold['month']]} {hold['year']}"
+        return _maint_decision_page("Approved & sent ✔",
+            f"The {label} I&D report has been sent to "
+            f"{hold['to'] or 'the configured recipients'}.", ok=True)
+    except Exception as e:
+        return _maint_decision_page("Send failed",
+            f"Approval was accepted but the report could not be sent: {e}", ok=False)
+
+
+@app.route("/id/mail-reject/<token>")
+def id_mail_reject(token):
+    """Reject a held I&D report — it will not be sent."""
+    hold = _maint_hold_get(token)
+    if not hold:
+        return _maint_decision_page("Link expired or invalid",
+            "This link is no longer valid.", ok=False)
+    if hold.get("status") == "sent":
+        return _maint_decision_page("Already sent",
+            "This report was already approved and sent, so it can't be rejected now.",
+            ok=False)
+    _maint_hold_set_status(token, "rejected")
+    return _maint_decision_page("Rejected ✔",
+        "The report has been rejected and will NOT be sent. Upload the correct "
+        "month's maintenance cost, then trigger the report again.", ok=True)
+
+
+def _maint_decision_page(title, message, ok=True):
+    """Tiny self-contained HTML confirmation page shown after Approve/Reject."""
+    color = "#1a7f37" if ok else "#b42318"
+    return (
+        f'<!DOCTYPE html><html><head><meta charset="utf-8">'
+        f'<meta name="viewport" content="width=device-width,initial-scale=1">'
+        f'<title>{title}</title></head>'
+        f'<body style="font-family:Arial,sans-serif;background:#f4f6f9;margin:0;'
+        f'padding:0"><div style="max-width:440px;margin:12vh auto;background:#fff;'
+        f'border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.08);padding:32px;'
+        f'text-align:center">'
+        f'<h2 style="color:{color};margin:0 0 12px">{title}</h2>'
+        f'<p style="color:#333;font-size:14px;line-height:1.5;margin:0">{message}</p>'
+        f'</div></body></html>'
+    )
 
 
 # ── System Config ─────────────────────────────────────────────────────────────
