@@ -152,9 +152,10 @@ REPORT_SHEETS = {
     "QCI Incentive & Deduction": ["QCI"],
     "All MO Incentive & Deduction": ["MO"],
     "SPE Incentive & Deduction": ["SPE"],
-    "TL Employee Incentive & Deduction": ["TL BPO"],
+    # "Deduction NA" is merged into the TL tab (kept as its own category so
+    # calculations stay unchanged — it just shares this sheet, no separate tab).
+    "TL Employee Incentive & Deduction": ["TL BPO", "Deduction NA"],
     "Production Officer Deduction": ["Production Officer"],
-    "Deduction NA Incentive": ["Deduction NA"],
     "Unmapped Employees": [],   # special sheet
     "Validation Errors": [],    # special sheet
 }

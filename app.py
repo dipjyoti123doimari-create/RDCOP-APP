@@ -923,9 +923,10 @@ CAT_TABS = {
     "QCI":                ["QCI"],
     "All MO":             ["MO"],
     "SPE":                ["SPE"],
-    "TL Employee":        ["TL BPO"],
+    # "Deduction NA" merged into the TL Employee tab (shares the tab; its own
+    # calculation rules are unchanged).
+    "TL Employee":        ["TL BPO", "Deduction NA"],
     "Production Officer": ["Production Officer"],
-    "Deduction NA":       ["Deduction NA"],
 }
 
 
@@ -5146,17 +5147,14 @@ def ecmd_download_validation_excel():
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
-@app.route("/ecmd/dual-plant")
-@auth.login_required
-def ecmd_dual_plant():
+def _build_dual_plant_grouped(raw_rows: list) -> list:
+    """
+    Group flat dual-plant rows (one per plant+mixer) into one dict per plant
+    with BP1/BP2/BP3 qty+pct, total, and a red/yellow/green utilization-imbalance
+    balance — same logic used by both the dashboard and the emailed report.
+    """
     import re as _re
-    today  = _date.today()
-    fortnights = _ecmd_fortnights(today.year, today.month)
-    periods    = database.get_dual_plant_periods()
-    sel_label  = request.args.get("period", periods[0]["period_label"] if periods else "")
-    raw_rows   = database.get_dual_plant_report(sel_label) if sel_label else []
 
-    # Live plant name resolution — same pattern as PFS
     _pm = {}
     for p in database.get_tp_plants():
         _pm[p["plant_code"]] = p["plant_name"]
@@ -5226,6 +5224,19 @@ def ecmd_dual_plant():
     # Sort: red first (highest variance first), then yellow, then green
     _order = {"red": 0, "yellow": 1, "green": 2}
     plants.sort(key=lambda p: (_order.get(p["balance"], 3), -p["variance"]))
+    return plants
+
+
+@app.route("/ecmd/dual-plant")
+@auth.login_required
+def ecmd_dual_plant():
+    today  = _date.today()
+    fortnights = _ecmd_fortnights(today.year, today.month)
+    periods    = database.get_dual_plant_periods()
+    sel_label  = request.args.get("period", periods[0]["period_label"] if periods else "")
+    raw_rows   = database.get_dual_plant_report(sel_label) if sel_label else []
+
+    plants = _build_dual_plant_grouped(raw_rows)
 
     ctx = _ecmd_ctx()
     ctx["active_page"] = "dual_plant"
@@ -5264,14 +5275,18 @@ def _run_invoice_pending_fetch(from_date: str, to_date: str, label: str) -> tupl
     # Build plant map: exact code first, then base code (strip _BP1/_BP2/_BP3 suffix)
     # so Oracle code 'MU7' matches master entry 'MU7_BP1'
     plant_map = {}
+    manager_map = {}
     for p in database.get_tp_plants():
         code = p["plant_code"]
         name = p["plant_name"]
+        mgr  = p.get("plant_manager", "")
         plant_map[code] = name  # exact match takes priority
+        manager_map[code] = mgr
         base = _re.sub(r'_BP\d+$', '', code)
         if base != code and base not in plant_map:
             # strip _BP suffix from name too (e.g. 'MUM-Sakinaka_BP1' -> 'MUM-Sakinaka')
             plant_map[base] = _re.sub(r'_BP\d+$', '', name)
+            manager_map[base] = mgr
 
     results = []
     for _, row in df.iterrows():
@@ -5279,12 +5294,13 @@ def _run_invoice_pending_fetch(from_date: str, to_date: str, label: str) -> tupl
         if not pc:
             continue
         results.append({
-            "plant_code":  pc,
-            "plant_name":  plant_map.get(pc, pc),
-            "sales_order": str(row.get("sales_order", "") or ""),
-            "line_number": str(row.get("line_number", "") or ""),
-            "quantity":    round(float(row["quantity"]), 2),
-            "fetched_at":  now_str,
+            "plant_code":     pc,
+            "plant_name":     plant_map.get(pc, pc),
+            "plant_manager":  manager_map.get(pc, ""),
+            "sales_order":    str(row.get("sales_order", "") or ""),
+            "line_number":    str(row.get("line_number", "") or ""),
+            "quantity":       round(float(row["quantity"]), 2),
+            "fetched_at":     now_str,
         })
     # Sort by plant name then descending quantity
     results.sort(key=lambda r: (r["plant_name"], -r["quantity"]))
@@ -5554,14 +5570,14 @@ _UEP_MAIL_DEFAULTS = {
         "Mixer DG Ratio Report for {period}.\n\nRegards,\nRDC Operations",
     ),
     "dpu_mail": (
-        "RDC-UEP DPU Report — {period}",
+        "Dual Plant Utilization Report — {period}",
         "Dear Team,\n\nPlease find below the Dual Plant Utilisation "
         "Report for {period}.\n\nRegards,\nRDC Operations",
     ),
     "pfs_mail": (
-        "RDC-UEP PFS Report — {period}",
+        "Pending Final Submission Report — {period}",
         "Dear Team,\n\nPlease find below the Pending Final Submission "
-        "Report for {period}.\n\nRegards,\nRDC Operations",
+        "Report for {period}.",
     ),
 }
 
@@ -5587,50 +5603,334 @@ def _uep_body_html(body_text):
     return "<p>" + _html.escape(body_text).replace("\n", "<br>") + "</p>"
 
 
+def _build_dpu_excel(plants, label):
+    """Build a color-coded Excel workbook for the DPU report — mirrors the
+    dashboard/email table: BP1/BP2/BP3 qty+%, total, utilization imbalance."""
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    HDR_FILL   = PatternFill("solid", fgColor="0A2540")
+    GREEN_FILL = PatternFill("solid", fgColor="E0F5EC")
+    YELLOW_FILL = PatternFill("solid", fgColor="FBF1D8")
+    RED_FILL   = PatternFill("solid", fgColor="FBE4E1")
+    PLAIN_FILL = PatternFill("solid", fgColor="FFFFFF")
+    HDR_FONT   = Font(bold=True, color="FFFFFF", size=10)
+    TITLE_FONT = Font(bold=True, color="FFFFFF", size=11)
+    PLAIN_FONT = Font(color="19263A", size=10)
+    GREEN_FONT  = Font(color="1A9C6E", size=10, bold=True)
+    YELLOW_FONT = Font(color="B8860B", size=10, bold=True)
+    RED_FONT    = Font(color="C0392B", size=10, bold=True)
+    CTR  = Alignment(vertical="center", horizontal="center")
+    LEFT = Alignment(vertical="center", horizontal="left")
+    WRAP = Alignment(wrap_text=True, vertical="center", horizontal="center")
+    thin = Side(style="thin", color="9A9A9A")
+    BDR  = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def _band(pct):
+        dist = abs(pct - 50) * 2
+        if dist > 60:
+            return RED_FILL, RED_FONT
+        if dist > 30:
+            return YELLOW_FILL, YELLOW_FONT
+        return GREEN_FILL, GREEN_FONT
+
+    def _balance_style(balance):
+        return {"red": (RED_FILL, RED_FONT),
+                "yellow": (YELLOW_FILL, YELLOW_FONT),
+                "green": (GREEN_FILL, GREEN_FONT)}.get(balance, (PLAIN_FILL, PLAIN_FONT))
+
+    HEADS = ["Sr.", "Plant Name", "Code", "BP1 Qty (m3)", "BP2 Qty (m3)", "BP3 Qty (m3)",
+              "BP1 %", "BP2 %", "BP3 %", "Total (m3)", "Utilization Imbalance"]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Dual Plant Utilisation"
+    ws.merge_cells(f"A1:{get_column_letter(len(HEADS))}1")
+    t = ws.cell(1, 1, f"Dual Plant Utilisation — {label}")
+    t.fill = HDR_FILL; t.font = TITLE_FONT; t.alignment = CTR
+    ws.row_dimensions[1].height = 22
+    for ci, h in enumerate(HEADS, 1):
+        c = ws.cell(2, ci, h)
+        c.fill = HDR_FILL; c.font = HDR_FONT; c.alignment = WRAP; c.border = BDR
+    ws.row_dimensions[2].height = 28
+
+    for ri, p in enumerate(plants, 3):
+        bp1, bp2, bp3 = p["mixers"].get("BP1"), p["mixers"].get("BP2"), p["mixers"].get("BP3")
+        bal_fill, bal_font = _balance_style(p["balance"])
+        vals = [ri - 2, p["plant_name"], p["plant_code"],
+                round(bp1["qty"], 2) if bp1 else None,
+                round(bp2["qty"], 2) if bp2 else None,
+                round(bp3["qty"], 2) if bp3 else None,
+                bp1["pct"] if bp1 else None,
+                bp2["pct"] if bp2 else None,
+                bp3["pct"] if bp3 else None,
+                round(p["total"], 2),
+                f"{p['variance']}% Imbalance"]
+        for ci, v in enumerate(vals, 1):
+            c = ws.cell(ri, ci, v)
+            c.border = BDR
+            c.alignment = LEFT if ci in (2, 3) else CTR
+            if ci in (7, 8, 9) and v is not None:
+                fill, font = _band(v)
+                c.fill = fill; c.font = font
+            elif ci in (10, 11):
+                c.fill = bal_fill; c.font = bal_font
+            else:
+                c.fill = PLAIN_FILL; c.font = PLAIN_FONT
+
+    for ci, w in enumerate([6, 22, 10, 13, 13, 13, 9, 9, 9, 13, 20], 1):
+        ws.column_dimensions[get_column_letter(ci)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
 def _send_dpu_email(rows, label, to_addr, cc_addr):
     subject, body_text = _uep_mail_texts("dpu_mail", label)
     intro = _uep_body_html(body_text)
-    if not rows:
+    plants = _build_dual_plant_grouped(rows)
+
+    if not plants:
         body = intro + "<p>No data found for this period.</p>"
     else:
-        rows_html = "".join(
-            f"<tr><td>{r['plant_name'] or r['plant_code']}</td>"
-            f"<td>{r['plant_code']}</td><td>{r['mixer']}</td>"
-            f"<td style='text-align:right'>{r['quantity']:,.2f}</td>"
-            f"<td style='text-align:right'>{r['pct_share']:.1f}%</td></tr>"
-            for r in rows
+        _balance_color = {"green": "#1a9c6e", "yellow": "#b8860b", "red": "#c0392b"}
+
+        def _qty_cell(mx):
+            return f"{mx['qty']:,.2f}" if mx else "—"
+
+        def _pct_color_bg(mx):
+            # Distance from an even 50/50 split — 0% or 100% (fully unbalanced)
+            # is red, 50% (perfectly balanced) is green. Same bands as the legend.
+            dist = abs(mx["pct"] - 50) * 2
+            if dist > 60:
+                return "#c0392b", "#fbe4e1"
+            if dist > 30:
+                return "#b8860b", "#fbf1d8"
+            return "#1a9c6e", "#e0f5ec"
+
+        def _pct_cell(mx):
+            if not mx:
+                return "<td style='padding:6px 8px;border:1px solid #ddd;text-align:right'>—</td>"
+            color, bg = _pct_color_bg(mx)
+            return (f"<td style='padding:6px 8px;border:1px solid #ddd;text-align:right;"
+                    f"font-weight:600;color:{color};background:{bg}'>{mx['pct']}%</td>")
+
+        rows_html = ""
+        for i, p in enumerate(plants, 1):
+            color = _balance_color.get(p["balance"], "#555")
+            bp1, bp2, bp3 = p["mixers"].get("BP1"), p["mixers"].get("BP2"), p["mixers"].get("BP3")
+            rows_html += (
+                "<tr>"
+                f"<td style='padding:6px 8px;border:1px solid #ddd'>{i}</td>"
+                f"<td style='padding:6px 8px;border:1px solid #ddd;font-weight:600'>{p['plant_name']}</td>"
+                f"<td style='padding:6px 8px;border:1px solid #ddd;color:#666'>{p['plant_code']}</td>"
+                f"<td style='padding:6px 8px;border:1px solid #ddd;text-align:right'>{_qty_cell(bp1)}</td>"
+                f"<td style='padding:6px 8px;border:1px solid #ddd;text-align:right'>{_qty_cell(bp2)}</td>"
+                f"<td style='padding:6px 8px;border:1px solid #ddd;text-align:right'>{_qty_cell(bp3)}</td>"
+                f"{_pct_cell(bp1)}"
+                f"{_pct_cell(bp2)}"
+                f"{_pct_cell(bp3)}"
+                f"<td style='padding:6px 8px;border:1px solid #ddd;text-align:right;font-weight:700;color:{color}'>{p['total']:,.2f}</td>"
+                f"<td style='padding:6px 8px;border:1px solid #ddd;text-align:center;font-weight:600;color:{color}'>{p['variance']}% Imbalance</td>"
+                "</tr>"
+            )
+
+        legend = (
+            "<div style='font-size:12px;margin:8px 0'>"
+            "<span style='color:#1a9c6e'>&#9679;</span> 0–30% Imbalance &nbsp; "
+            "<span style='color:#b8860b'>&#9679;</span> 31–60% Imbalance &nbsp; "
+            "<span style='color:#c0392b'>&#9679;</span> &gt;60% Imbalance"
+            "</div>"
         )
-        body = (intro +
-                f"<h3>Dual Plant Utilisation — {label}</h3>"
-                f"<table border='1' cellpadding='5' style='border-collapse:collapse'>"
-                f"<tr><th>Plant</th><th>Code</th><th>Mixer</th><th>Qty (MT)</th><th>% Share</th></tr>"
-                f"{rows_html}</table>")
+
+        body = (
+            intro +
+            f"<h3>Dual Plant Utilisation — {label}</h3>" +
+            legend +
+            "<table style='border-collapse:collapse;font-size:13px'>"
+            "<tr style='background:#f0f0f5'>"
+            "<th style='padding:6px 8px;border:1px solid #ddd'>Sr.</th>"
+            "<th style='padding:6px 8px;border:1px solid #ddd'>Plant Name</th>"
+            "<th style='padding:6px 8px;border:1px solid #ddd'>Code</th>"
+            "<th style='padding:6px 8px;border:1px solid #ddd'>BP1 Qty (m³)</th>"
+            "<th style='padding:6px 8px;border:1px solid #ddd'>BP2 Qty (m³)</th>"
+            "<th style='padding:6px 8px;border:1px solid #ddd'>BP3 Qty (m³)</th>"
+            "<th style='padding:6px 8px;border:1px solid #ddd'>BP1 %</th>"
+            "<th style='padding:6px 8px;border:1px solid #ddd'>BP2 %</th>"
+            "<th style='padding:6px 8px;border:1px solid #ddd'>BP3 %</th>"
+            "<th style='padding:6px 8px;border:1px solid #ddd'>Total (m³)</th>"
+            "<th style='padding:6px 8px;border:1px solid #ddd'>Utilization Imbalance</th>"
+            "</tr>"
+            f"{rows_html}</table>"
+        )
+
+    excel_bytes = _build_dpu_excel(plants, label) if plants else None
+    fname = f"DPU_Report_{label.replace(' ', '_')}.xlsx" if plants else None
     email_helper.send_uep_email(to=to_addr, cc=cc_addr,
                             subject=subject,
-                            body=body, html=True)
+                            body=body, html=True,
+                            attachment_bytes=excel_bytes, attachment_name=fname)
 
 
-def _send_pfs_email(rows, label, to_addr, cc_addr):
+def _build_pfs_excel(rows, label):
+    """Build an Excel workbook for the PFS (Pending Final Submission) report."""
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    HDR_FILL   = PatternFill("solid", fgColor="0A2540")
+    PLAIN_FILL = PatternFill("solid", fgColor="FFFFFF")
+    ALT_FILL   = PatternFill("solid", fgColor="F0F4FA")
+    HDR_FONT   = Font(bold=True, color="FFFFFF", size=10)
+    TITLE_FONT = Font(bold=True, color="FFFFFF", size=11)
+    PLAIN_FONT = Font(color="19263A", size=10)
+    ALT_FONT   = Font(color="19263A", size=10)
+    CTR  = Alignment(vertical="center", horizontal="center")
+    LEFT = Alignment(vertical="center", horizontal="left")
+    WRAP = Alignment(wrap_text=True, vertical="center", horizontal="center")
+    thin = Side(style="thin", color="9A9A9A")
+    BDR  = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    HEADS = ["Sr.", "Plant Name", "Plant Manager", "Sales Order", "Line No.", "Qty (MT)"]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Pending Final Submission"
+    ws.merge_cells(f"A1:{get_column_letter(len(HEADS))}1")
+    t = ws.cell(1, 1, f"Pending Final Submission — {label}")
+    t.fill = HDR_FILL; t.font = TITLE_FONT; t.alignment = CTR
+    ws.row_dimensions[1].height = 22
+    for ci, h in enumerate(HEADS, 1):
+        c = ws.cell(2, ci, h)
+        c.fill = HDR_FILL; c.font = HDR_FONT; c.alignment = WRAP; c.border = BDR
+    ws.row_dimensions[2].height = 24
+
+    for ri, r in enumerate(rows, 3):
+        fill = ALT_FILL if ri % 2 == 0 else PLAIN_FILL
+        font = ALT_FONT if ri % 2 == 0 else PLAIN_FONT
+        vals = [ri - 2, r["plant_name"] or r["plant_code"], r.get("plant_manager", "") or "—",
+                r.get("sales_order", ""), r.get("line_number", ""),
+                round(float(r["quantity"]), 2)]
+        for ci, v in enumerate(vals, 1):
+            c = ws.cell(ri, ci, v)
+            c.fill = fill; c.font = font; c.border = BDR
+            c.alignment = LEFT if ci in (2, 3) else CTR
+
+    for ci, w in enumerate([6, 24, 18, 16, 10, 12], 1):
+        ws.column_dimensions[get_column_letter(ci)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def _pfs_manager_to(rows) -> str:
+    """
+    Look up the plant-manager email for every plant appearing in this PFS
+    period (via the shared Sys Config Email Mapping / SLA Google Sheet) and
+    return them as a comma-joined string, ready to fold into the To list.
+    """
+    if not rows:
+        return ""
+    from modules.slow_loading_alert import mapping_service
+    try:
+        plant_map = mapping_service.get_plant_mapping()
+    except Exception:
+        return ""
+    emails = []
+    seen = set()
+    for r in rows:
+        info = mapping_service._plant_lookup(plant_map, r["plant_code"])
+        pm_email = (info.get("pm_email") or "").strip()
+        if pm_email and pm_email.lower() not in seen:
+            seen.add(pm_email.lower())
+            emails.append(pm_email)
+    return ", ".join(emails)
+
+
+def _send_pfs_email(rows, label, to_addr, cc_addr, include_managers=True):
     subject, body_text = _uep_mail_texts("pfs_mail", label)
     intro = _uep_body_html(body_text)
+
+    # Whenever a plant has pending final submission, add that plant's manager
+    # (looked up from the shared Email Mapping sheet) to the To list, in
+    # addition to the normal fixed recipients, so they're notified directly.
+    # include_managers=False is for isolated test sends only (e.g. "test to me").
+    manager_to = _pfs_manager_to(rows) if include_managers else ""
+    combined_to = ", ".join(x for x in (to_addr.strip(), manager_to) if x)
+
     if not rows:
         body = intro + "<p>✅ No pending invoices found.</p>"
+        excel_bytes = fname = None
     else:
+        # The email body shows one row per plant (summed quantity) — the
+        # sales-order/line-level detail stays in the Excel attachment only.
+        plant_totals = []
+        seen_codes = {}
+        for r in rows:
+            pc = r["plant_code"]
+            if pc not in seen_codes:
+                seen_codes[pc] = {
+                    "plant_name":    r["plant_name"] or pc,
+                    "plant_manager": r.get("plant_manager", ""),
+                    "quantity":      0.0,
+                }
+                plant_totals.append(seen_codes[pc])
+            seen_codes[pc]["quantity"] += float(r["quantity"])
+
+        F        = "font-family:Arial,sans-serif;font-size:11px;"
+        HDR_BDR  = "border:1px solid #7A7A7A"
+        CELL_BDR = "border:1px solid #9E9E9E"
+        th_style = (f"{F}background-color:#082B49;color:#ffffff;font-weight:bold;"
+                    f"padding:3px 5px;{HDR_BDR};text-align:center;vertical-align:middle;")
+
         rows_html = "".join(
-            f"<tr><td>{i}</td><td>{r['plant_name'] or r['plant_code']}</td>"
-            f"<td>{r['plant_code']}</td>"
-            f"<td style='text-align:right'>{r['quantity']:,.2f}</td></tr>"
-            for i, r in enumerate(rows, 1)
+            "<tr>"
+            f"<td style='{F}padding:2px 5px;{CELL_BDR};text-align:center'>{i}</td>"
+            f"<td style='{F}padding:2px 5px;{CELL_BDR};font-weight:bold'>{p['plant_name']}</td>"
+            f"<td style='{F}padding:2px 5px;{CELL_BDR}'>{p['plant_manager'] or '—'}</td>"
+            f"<td style='{F}padding:2px 5px;{CELL_BDR};text-align:right'>{p['quantity']:,.2f}</td>"
+            "</tr>"
+            for i, p in enumerate(plant_totals, 1)
         )
+        title_style = (f"{F}font-size:12px;font-weight:bold;background-color:#082B49;"
+                       f"color:#ffffff;padding:4px 6px;border:1px solid #7A7A7A;"
+                       f"white-space:nowrap;overflow:hidden;")
+        # Fixed column widths so the colspan title bar can never render wider
+        # than the sum of the data columns beneath it (table-layout:fixed
+        # forces every row, including the title row, to respect these).
+        COL_W = [40, 160, 150, 110]
+        TABLE_W = sum(COL_W)
         body = (intro +
-                f"<h3>Pending Final Submission — {label}</h3>"
-                f"<p>⚠️ {len(rows)} plant(s) have pending final submission.</p>"
-                f"<table border='1' cellpadding='5' style='border-collapse:collapse'>"
-                f"<tr><th>Sr.</th><th>Plant</th><th>Code</th><th>Qty (MT)</th></tr>"
-                f"{rows_html}</table>")
-    email_helper.send_uep_email(to=to_addr, cc=cc_addr,
+                f"<p style='font-weight:600;color:#c0392b;margin:8px 0 0 0'>"
+                f"{len(plant_totals)} plant(s) have pending final submission.</p>"
+                f"<table cellpadding='0' cellspacing='0' "
+                f"style='border-collapse:collapse;table-layout:fixed;width:{TABLE_W}px;margin:8px 0 10px'>"
+                f"<colgroup>{''.join(f'<col style=\"width:{w}px\">' for w in COL_W)}</colgroup>"
+                "<tr><td colspan='4' style='" + title_style + "'>"
+                f"Pending Final Submission — {label}</td></tr>"
+                "<tr>"
+                f"<th style='{th_style}'>Sr.</th>"
+                f"<th style='{th_style}'>Plant Name</th>"
+                f"<th style='{th_style}'>Plant Manager</th>"
+                f"<th style='{th_style}'>Total Qty (MT)</th>"
+                "</tr>"
+                f"{rows_html}</table>"
+                "<p style='margin-top:14px;font-weight:600;color:#c0392b'>"
+                "All pending Final Submission should be cleared in 3 days and any issue "
+                "or confusion should immediately be reported to Pallavi, Kanhaiya &amp; Dipjyoti."
+                "</p>"
+                "<p style='margin-top:14px'>Regards,<br>RDC Operations</p>")
+        excel_bytes = _build_pfs_excel(rows, label)
+        fname = f"PFS_Report_{label.replace(' ', '_')}.xlsx"
+    email_helper.send_uep_email(to=combined_to, cc=cc_addr,
                             subject=subject,
-                            body=body, html=True)
+                            body=body, html=True,
+                            attachment_bytes=excel_bytes, attachment_name=fname)
 
 
 def _send_ecmd_report_email(month, year, to_addr, cc_addr):
@@ -5660,7 +5960,7 @@ def _ecmd_send_scheduled_email():
     """Send ECMD monthly report email for the month that just ended, using saved ecmd_results."""
     with app.app_context():
         try:
-            today = date.today()
+            today = _date.today()
             prev = today.replace(day=1) - timedelta(days=1)
             month, year = prev.month, prev.year
 
@@ -5682,7 +5982,7 @@ def _dpu_send_scheduled_email():
     """Fetch latest DPU fortnight from DB and email it."""
     with app.app_context():
         try:
-            today = date.today()
+            today = _date.today()
             fns   = _ecmd_fortnights(today.year, today.month)
             # Pick the fortnight that ended most recently
             if today.day >= 16:
@@ -5717,7 +6017,7 @@ def _pfs_send_scheduled_email():
     """Fetch latest PFS fortnight from DB and email it."""
     with app.app_context():
         try:
-            today = date.today()
+            today = _date.today()
             fns   = _ecmd_fortnights(today.year, today.month)
             if today.day >= 16:
                 label, fd, td = fns[0]
@@ -6505,7 +6805,13 @@ def sla_export():
 @app.route("/sla/email-mapping")
 @auth.login_required
 def sla_email_mapping():
-    _ss("active_page", "email_mapping")
+    """Old SLA-specific URL — mapping is now a shared Sys Config page."""
+    return redirect(url_for("sysconfig_email_mapping"))
+
+
+@app.route("/sysconfig/email-mapping")
+@auth.login_required
+def sysconfig_email_mapping():
     from modules.slow_loading_alert import mapping_service
     warnings = []
     mapping = {}
@@ -6518,15 +6824,16 @@ def sla_email_mapping():
         batcher_map = mapping_service.get_batcher_mapping()
     except Exception as exc:
         warnings.append(str(exc))
-    return render_template("slow_loading_alert/email_mapping.html",
-                           mapping=mapping, batcher_map=batcher_map, warnings=warnings)
+    return render_template("sysconfig_email_mapping.html",
+                           mapping=mapping, batcher_map=batcher_map, warnings=warnings,
+                           active_page="sysconfig")
 
 
-@app.route("/sla/email-mapping/refresh", methods=["POST"])
+@app.route("/sysconfig/email-mapping/refresh", methods=["POST"])
 @auth.login_required
-def sla_refresh_mapping():
+def sysconfig_refresh_email_mapping():
     flash("Mapping refreshed from Google Sheet.", "success")
-    return redirect(url_for("sla_email_mapping"))
+    return redirect(url_for("sysconfig_email_mapping"))
 
 
 @app.route("/sla/alert-logs")

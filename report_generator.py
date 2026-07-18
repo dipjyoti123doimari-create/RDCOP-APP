@@ -101,9 +101,12 @@ def _sort_rows(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _ded_header_label(categories) -> str:
-    """e.g. 'Deduction Amount @ Rs 20' when all categories share one rate."""
+    """e.g. 'Deduction Amount @ Rs 20' when all deducting categories share one rate.
+    Categories with rate 0 (e.g. 'Deduction NA', merged into the TL tab) are
+    ignored here, so a merged tab of {rate 20, rate 0} still reads '@ Rs 20'."""
     rates = {config.DEDUCTION_RULES.get(c, {}).get("rate", 0) for c in categories}
-    if len(rates) == 1 and next(iter(rates)):
+    rates.discard(0)  # rate-0 categories (Deduction NA) don't affect the label
+    if len(rates) == 1:
         return f"Deduction Amount @ Rs {next(iter(rates))}"
     return "Deduction Amount"
 
@@ -208,7 +211,9 @@ EMAIL_SECTIONS = [
     ("Production report of MO", ["MO"]),
     ("Production report of SPE", ["SPE"]),
     ("Production report of Officer Production (Onroll Batcher)", ["Production Officer"]),
-    ("Production report of TL Batcher, Mechanic", ["TL BPO"]),
+    # "Deduction NA" is merged into the same section as TL BPO (shown together
+    # in the email body/image); its own calculation rules are unchanged.
+    ("Production report of TL Batcher, Mechanic", ["TL BPO", "Deduction NA"]),
 ]
 
 
