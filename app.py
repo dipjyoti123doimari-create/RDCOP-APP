@@ -3437,6 +3437,13 @@ def page_reports():
         _ss("rpt_from",            str(from_date))
         _ss("rpt_to",              str(to_date))
         _ss("rpt_applied_filters", applied_filters)
+        # Persist the raw filter inputs so downloads / email can recalculate
+        # FRESH from the latest Master Data and reproduce this same view
+        # (categories always reflect the newest app edits — no manual re-run).
+        _ss("rpt_flt", {
+            "cats": cats, "desigs": desigs, "plants": plants,
+            "elig": elig, "outcome": outcome, "search": search,
+        })
 
     # Month label for email
     if (from_date.year, from_date.month) == (to_date.year, to_date.month):
@@ -4274,19 +4281,47 @@ def tp_api_table_columns():
 # ── DOWNLOAD ENDPOINTS ────────────────────────────────────────────────────────
 
 def _snapshot_dfs():
-    filtered = _s("rpt_filtered", [])
-    unmapped  = _s("rpt_unmapped_snap", [])
-    from_s    = _s("rpt_from",  str(_date.today()))
-    to_s      = _s("rpt_to",    str(_date.today()))
-    applied   = _s("rpt_applied_filters", "None")
-    meta      = _build_meta(from_s, to_s, filtered, unmapped, applied)
+    """Data for downloads / email.
 
-    col_set = set(RESULT_COLS) | {"category", "month", "year"}
-    all_cols = [c for c in (RESULT_COLS + ["category", "month", "year"])
-                if c not in ("_cls",)]
+    Recalculates FRESH from the current Master Data for the same date range and
+    filters the user last loaded on the Reports page, so category/employee edits
+    made in the app are ALWAYS reflected — no manual re-run needed. Falls back to
+    the last-loaded session snapshot only if a fresh calc fails or returns nothing.
+    """
+    from_s   = _s("rpt_from",  str(_date.today()))
+    to_s     = _s("rpt_to",    str(_date.today()))
+    applied  = _s("rpt_applied_filters", "None")
+    flt      = _s("rpt_flt", {}) or {}
 
-    df_f = pd.DataFrame(filtered) if filtered else pd.DataFrame()
-    df_u = pd.DataFrame(unmapped) if unmapped else pd.DataFrame()
+    filtered = None
+    unmapped = _s("rpt_unmapped_snap", [])
+    try:
+        fd = _date.fromisoformat(from_s)
+        td = _date.fromisoformat(to_s)
+        res = calculator.run_calculation(
+            month=fd.month, year=fd.year,
+            start_date=str(fd), end_date=str(td), persist=False)
+        if not res.get("error"):
+            all_rows = res.get("results_rows", [])
+            unmapped = res.get("unmapped_rows", unmapped)
+            fresh = _apply_filters(
+                all_rows,
+                flt.get("cats", []), flt.get("desigs", []), flt.get("plants", []),
+                flt.get("elig", "All"), flt.get("outcome", "All"),
+                flt.get("search", ""))
+            filtered = _sort_rows(fresh)
+            # keep the session view in step so the Reports page matches too
+            _ss("rpt_filtered", filtered)
+            _ss("rpt_unmapped_snap", unmapped)
+    except Exception as exc:
+        print(f"[send/download] fresh recalc failed, using last snapshot: {exc}")
+
+    if filtered is None:               # fresh calc failed → last-loaded snapshot
+        filtered = _s("rpt_filtered", [])
+
+    meta   = _build_meta(from_s, to_s, filtered, unmapped, applied)
+    df_f   = pd.DataFrame(filtered) if filtered else pd.DataFrame()
+    df_u   = pd.DataFrame(unmapped) if unmapped else pd.DataFrame()
     val_df = database.read_table("validation_errors")
     return df_f, df_u, val_df, meta, from_s, to_s
 
