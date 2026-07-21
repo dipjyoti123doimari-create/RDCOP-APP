@@ -33,6 +33,7 @@ except ImportError:
 import pandas as pd
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from flask import (Flask, flash, g, jsonify, make_response, redirect, render_template,
                    request, send_file, url_for)
 
@@ -372,6 +373,7 @@ def _startup_oracle_fetch():
     _shared_oracle_fetch_job()
     _auto_calculate_current_month()
     _gl_maintenance_cost_job()
+    _catch_up_missed_mail_jobs()
     print("[startup-fetch] done")
 
 
@@ -438,27 +440,41 @@ def _uep_cron_kwargs(freq, weekday, day1, day2):
     return {"day": day1 or "last"}
 
 
-def _register_uep_mail_jobs():
-    """Re-register any previously enabled ECMD/DPU/PFS auto-send jobs so they
-    survive an app restart. Must run after those functions are defined."""
-    uep_jobs = {
+def _uep_mail_jobs():
+    """
+    Map of module -> (settings prefix, send function, default frequency).
+    Built lazily (not at import time) because the send functions
+    (_ecmd_send_scheduled_email etc.) are defined further down in this file.
+    """
+    return {
         "ecmd": ("email_schedule", _ecmd_send_scheduled_email, "monthly"),
         "dpu":  ("dpu_mail",       _dpu_send_scheduled_email,  "twice_monthly"),
         "pfs":  ("pfs_mail",       _pfs_send_scheduled_email,  "twice_monthly"),
     }
-    for mod, (prefix, func, default_freq) in uep_jobs.items():
+
+
+def _uep_job_trigger(prefix, default_freq):
+    """Build the CronTrigger for a UEP mail job from its saved settings."""
+    sched_time = database.get_module_setting("ecmd", f"{prefix}_time", "08:00")
+    try:
+        h, m = map(int, sched_time.split(":"))
+    except Exception:
+        h, m = 8, 0
+    freq    = database.get_module_setting("ecmd", f"{prefix}_freq", default_freq)
+    weekday = database.get_module_setting("ecmd", f"{prefix}_weekday", "0")
+    default_day1 = "15" if default_freq == "twice_monthly" else "last"
+    day1    = database.get_module_setting("ecmd", f"{prefix}_day1", default_day1)
+    day2    = database.get_module_setting("ecmd", f"{prefix}_day2", "last")
+    cron_kwargs = _uep_cron_kwargs(freq, weekday, day1, day2)
+    return CronTrigger(hour=h, minute=m, **cron_kwargs), h, m, cron_kwargs
+
+
+def _register_uep_mail_jobs():
+    """Re-register any previously enabled ECMD/DPU/PFS auto-send jobs so they
+    survive an app restart. Must run after those functions are defined."""
+    for mod, (prefix, func, default_freq) in _uep_mail_jobs().items():
         if database.get_module_setting("ecmd", f"{prefix}_enabled", "false") == "true":
-            sched_time = database.get_module_setting("ecmd", f"{prefix}_time", "08:00")
-            try:
-                h, m = map(int, sched_time.split(":"))
-            except Exception:
-                h, m = 8, 0
-            freq    = database.get_module_setting("ecmd", f"{prefix}_freq", default_freq)
-            weekday = database.get_module_setting("ecmd", f"{prefix}_weekday", "0")
-            default_day1 = "15" if default_freq == "twice_monthly" else "last"
-            day1    = database.get_module_setting("ecmd", f"{prefix}_day1", default_day1)
-            day2    = database.get_module_setting("ecmd", f"{prefix}_day2", "last")
-            cron_kwargs = _uep_cron_kwargs(freq, weekday, day1, day2)
+            _, h, m, cron_kwargs = _uep_job_trigger(prefix, default_freq)
             _scheduler.add_job(id=f"ecmd_{mod}_mail", func=func,
                                trigger="cron", hour=h, minute=m,
                                replace_existing=True, **cron_kwargs)
@@ -793,6 +809,8 @@ def _make_rdc_scheduled_sender(module):
     """Build the scheduled-send callback for a module (sends previous month)."""
     def _job():
         with app.app_context():
+            database.set_module_setting(module, "mail_last_run_at",
+                                        _dt.now().isoformat(timespec="seconds"))
             try:
                 to_addr = database.get_module_setting(module, "mail_to", "")
                 cc_addr = database.get_module_setting(module, "mail_cc", "")
@@ -818,24 +836,100 @@ def _make_rdc_scheduled_sender(module):
 _RDC_MAIL_SENDERS = {m: _make_rdc_scheduled_sender(m) for m in _RDC_MAIL_MODULES}
 
 
+def _rdc_job_trigger(module):
+    """Build the CronTrigger for an RDC mail job from its saved settings."""
+    sched_time = database.get_module_setting(module, "mail_time", "08:00")
+    try:
+        h, m = map(int, sched_time.split(":"))
+    except Exception:
+        h, m = 8, 0
+    freq    = database.get_module_setting(module, "mail_freq", "monthly")
+    weekday = database.get_module_setting(module, "mail_weekday", "0")
+    day1    = database.get_module_setting(module, "mail_day1", "last")
+    day2    = database.get_module_setting(module, "mail_day2", "last")
+    cron_kwargs = _uep_cron_kwargs(freq, weekday, day1, day2)
+    return CronTrigger(hour=h, minute=m, **cron_kwargs), h, m, cron_kwargs
+
+
 def _register_rdc_mail_jobs():
     """Re-register enabled I&D/TP/BTRTP mail jobs on startup (survive restart)."""
     for module in _RDC_MAIL_MODULES:
         if database.get_module_setting(module, "mail_enabled", "false") == "true":
-            sched_time = database.get_module_setting(module, "mail_time", "08:00")
-            try:
-                h, m = map(int, sched_time.split(":"))
-            except Exception:
-                h, m = 8, 0
-            freq    = database.get_module_setting(module, "mail_freq", "monthly")
-            weekday = database.get_module_setting(module, "mail_weekday", "0")
-            day1    = database.get_module_setting(module, "mail_day1", "last")
-            day2    = database.get_module_setting(module, "mail_day2", "last")
-            cron_kwargs = _uep_cron_kwargs(freq, weekday, day1, day2)
+            _, h, m, cron_kwargs = _rdc_job_trigger(module)
             _scheduler.add_job(id=f"{module}_report_mail",
                                func=_RDC_MAIL_SENDERS[module],
                                trigger="cron", hour=h, minute=m,
                                replace_existing=True, **cron_kwargs)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MISSED-SEND CATCH-UP — if the laptop/server was off (or offline) at the
+# scheduled send time, fire the job as soon as connectivity + criteria are
+# available again, instead of silently waiting for the next cycle.
+# Runs once ~50s after startup, then on a recurring check every 20 minutes.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _catch_up_missed_mail_jobs():
+    """
+    For every ENABLED auto-mail job (RDC I&D/TP/BTRTP + ECMD/DPU/PFS), work out
+    whether a scheduled fire time was missed (job never ran since that time —
+    e.g. PC was off / no internet) and, if so, run it now.
+
+    Safe against duplicate sends: uses each job's own 'mail_last_run_at'
+    timestamp (stamped at the START of every run, success or failure) as the
+    baseline, so a job that already ran for the due slot is never re-run.
+    A job with no recorded run yet is treated as caught-up-as-of-now (not a
+    historical backlog), so enabling this feature never triggers a flood of
+    immediate sends — catch-up only kicks in for misses going forward.
+    """
+    tz  = _scheduler.timezone
+    now = _dt.now(tz)
+
+    def _last_run(module_key, run_at_key, trigger):
+        """
+        Baseline to look for a missed fire time since. If the job has never
+        recorded a run before (this catch-up feature is new, or the schedule
+        was just enabled), treat "never run" as "caught up as of right now" —
+        NOT as a backlog stretching back to year 1. Otherwise the very first
+        time this code runs it would immediately email every real recipient
+        for every enabled job. Real catch-up starts working from the next
+        time each job runs (which stamps mail_last_run_at) onward.
+        """
+        raw = database.get_module_setting(module_key, run_at_key, "")
+        if raw:
+            try:
+                return _dt.fromisoformat(raw).replace(tzinfo=tz)
+            except ValueError:
+                pass
+        return now
+
+    def _due_since(trigger, last_run):
+        """True if the trigger has a fire time in (last_run, now]."""
+        try:
+            nxt = trigger.get_next_fire_time(last_run, now)
+        except Exception:
+            return False
+        return nxt is not None and nxt <= now
+
+    # RDC (I&D / TP / BTRTP)
+    for module in _RDC_MAIL_MODULES:
+        if database.get_module_setting(module, "mail_enabled", "false") != "true":
+            continue
+        trigger, *_ = _rdc_job_trigger(module)
+        last_run = _last_run(module, "mail_last_run_at", trigger)
+        if _due_since(trigger, last_run):
+            print(f"[mail-catchup] {module} report mail missed a scheduled send — running now")
+            _RDC_MAIL_SENDERS[module]()
+
+    # ECMD / DPU / PFS
+    for mod, (prefix, func, default_freq) in _uep_mail_jobs().items():
+        if database.get_module_setting("ecmd", f"{prefix}_enabled", "false") != "true":
+            continue
+        trigger, *_ = _uep_job_trigger(prefix, default_freq)
+        last_run = _last_run("ecmd", f"{prefix}_last_run_at", trigger)
+        if _due_since(trigger, last_run):
+            print(f"[mail-catchup] ecmd/{mod} mail missed a scheduled send — running now")
+            func()
 
 
 _start_scheduler()
@@ -6150,6 +6244,8 @@ def _send_ecmd_report_email(month, year, to_addr, cc_addr):
 def _ecmd_send_scheduled_email():
     """Send ECMD monthly report email for the month that just ended, using saved ecmd_results."""
     with app.app_context():
+        database.set_module_setting("ecmd", "email_schedule_last_run_at",
+                                    _dt.now().isoformat(timespec="seconds"))
         try:
             today = _date.today()
             prev = today.replace(day=1) - timedelta(days=1)
@@ -6172,6 +6268,8 @@ def _ecmd_send_scheduled_email():
 def _dpu_send_scheduled_email():
     """Fetch latest DPU fortnight from DB and email it."""
     with app.app_context():
+        database.set_module_setting("ecmd", "dpu_mail_last_run_at",
+                                    _dt.now().isoformat(timespec="seconds"))
         try:
             today = _date.today()
             fns   = _ecmd_fortnights(today.year, today.month)
@@ -6207,6 +6305,8 @@ def _dpu_send_scheduled_email():
 def _pfs_send_scheduled_email():
     """Fetch latest PFS fortnight from DB and email it."""
     with app.app_context():
+        database.set_module_setting("ecmd", "pfs_mail_last_run_at",
+                                    _dt.now().isoformat(timespec="seconds"))
         try:
             today = _date.today()
             fns   = _ecmd_fortnights(today.year, today.month)
@@ -7417,6 +7517,12 @@ def sla_api_logs():
 
 _register_uep_mail_jobs()
 _register_rdc_mail_jobs()
+
+# Recurring safety-net: catches a missed send even without an app restart —
+# e.g. laptop reconnects to internet mid-day, well after the scheduled time.
+_scheduler.add_job(_catch_up_missed_mail_jobs,
+                   IntervalTrigger(minutes=20),
+                   id="mail_catchup_scan", replace_existing=True)
 
 if __name__ == "__main__":
     print("=" * 60)
