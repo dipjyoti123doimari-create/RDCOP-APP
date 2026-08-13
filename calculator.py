@@ -47,6 +47,42 @@ def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+def _live_fetch_gl_maintenance_cost(month: int, year: int) -> pd.DataFrame:
+    """
+    When maintenance_cost has no row for the report's own month/year, pull it
+    live from Oracle GL for THAT month (not "today") and save it, so a report
+    for a past month never has to wait for the nightly job to catch up.
+    Returns the freshly-saved rows in the same shape as the maintenance_cost
+    table query, or an empty DataFrame if Oracle isn't configured / fetch fails.
+    """
+    import oracle_connector
+    empty = pd.DataFrame(columns=["plant_code", "ytd_maintenance_cost", "month", "year"])
+    if not oracle_connector.is_configured():
+        return empty
+    try:
+        from datetime import date as _date
+        import calendar as _cal2
+        rep_date = _date(year, month, min(15, _cal2.monthrange(year, month)[1]))
+        period_name = oracle_connector.resolve_gl_period_name(rep_date)
+        gl_df, _warnings = oracle_connector.fetch_gl_maintenance_cost(period_name)
+        if gl_df.empty:
+            return empty
+        database.save_gl_maintenance_cost(gl_df, month, year, period_name)
+        database.set_setting("sysconfig_last_gl_maintenance_fetch", _now())
+    except Exception:
+        return empty
+
+    conn = database.get_connection()
+    try:
+        return pd.read_sql_query(
+            "SELECT plant_code, ytd_maintenance_cost, month, year "
+            "FROM maintenance_cost WHERE month = ? AND year = ?",
+            conn, params=(month, year)
+        )
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # 1. DATA FETCH HELPERS
 # ---------------------------------------------------------------------------
@@ -428,7 +464,9 @@ def run_calculation(month: int, year: int,
         master_df = database.read_table("master_data")
         master_df["employee_code"] = master_df["employee_code"].astype(str).str.strip()
 
-        # Load maintenance cost — try exact month/year first, fall back to whatever is uploaded.
+        # Load maintenance cost — try exact month/year first. If missing, try a
+        # live Oracle GL fetch for that exact month (report period drives the
+        # fetch, not "today"), then fall back to whatever is already uploaded.
         import calendar as _cal
         calc_month_label = f"{_cal.month_name[month]} {year}"
         conn_m = database.get_connection()
@@ -439,15 +477,23 @@ def run_calculation(month: int, year: int,
                 "FROM maintenance_cost WHERE month = ? AND year = ?",
                 conn_m, params=(month, year)
             )
-            if maint_df.empty:
+        finally:
+            conn_m.close()
+
+        if maint_df.empty:
+            maint_df = _live_fetch_gl_maintenance_cost(month, year)
+
+        if maint_df.empty:
+            conn_m = database.get_connection()
+            try:
                 # Fall back to all uploaded rows (use whatever month is available)
                 maint_df = _pd2.read_sql_query(
                     "SELECT plant_code, ytd_maintenance_cost, month, year "
                     "FROM maintenance_cost",
                     conn_m
                 )
-        finally:
-            conn_m.close()
+            finally:
+                conn_m.close()
 
         # If still no maintenance data at all, proceed with 0 cost for every plant
         if maint_df.empty:
