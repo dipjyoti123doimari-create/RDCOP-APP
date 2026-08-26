@@ -88,6 +88,19 @@
     <span class="settings-tile-arrow">›</span>
   </div>
 
+  <!-- Email Mapping -->
+  <div class="settings-tile" onclick="window.location.href='{{ url_for('sysconfig_email_mapping') }}'">
+    <div class="settings-tile-icon">📬</div>
+    <div class="settings-tile-info">
+      <div class="settings-tile-title">Email Mapping</div>
+      <div class="settings-tile-status status-ok">
+        📋 Plant → email lookup from Google Sheet
+      </div>
+      <div class="settings-tile-desc" style="margin-top:4px;font-size:11px;color:#5a7a9a">Used by: SLA · PFS (plant manager / business head emails)</div>
+    </div>
+    <span class="settings-tile-arrow">›</span>
+  </div>
+
   <!-- External API -->
   <div class="settings-tile" onclick="openModal('modal-api')">
     <div class="settings-tile-icon">🔗</div>

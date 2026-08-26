@@ -1,0 +1,10 @@
+import database
+conn = database.get_connection()
+cur = conn.cursor()
+cur.execute("SELECT COUNT(DISTINCT created_by) as emp, ROUND(SUM(quantity),0) as qty FROM backend_data WHERE substr(date,1,7) = '2026-06'")
+r = cur.fetchone(); print('ID current raw:', dict(r))
+cur.execute("SELECT COUNT(DISTINCT created_by) as emp, ROUND(SUM(quantity),0) as qty FROM backend_data WHERE substr(date,1,7) = '2026-05'")
+r = cur.fetchone(); print('ID last raw:', dict(r))
+cur.execute("SELECT COUNT(DISTINCT lookup_code) as plants, ROUND(SUM(quantity),0) as qty FROM tp_oracle_data WHERE substr(production_date,1,7) = '2026-06'")
+r = cur.fetchone(); print('TP current raw:', dict(r))
+conn.close()

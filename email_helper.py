@@ -64,22 +64,28 @@ def is_configured() -> bool:
 
 
 def get_uep_smtp_config() -> dict:
-    """Read UEP-specific SMTP settings stored in module_settings (prefix: uep_smtp_)."""
+    """
+    Read UEP-specific SMTP settings stored in module_settings (prefix: uep_smtp_).
+    Falls back to the main app SMTP settings (Settings page) for any field left
+    blank, so UEP can reuse the already-configured mail account with no extra setup.
+    """
     def _ms(key, default=""):
         return database.get_module_setting("ecmd", key, default) or default
 
-    raw_port = _ms("uep_smtp_port", str(_DEFAULT_PORT))
+    main = get_smtp_config()
+
+    raw_port = _ms("uep_smtp_port", "")
     try:
         port = int(raw_port)
     except (TypeError, ValueError):
-        port = _DEFAULT_PORT
+        port = main["port"]
 
     return {
-        "host":     _ms("uep_smtp_host",   "").strip(),
+        "host":     _ms("uep_smtp_host",   "").strip() or main["host"],
         "port":     port,
-        "sender":   _ms("uep_smtp_sender", "").strip(),
-        "password": _ms("uep_smtp_password", ""),
-        "use_tls":  _ms("uep_smtp_use_tls", "true") == "true",
+        "sender":   _ms("uep_smtp_sender", "").strip() or main["sender"],
+        "password": _ms("uep_smtp_password", "") or main["password"],
+        "use_tls":  _ms("uep_smtp_use_tls", "") == "true" if _ms("uep_smtp_use_tls", "") else main["use_tls"],
     }
 
 
@@ -88,8 +94,10 @@ def uep_is_configured() -> bool:
     return bool(c["host"] and c["sender"] and c["password"])
 
 
-def send_uep_email(to, cc, subject, body, html=False):
-    """Send a plain email using the UEP-specific SMTP config."""
+def send_uep_email(to, cc, subject, body, html=False,
+                   attachment_bytes=None, attachment_name=None):
+    """Send an email using the UEP-specific SMTP config, with an optional
+    Excel attachment (attachment_bytes + attachment_name)."""
     cfg = get_uep_smtp_config()
     if not (cfg["host"] and cfg["sender"] and cfg["password"]):
         raise RuntimeError("UEP SMTP is not configured. Add settings in UEP Settings.")
@@ -106,10 +114,17 @@ def send_uep_email(to, cc, subject, body, html=False):
         msg["Cc"] = ", ".join(cc_list)
     msg["Subject"] = subject
     if html:
-        msg.set_content("Please view this email in an HTML-capable client.")
+        import re as _re
+        plain_fallback = _re.sub(r"<[^>]+>", " ", body)
+        plain_fallback = _re.sub(r"\s+", " ", plain_fallback).strip()
+        msg.set_content(plain_fallback or "Please view this email in an HTML-capable client.")
         msg.add_alternative(body, subtype="html")
     else:
         msg.set_content(body)
+
+    if attachment_bytes and attachment_name:
+        msg.add_attachment(attachment_bytes, maintype=_XLSX_MAINTYPE,
+                           subtype=_XLSX_SUBTYPE, filename=attachment_name)
 
     recipients = to_list + cc_list
     with smtplib.SMTP(cfg["host"], cfg["port"], timeout=30) as server:

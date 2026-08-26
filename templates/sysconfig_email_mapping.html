@@ -1,10 +1,10 @@
-{% extends "slow_loading_alert/sla_base.html" %}
-{% block title %}SLA Email Mapping{% endblock %}
+{% extends "sysconfig_base.html" %}
+{% block title %}Email Mapping{% endblock %}
 {% block content %}
 
 <div class="page-header">
-  <h1 class="page-title">Email Mapping</h1>
-  <p class="page-subtitle">Read from Google Sheet — configure tab names in Settings</p>
+  <h1>Email Mapping</h1>
+  <p>Plant → email mapping, read from Google Sheet. Used by SLA and PFS (Pending Final Submission) reports.</p>
 </div>
 
 {% if warnings %}
@@ -15,12 +15,11 @@
 
 {% if not mapping %}
 <div class="alert alert-info">
-  No mapping loaded. Check that Google Sheet ID and tab names are configured in
+  No mapping loaded. Check that the Google Sheet ID and tab names are configured under
   <a href="{{ url_for('sla_configuration') }}">SLA Configuration</a>.
 </div>
 {% else %}
 
-<!-- Plant Mapping -->
 <div class="card">
   <div class="card-header">Plant Email Mapping</div>
   <div style="overflow-x:auto">
@@ -48,7 +47,6 @@
 
 {% endif %}
 
-<!-- Batcher Mapping -->
 {% if batcher_map %}
 <div class="card" style="margin-top:16px">
   <div class="card-header">Batcher Name Mapping</div>
@@ -66,7 +64,7 @@
 {% endif %}
 
 <div style="margin-top:12px">
-  <form method="POST" action="{{ url_for('sla_refresh_mapping') }}">
+  <form method="POST" action="{{ url_for('sysconfig_refresh_email_mapping') }}">
     <button type="submit" class="btn btn-primary btn-sm">🔄 Refresh from Google Sheet</button>
   </form>
 </div>

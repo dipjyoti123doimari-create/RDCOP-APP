@@ -56,6 +56,15 @@
     <div class="kpi-label">75% &amp; Above</div>
     <div class="kpi-value">{{ (plant_rows | map(attribute='throughput_pct') | map('round') | select('ge',75) | list | length) | format_int }}</div>
   </div>
+  <div class="kpi-card" title="Adjusted against M20 reference grade using RAG (Rational Average Grade) = 20 + (Weighted Avg Grade − 20) / 2.">
+    <div class="kpi-label">PAN India Grade-Adj. TP ℹ️</div>
+    <div class="kpi-value" style="font-size:24px">
+      {% for r in location_rows if r.is_pan_india %}{% if r.avg_grade_adjusted_throughput_pct is not none %}{{ r.avg_grade_adjusted_throughput_pct | round(0) | int }}%{% else %}—{% endif %}{% endfor %}
+    </div>
+    <div class="kpi-sub">
+      {% for r in location_rows if r.is_pan_india %}{% if r.weighted_avg_grade is not none %}Weighted Avg Grade: M{{ r.weighted_avg_grade | round(1) }} &nbsp;|&nbsp; RAG: M{{ r.rational_average_grade | round(1) }}{% else %}No grade data{% endif %}{% endfor %}
+    </div>
+  </div>
 </div>
 
 <!-- Legend -->

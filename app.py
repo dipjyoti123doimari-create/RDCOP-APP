@@ -2056,6 +2056,7 @@ def tp_reports():
                 if not raw_df.empty:
                     parsed, skip_log = tp_calculator.parse_oracle_df(raw_df)
                     _mss("tp", "skip_log", skip_log)
+                    _mss("tp", "batch_rows", parsed)  # per-batch detail for Excel drill-down
                     import pandas as _pd
                     ora_df_live = _pd.DataFrame(parsed)
                     ora_note = f"Oracle: {len(raw_df):,} rows loaded for {fd} → {td}."
@@ -2094,9 +2095,14 @@ def tp_reports():
     plant_rows = _apply_tp_filters(all_plants, excos, bheads, plants, band, search)
     location_rows = tp_calculator.build_location_rows(plant_rows, fd.month, fd.year)
 
-    # Keep a filtered snapshot for downloads / email
+    # Keep a filtered snapshot for downloads / email — batch rows narrowed to
+    # only the plants left after filtering, so Excel drill-down sheets match
+    # what's shown on screen.
     _mss("tp", "report_plant_rows", plant_rows)
     _mss("tp", "report_location_rows", location_rows)
+    kept_lookups = {r["lookup_code"] for r in plant_rows}
+    all_batch_rows = _ms("tp", "batch_rows", [])
+    _mss("tp", "report_batch_rows", [b for b in all_batch_rows if b.get("lookup_code") in kept_lookups])
 
     smtp        = email_helper.get_smtp_config()
     email_ready = email_helper.is_configured()
@@ -2147,13 +2153,135 @@ def _tp_mon_tag(month, year):
     return f"{_cal.month_abbr[month]}'{str(year)[2:]}"
 
 
-def _tp_build_excel(plant_rows, location_rows, month, year):
-    """Return Excel bytes matching exactly the HTML email tables (same headers, columns, colors)."""
+def _build_tp_detail_sheet(wb, plant_row, plant_batches, mon_tag, safe_sheet_name,
+                            hdr_fill, hdr_font, title_font, ctr, left, wrap, bdr,
+                            plain_font, get_column_letter):
+    """
+    Create a per-plant drill-down sheet: the formula chain that produced this
+    plant's Throughput % / Grade-Adj TP %, followed by every underlying batch
+    row. Returns the created sheet's title (for the caller's hyperlink).
+    """
+    lookup = str(plant_row.get("lookup_code", ""))
+    ws = wb.create_sheet(safe_sheet_name(lookup))
+
+    plant_name = plant_row.get("plant_name", "")
+    mixer_cap  = plant_row.get("mixer_theo_cap", 0)
+    total_qty  = plant_row.get("total_quantity", 0)
+    total_min  = plant_row.get("total_time_min", 0)
+    total_hrs  = plant_row.get("total_time_hrs", 0)
+    tp_pct     = plant_row.get("throughput_pct", 0)
+    w_grade    = plant_row.get("weighted_avg_grade")
+    rag        = plant_row.get("rational_average_grade")
+    adj_cap    = plant_row.get("grade_adjusted_capacity")
+    adj_tp     = plant_row.get("grade_adjusted_throughput_pct")
+
+    ws.merge_cells("A1:F1")
+    t = ws.cell(1, 1, f"{lookup} — {plant_name} — Backend Data ({mon_tag})")
+    t.fill = hdr_fill; t.font = title_font; t.alignment = ctr
+    ws.row_dimensions[1].height = 22
+
+    # ── Formula summary block ───────────────────────────────────────────────
+    r = 3
+    def _label_val(row_i, label, value):
+        c1 = ws.cell(row_i, 1, label); c1.font = Font(bold=True, size=10)
+        c2 = ws.cell(row_i, 2, value); c2.font = plain_font
+
+    from openpyxl.styles import Font
+    ws.cell(r, 1, "Existing Throughput % — formula").font = Font(bold=True, size=11, color="0A2540")
+    r += 1
+    _label_val(r, "Total Quantity (m³)", total_qty); r += 1
+    _label_val(r, "Total Time (min)", total_min); r += 1
+    _label_val(r, "Total Time (hrs) = min / 60", total_hrs); r += 1
+    _label_val(r, "Mixer Theo. Capacity (m³/hr)", mixer_cap); r += 1
+    _label_val(r, "Actual Rate = Qty / Hrs", round(total_qty / total_hrs, 2) if total_hrs else 0); r += 1
+    _label_val(r, "Throughput % = (Rate / Mixer Cap) × 100", f"{tp_pct}%"); r += 1
+    r += 1
+
+    ws.cell(r, 1, "Grade-Adjusted Throughput % — formula").font = Font(bold=True, size=11, color="0A2540")
+    r += 1
+    _label_val(r, "Weighted Avg Grade = SUM(grade×qty)/SUM(qty)", f"M{w_grade}" if w_grade is not None else "— (no graded batches)"); r += 1
+    _label_val(r, "Reference Grade (constant)", "M20"); r += 1
+    _label_val(r, "RAG (Rational Average Grade) = 20 + (Weighted Grade−20)/2", f"M{rag}" if rag is not None else "—"); r += 1
+    _label_val(r, "Grade-Adj Capacity = Mixer Cap × (20/RAG)", adj_cap if adj_cap is not None else "—"); r += 1
+    _label_val(r, "Grade-Adj TP % = (Actual Rate / Grade-Adj Capacity) × 100", f"{adj_tp}%" if adj_tp is not None else "—"); r += 1
+    r += 2
+
+    ws.column_dimensions["A"].width = 52
+    ws.column_dimensions["B"].width = 18
+
+    # ── Underlying batch rows ───────────────────────────────────────────────
+    detail_hdr_row = r
+    ws.cell(r, 1, f"Underlying batches ({len(plant_batches)} rows)").font = Font(bold=True, size=11, color="0A2540")
+    r += 1
+    heads = ["Production Date", "Batch Ref", "Quantity", "Time Taken (min)", "Grade Description", "Parsed Grade"]
+    for ci, h in enumerate(heads, 1):
+        c = ws.cell(r, ci, h)
+        c.fill = hdr_fill; c.font = hdr_font; c.alignment = wrap; c.border = bdr
+    ws.row_dimensions[r].height = 24
+    r += 1
+
+    for b in sorted(plant_batches, key=lambda x: str(x.get("production_date", ""))):
+        grade = b.get("grade")
+        vals = [
+            b.get("production_date", ""),
+            b.get("batch_ref", ""),
+            round(float(b.get("quantity", 0)), 2),
+            round(float(b.get("time_taken_min", 0)), 1),
+            b.get("grade_desc", ""),
+            f"M{grade}" if grade is not None else "— (unparsed)",
+        ]
+        for ci, v in enumerate(vals, 1):
+            c = ws.cell(r, ci, v)
+            c.border = bdr
+            c.alignment = left if ci in (2, 5) else ctr
+            c.font = plain_font
+        r += 1
+
+    for ci, w in enumerate([16, 22, 12, 16, 28, 14], 1):
+        ws.column_dimensions[get_column_letter(ci)].width = w
+
+    # Back-link to the main Plant Throughput sheet
+    back = ws.cell(2, 1, "← Back to Plant Throughput")
+    back.hyperlink = "#'Plant Throughput'!A1"
+    back.font = Font(bold=True, underline="single", color="635BFF", size=10)
+
+    return ws.title
+
+
+def _tp_build_excel(plant_rows, location_rows, month, year, batch_rows=None):
+    """Return Excel bytes matching exactly the HTML email tables (same headers, columns, colors).
+
+    When batch_rows is given (list[dict] of parsed per-batch rows from
+    tp_calculator.parse_oracle_df, each with lookup_code/batch_ref/quantity/
+    time_taken_min/grade), the TP % and Grade-Adj TP % cells on the Plant
+    Throughput sheet become hyperlinks to a per-plant detail sheet listing
+    every underlying batch — the drill-down data double-clicking a value
+    should show, per plant.
+    """
     from openpyxl import Workbook
     from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
 
     mon_tag = _tp_mon_tag(month, year)
+    batch_rows = batch_rows or []
+
+    # Group batch rows by plant once, up front.
+    batches_by_plant = {}
+    for b in batch_rows:
+        batches_by_plant.setdefault(b.get("lookup_code", ""), []).append(b)
+
+    _used_sheet_names = set()
+    def _safe_sheet_name(lookup_code: str) -> str:
+        """Excel sheet names: <=31 chars, no  \\ / ? * [ ] :  and must be unique."""
+        import re as _re
+        base = _re.sub(r'[\\/\?\*\[\]:]', "_", str(lookup_code))[:27] or "Plant"
+        name = base
+        n = 1
+        while name in _used_sheet_names:
+            n += 1
+            name = f"{base}_{n}"[:31]
+        _used_sheet_names.add(name)
+        return name
 
     # Colors matching the HTML email exactly
     RED_FILL   = PatternFill("solid", fgColor="FFB3B3")
@@ -2186,10 +2314,18 @@ def _tp_build_excel(plant_rows, location_rows, month, year):
 
     wb = Workbook()
 
-    # ── Location sheet — Sr. no., Exco Location, Plants, Total Qty, Time (min), Avg TP %
+    def _grade_str(v):
+        return f"M{round(v, 1)}" if v is not None else "—"
+
+    def _gat_str(v):
+        return f"{round(v)}%" if v is not None else "—"
+
+    # ── Location sheet — Sr. no., Exco Location, Plants, Total Qty, Time (min),
+    #                     Avg TP %, Weighted Grade, Avg Grade-Adj TP %
     ws_l = wb.active
     ws_l.title = "Location Throughput"
-    LOC_HEADS = ["Sr. no.", "Exco Location", "Plants", "Total Qty", "Time (min)", "Avg TP %"]
+    LOC_HEADS = ["Sr. no.", "Exco Location", "Plants", "Total Qty", "Time (min)",
+                 "Avg TP %", "Weighted Grade", "RAG", "Avg Grade-Adj TP %"]
     ws_l.merge_cells(f"A1:{get_column_letter(len(LOC_HEADS))}1")
     t = ws_l.cell(1, 1, f"Location wise Throughput - {mon_tag}")
     t.fill = HDR_FILL; t.font = TITLE_FONT; t.alignment = CTR
@@ -2201,8 +2337,10 @@ def _tp_build_excel(plant_rows, location_rows, month, year):
     srno = 1
     for ri, row in enumerate(location_rows, 3):
         pct = float(row.get("avg_throughput_pct", 0))
+        gat = row.get("avg_grade_adjusted_throughput_pct")
         pan = bool(row.get("is_pan_india"))
         pct_fill, pct_font = _fill_font(pct)
+        gat_fill, gat_font = _fill_font(gat) if gat is not None else (PLAIN_FILL, PLAIN_FONT)
         if pan:
             row_fill, row_font = PAN_FILL, PAN_FONT
             srno_val = "—"
@@ -2211,23 +2349,27 @@ def _tp_build_excel(plant_rows, location_rows, month, year):
             srno_val = srno; srno += 1
         vals = [srno_val, row.get("exco_location",""), row.get("plant_count",0),
                 round(float(row.get("total_quantity",0)), 1),
-                round(float(row.get("total_time_min",0)), 1), f"{round(pct)}%"]
+                round(float(row.get("total_time_min",0)), 1), f"{round(pct)}%",
+                _grade_str(row.get("weighted_avg_grade")), _grade_str(row.get("rational_average_grade")), _gat_str(gat)]
         for ci, v in enumerate(vals, 1):
             c = ws_l.cell(ri, ci, v)
             c.border = BDR
             c.alignment = LEFT if ci == 2 else CTR
-            if ci == len(LOC_HEADS):          # Avg TP % cell always gets pct color
+            if ci == 6:                       # Avg TP % cell always gets pct color
                 c.fill = pct_fill; c.font = Font(bold=pan, color=pct_font.color, size=10)
+            elif ci == 9 and gat is not None:  # Avg Grade-Adj TP % cell gets its own color
+                c.fill = gat_fill; c.font = Font(bold=pan, color=gat_font.color, size=10)
             else:
                 c.fill = row_fill; c.font = row_font
-    for ci, w in enumerate([30, 22, 8, 12, 12, 10], 1):
+    for ci, w in enumerate([30, 22, 8, 12, 12, 10, 14, 14, 16], 1):
         ws_l.column_dimensions[get_column_letter(ci)].width = w
 
     # ── Plant sheet — Sr. no., Plant, Exco Location, Business Head, Plant Manager,
-    #                 Mixer Cap, Total Qty, Time (min), TP %
+    #                 Mixer Cap, Total Qty, Time (min), TP %, Weighted Grade, Grade-Adj TP %
     ws_p = wb.create_sheet("Plant Throughput")
     PLT_HEADS = ["Sr. no.", "Plant", "Exco Location", "Business Head",
-                 "Plant Manager", "Mixer Cap", "Total Qty", "Time (min)", "TP %"]
+                 "Plant Manager", "Mixer Cap", "Total Qty", "Time (min)", "TP %",
+                 "Weighted Grade", "RAG", "Grade-Adj TP %"]
     ws_p.merge_cells(f"A1:{get_column_letter(len(PLT_HEADS))}1")
     t2 = ws_p.cell(1, 1, f"Plant Throughput report - {mon_tag}")
     t2.fill = HDR_FILL; t2.font = TITLE_FONT; t2.alignment = CTR
@@ -2236,20 +2378,46 @@ def _tp_build_excel(plant_rows, location_rows, month, year):
         c = ws_p.cell(2, ci, h)
         c.fill = HDR_FILL; c.font = HDR_FONT; c.alignment = WRAP; c.border = BDR
     ws_p.row_dimensions[2].height = 28
+    def _hyperlink_font(base_font):
+        color = base_font.color
+        return Font(bold=True, underline="single", color=color, size=10)
+
     for ri, row in enumerate(plant_rows, 3):
         pct  = float(row.get("throughput_pct", 0))
+        gat  = row.get("grade_adjusted_throughput_pct")
         fill, fnt = _fill_font(pct)
+        gat_fill, gat_fnt = _fill_font(gat) if gat is not None else (PLAIN_FILL, PLAIN_FONT)
+
+        lookup = str(row.get("lookup_code", ""))
+        plant_batches = batches_by_plant.get(lookup, [])
+        detail_sheet_name = _build_tp_detail_sheet(
+            wb, row, plant_batches, mon_tag, _safe_sheet_name,
+            HDR_FILL, HDR_FONT, TITLE_FONT, CTR, LEFT, WRAP, BDR,
+            PLAIN_FONT, get_column_letter
+        ) if plant_batches else None
+
         vals = [ri - 2, row.get("plant_name",""), row.get("exco_location",""),
                 row.get("business_head",""), row.get("plant_manager",""),
                 row.get("mixer_theo_cap",""),
                 round(float(row.get("total_quantity",0)), 1),
                 round(float(row.get("total_time_min",0)), 1),
-                f"{round(pct)}%"]
+                f"{round(pct)}%",
+                _grade_str(row.get("weighted_avg_grade")), _grade_str(row.get("rational_average_grade")), _gat_str(gat)]
         for ci, v in enumerate(vals, 1):
             c = ws_p.cell(ri, ci, v)
-            c.fill = fill; c.font = fnt; c.border = BDR
+            c.border = BDR
             c.alignment = LEFT if ci == 2 else CTR
-    for ci, w in enumerate([30, 40, 16, 18, 18, 10, 11, 11, 8], 1):
+            if ci == 9 and detail_sheet_name:          # TP % → hyperlink to detail sheet
+                c.fill = fill; c.font = _hyperlink_font(fnt)
+                c.hyperlink = f"#'{detail_sheet_name}'!A1"
+            elif ci == 12 and gat is not None:          # Grade-Adj TP % cell gets its own color
+                c.fill = gat_fill
+                c.font = _hyperlink_font(gat_fnt) if detail_sheet_name else gat_fnt
+                if detail_sheet_name:
+                    c.hyperlink = f"#'{detail_sheet_name}'!A1"
+            else:
+                c.fill = fill; c.font = fnt
+    for ci, w in enumerate([30, 40, 16, 18, 18, 10, 11, 11, 8, 14, 14, 14], 1):
         ws_p.column_dimensions[get_column_letter(ci)].width = w
 
     buf = io.BytesIO()
@@ -2297,17 +2465,28 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
                 f'background:{bg};color:{fg};text-align:{align};'
                 f'{ws}line-height:1.2;vertical-align:middle;{fw}"')
 
+    def _grade_str(v):
+        return f"M{round(v, 1)}" if v is not None else "—"
+
+    def _gat_str(v):
+        return f"{round(v)}%" if v is not None else "—"
+
     # ── Location table ────────────────────────────────────────────────────────
     loc_body = ""
     srno = 1
     for r in location_rows:
         pct    = float(r.get("avg_throughput_pct", 0))
+        gat    = r.get("avg_grade_adjusted_throughput_pct")
+        gat_bg, gat_fg = (_bg(gat), _fg(_bg(gat))) if gat is not None else ("#ffffff", "#19263A")
         pan    = bool(r.get("is_pan_india"))
         pct_bg = _bg(pct); pct_fg = _fg(pct_bg)
         qty    = round(float(r.get("total_quantity", 0)), 1)
         mins   = round(float(r.get("total_time_min", 0)), 1)
         plants = r.get("plant_count", 0)
         loc    = r.get("exco_location", "")
+        grade_str = _grade_str(r.get("weighted_avg_grade"))
+        rag_str   = _grade_str(r.get("rational_average_grade"))
+        gat_str   = _gat_str(gat)
         if pan:
             bg = "#D9D9D9"; fg = "#222222"
             loc_body += (
@@ -2318,6 +2497,9 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
                 f'<td {_td(bg, fg, "right",  bold=True, top_bdr="2px solid #555")}>{qty}</td>'
                 f'<td {_td(bg, fg, "right",  bold=True, top_bdr="2px solid #555")}>{mins}</td>'
                 f'<td {_td(pct_bg, pct_fg, "center", bold=True, top_bdr="2px solid #555")}>{round(pct)}%</td>'
+                f'<td {_td(bg, fg, "center", bold=True, top_bdr="2px solid #555")}>{grade_str}</td>'
+                f'<td {_td(bg, fg, "center", bold=True, top_bdr="2px solid #555")}>{rag_str}</td>'
+                f'<td {_td(gat_bg, gat_fg, "center", bold=True, top_bdr="2px solid #555")}>{gat_str}</td>'
                 f'</tr>'
             )
         else:
@@ -2330,13 +2512,16 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
                 f'<td {_td(bg, fg, "right")}>{qty}</td>'
                 f'<td {_td(bg, fg, "right")}>{mins}</td>'
                 f'<td {_td(bg, fg, "center", bold=True)}>{round(pct)}%</td>'
+                f'<td {_td(bg, fg, "center")}>{grade_str}</td>'
+                f'<td {_td(bg, fg, "center")}>{rag_str}</td>'
+                f'<td {_td(gat_bg, gat_fg, "center", bold=True)}>{gat_str}</td>'
                 f'</tr>'
             )
             srno += 1
 
     loc_html = (
         f'<table cellpadding="0" cellspacing="0" style="{TBL_LOC}">'
-        f'<tr><td colspan="6" {TTL}>Location wise Throughput - {mon_tag}</td></tr>'
+        f'<tr><td colspan="9" {TTL}>Location wise Throughput - {mon_tag}</td></tr>'
         f'<tr>'
         f'<th {_th("center", w=45)}>Sr. no.</th>'
         f'<th {_th("left")}>Exco Location</th>'
@@ -2344,6 +2529,9 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
         f'<th {_th("right")}>Total Qty</th>'
         f'<th {_th("right")}>Time (min)</th>'
         f'<th {_th("center")}>Avg TP %</th>'
+        f'<th {_th("center")}>Weighted Grade</th>'
+        f'<th {_th("center")}>RAG</th>'
+        f'<th {_th("center")}>Avg Grade-Adj TP %</th>'
         f'</tr>{loc_body}</table>'
     )
 
@@ -2351,6 +2539,8 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
     plant_body = ""
     for i, r in enumerate(plant_rows, 1):
         pct  = float(r.get("throughput_pct", 0))
+        gat  = r.get("grade_adjusted_throughput_pct")
+        gat_bg, gat_fg = (_bg(gat), _fg(_bg(gat))) if gat is not None else ("#ffffff", "#19263A")
         bg   = _bg(pct); fg = _fg(bg)
         name = str(r.get("plant_name", ""))
         bh   = str(r.get("business_head", ""))
@@ -2358,6 +2548,9 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
         cap  = str(r.get("mixer_theo_cap", ""))
         qty  = round(float(r.get("total_quantity", 0)), 1)
         mins = round(float(r.get("total_time_min", 0)), 1)
+        grade_str = _grade_str(r.get("weighted_avg_grade"))
+        rag_str   = _grade_str(r.get("rational_average_grade"))
+        gat_str   = _gat_str(gat)
         plant_body += (
             f'<tr>'
             f'<td {_td(bg, fg, "center")}>{i}</td>'
@@ -2368,12 +2561,15 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
             f'<td {_td(bg, fg, "right")}>{qty}</td>'
             f'<td {_td(bg, fg, "right")}>{mins}</td>'
             f'<td {_td(bg, fg, "center", bold=True)}>{round(pct)}%</td>'
+            f'<td {_td(bg, fg, "center")}>{grade_str}</td>'
+            f'<td {_td(bg, fg, "center")}>{rag_str}</td>'
+            f'<td {_td(gat_bg, gat_fg, "center", bold=True)}>{gat_str}</td>'
             f'</tr>'
         )
 
     plant_html = (
         f'<table cellpadding="0" cellspacing="0" style="{TBL_PLT}">'
-        f'<tr><td colspan="8" {TTL}>Plant Throughput Report - {mon_tag}</td></tr>'
+        f'<tr><td colspan="11" {TTL}>Plant Throughput Report - {mon_tag}</td></tr>'
         f'<tr>'
         f'<th {_th("center", w=45)}>Sr. no.</th>'
         f'<th {_th("center", wrap=True)}>Plant</th>'
@@ -2383,6 +2579,9 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
         f'<th {_th("center")}>Total Qty</th>'
         f'<th {_th("center")}>Time (min)</th>'
         f'<th {_th("center")}>TP %</th>'
+        f'<th {_th("center")}>Weighted Grade</th>'
+        f'<th {_th("center")}>RAG</th>'
+        f'<th {_th("center")}>Grade-Adj TP %</th>'
         f'</tr>{plant_body}</table>'
     )
 
@@ -2393,12 +2592,13 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
 def tp_download_excel():
     plant_rows    = _ms("tp", "report_plant_rows", _ms("tp", "plant_rows", []))
     location_rows = _ms("tp", "report_location_rows", _ms("tp", "location_rows", []))
+    batch_rows    = _ms("tp", "report_batch_rows", [])
     month = _ms("tp", "calc_month", _date.today().month)
     year  = _ms("tp", "calc_year",  _date.today().year)
     if not plant_rows:
         flash("No data to download — run Calculate first.", "warning")
         return redirect(url_for("tp_reports"))
-    excel_bytes = _tp_build_excel(plant_rows, location_rows, month, year)
+    excel_bytes = _tp_build_excel(plant_rows, location_rows, month, year, batch_rows=batch_rows)
     fname = f"RDC_TP_{year}_{month:02d}.xlsx"
     return send_file(io.BytesIO(excel_bytes), as_attachment=True, download_name=fname,
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -2423,6 +2623,7 @@ def tp_download_csv():
 def tp_send_email():
     plant_rows    = _ms("tp", "report_plant_rows", _ms("tp", "plant_rows", []))
     location_rows = _ms("tp", "report_location_rows", _ms("tp", "location_rows", []))
+    batch_rows    = _ms("tp", "report_batch_rows", [])
     month = _ms("tp", "calc_month", _date.today().month)
     year  = _ms("tp", "calc_year",  _date.today().year)
     to_addr = request.form.get("to", "").strip()
@@ -2442,7 +2643,7 @@ def tp_send_email():
         subject = f"RDC-TP Plant Throughput Report — {month_name} {year}"
 
     # Build color-coded Excel attachment
-    excel_bytes = _tp_build_excel(plant_rows, location_rows, month, year)
+    excel_bytes = _tp_build_excel(plant_rows, location_rows, month, year, batch_rows=batch_rows)
     fname = f"RDC_TP_{year}_{month:02d}.xlsx"
 
     # Compact HTML email body — same style as BTRTP

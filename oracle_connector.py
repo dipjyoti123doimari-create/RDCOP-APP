@@ -31,6 +31,12 @@ import database
 # Schema + table in Oracle that holds the production data.
 _TABLE = "APPSREAD.rdc_batch_trx_headers"
 
+# Master header holds the friendly concrete-grade NAME (e.g. "M30-MIVAN"),
+# joined by sales order + line number. Same pattern as
+# modules/slow_loading_alert/oracle_service.py (verified against live Oracle):
+#   T003=line no  T004=sales order  T006=grade name
+_MASTER_TABLE = "APPSREAD.rdc_batch_master_header"
+
 # Default path to Oracle Instant Client — overridden by app_settings.
 _DEFAULT_INSTANTCLIENT = r"D:\AI Project\Incentive Calculator\instantclient"
 
@@ -235,6 +241,15 @@ def get_tp_oracle_cols() -> dict:
         "plant":  (database.get_module_setting("tp", "oracle_plant_col", "PLANTNO")   or "PLANTNO").strip(),
         "batch":  (database.get_module_setting("tp", "oracle_batch_col", "BATCHCODE") or "BATCHCODE").strip(),
         "time":   (database.get_module_setting("tp", "oracle_time_col",  "TIMETAKEN") or "TIMETAKEN").strip(),
+        # Grade-Adjusted Throughput: friendly grade name from the master-header
+        # join (T006), with the raw item/FG code (ITEMNAME) as fallback when the
+        # master row is missing. Same override pattern as SLA's oracle_*_col settings.
+        "salesorder":     (database.get_module_setting("tp", "oracle_salesorder_col", "SALESORDER") or "SALESORDER").strip(),
+        "linenumber":     (database.get_module_setting("tp", "oracle_linenumber_col", "LINENUMBER") or "LINENUMBER").strip(),
+        "grade_name_col": (database.get_module_setting("tp", "oracle_grade_name_col", "T006") or "").strip(),
+        "master_so_col":  (database.get_module_setting("tp", "oracle_master_so_col",  "T004") or "T004").strip(),
+        "master_ln_col":  (database.get_module_setting("tp", "oracle_master_ln_col",  "T003") or "T003").strip(),
+        "grade_fallback": (database.get_module_setting("tp", "oracle_grade_col",      "ITEMNAME") or "ITEMNAME").strip(),
     }
 
 
@@ -243,7 +258,10 @@ def fetch_tp_data(from_date, to_date) -> tuple:
     Fetch production rows for RDC-TP from Oracle.
 
     Returns (DataFrame, warnings_list).
-    DataFrame columns: production_date, plant_col, batch_ref, quantity, time_taken_min
+    DataFrame columns: production_date, plant_col, batch_ref, quantity,
+                        time_taken_min, grade_desc
+    grade_desc feeds the Grade-Adjusted Throughput KPI only — the existing
+    throughput calculation never reads it.
     """
     cfg  = get_oracle_config()
     cols = get_tp_oracle_cols()
@@ -257,33 +275,75 @@ def fetch_tp_data(from_date, to_date) -> tuple:
         params = {"from_date": fd, "to_date": td}
         status_clause = ""
         if cfg["status_filter"]:
-            status_clause = "AND STATUS = :status"
+            status_clause = "AND h.STATUS = :status"
             params["status"] = cfg["status_filter"]
+
+        # Grade NAME (m.T006) is LEFT-JOINed from the master header on sales
+        # order + line number, falling back to the raw item code (ITEMNAME)
+        # when the master row is missing — mirrors oracle_service.py's
+        # customer/grade join for Slow Loading Alert.
+        grade_expr = (f"NVL(TO_CHAR(m.{cols['grade_name_col']}), h.{cols['grade_fallback']})"
+                      if cols["grade_name_col"] else f"h.{cols['grade_fallback']}")
+        join_clause = ""
+        if cols["grade_name_col"]:
+            join_clause = (
+                f"LEFT JOIN {_MASTER_TABLE} m "
+                f"ON TO_CHAR(h.{cols['salesorder']}) = TO_CHAR(m.{cols['master_so_col']}) "
+                f"AND TO_CHAR(h.{cols['linenumber']}) = TO_CHAR(m.{cols['master_ln_col']})"
+            )
 
         sql = f"""
             SELECT
-                PRODDATE                   AS production_date,
-                {cols['plant']}            AS plant_col,
-                {cols['batch']}            AS batch_ref,
-                PRODUCED_QUANTITY          AS quantity,
-                {cols['time']}             AS time_taken_min
-            FROM {_TABLE}
-            WHERE PRODDATE >= :from_date
-              AND PRODDATE <= :to_date
+                h.PRODDATE                 AS production_date,
+                h.{cols['plant']}          AS plant_col,
+                h.{cols['batch']}          AS batch_ref,
+                h.PRODUCED_QUANTITY        AS quantity,
+                h.{cols['time']}           AS time_taken_min,
+                {grade_expr}                AS grade_desc
+            FROM {_TABLE} h
+            {join_clause}
+            WHERE h.PRODDATE >= :from_date
+              AND h.PRODDATE <= :to_date
               {status_clause}
-            ORDER BY PRODDATE, {cols['plant']}
+            ORDER BY h.PRODDATE, h.{cols['plant']}
         """
-        cur.execute(sql, params)
+        try:
+            cur.execute(sql, params)
+        except Exception as exc:
+            # Master-header join failed (e.g. column mismatch) — fall back to a
+            # join-free query so the existing throughput calc is never blocked
+            # by the new grade lookup. Grade-Adjusted TP will just show
+            # ungraded/fallback data for this fetch.
+            warnings.append(f"Grade join failed, falling back to {cols['grade_fallback']} only. ({exc})")
+            status_clause_fb = status_clause.replace("h.STATUS", "STATUS")
+            sql_fb = f"""
+                SELECT
+                    PRODDATE                   AS production_date,
+                    {cols['plant']}            AS plant_col,
+                    {cols['batch']}            AS batch_ref,
+                    PRODUCED_QUANTITY          AS quantity,
+                    {cols['time']}             AS time_taken_min,
+                    {cols['grade_fallback']}   AS grade_desc
+                FROM {_TABLE}
+                WHERE PRODDATE >= :from_date
+                  AND PRODDATE <= :to_date
+                  {status_clause_fb}
+                ORDER BY PRODDATE, {cols['plant']}
+            """
+            cur.execute(sql_fb, params)
+
         rows = cur.fetchall()
         col_names = [d[0].lower() for d in cur.description]
 
         if not rows:
             warnings.append(f"No rows found in Oracle for {from_date} → {to_date}.")
-            return pd.DataFrame(columns=["production_date","plant_col","batch_ref","quantity","time_taken_min"]), warnings
+            return pd.DataFrame(columns=["production_date","plant_col","batch_ref","quantity","time_taken_min","grade_desc"]), warnings
 
         df = pd.DataFrame(rows, columns=col_names)
         df["quantity"]      = pd.to_numeric(df["quantity"],      errors="coerce").fillna(0)
         df["time_taken_min"] = pd.to_numeric(df["time_taken_min"], errors="coerce").fillna(0)
+        if "grade_desc" not in df.columns:
+            df["grade_desc"] = None
 
         # Warn about missing batch/plant values
         blank_batch = df["batch_ref"].isna() | (df["batch_ref"].astype(str).str.strip() == "")

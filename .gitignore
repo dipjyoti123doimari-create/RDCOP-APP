@@ -1,5 +1,6 @@
 # Database (contains live data — never commit)
 data/app.db
+data/*.bak-*
 *.db
 *.sqlite
 *.sqlite3

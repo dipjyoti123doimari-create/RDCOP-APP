@@ -24,13 +24,39 @@ BATCH PARSING
 LOCATION TP
     Simple average of throughput % of all plants under the same Exco Location.
     (Weighted average not applicable because mixer capacities differ per plant.)
+
+GRADE-ADJUSTED THROUGHPUT (additive KPI — does not alter the formula above)
+    1. weighted_avg_grade = SUM(grade × qty) / SUM(qty), grade parsed from the
+       Oracle grade/item description ("M20" → 20). Rows with an unparseable
+       grade are excluded from this weighted average but still counted in the
+       existing throughput (they carry no grade info, not a grade of 0).
+    2. RAG (Rational Average Grade) = REFERENCE_GRADE + (weighted_avg_grade - REFERENCE_GRADE) / 2
+       (dampens the grade deviation by half so the adjustment doesn't swing
+       throughput_pct too far past 100%; weighted_avg_grade itself is still
+       reported unchanged as its own KPI)
+    3. grade_adjusted_capacity = mixer_theo_cap × (REFERENCE_GRADE / RAG)
+    4. grade_adjusted_throughput_pct = (actual_rate / grade_adjusted_capacity) × 100
+       where actual_rate is exactly the same Total Qty / Total Time (hrs) used
+       above.
 """
 
+import re
 from datetime import datetime
 
 import pandas as pd
 
 import database
+
+# Reference concrete grade the Grade-Adjusted Throughput KPI is normalised
+# against (M20). Numeric grade, not a display string.
+REFERENCE_GRADE = 20.0
+
+# Matches "M20", "m 30", "M25/M7.5", "M30-MIVAN" etc. — first standalone
+# M<number> wins. The (?<![A-Za-z0-9]) lookbehind stops "TM1028/M40" or
+# "TM20/M50" (truck/mixer reference codes, e.g. "TM260") from being misread
+# as grade M1028 or M20 — the M there is part of "TM", not a grade prefix.
+# Confirmed against real Oracle grade_desc values (verified 2026-08-25).
+_GRADE_RE = re.compile(r"(?<![A-Za-z0-9])M\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
 
 
 # ── Batch parsing ─────────────────────────────────────────────────────────────
@@ -57,6 +83,26 @@ def _parse_batch(batch_str: str) -> tuple:
 
     # Format A: PLANT/YEAR/BATCHNUM (3 parts) or any other
     return plant_code, None, plant_code
+
+
+def parse_grade(desc) -> float:
+    """
+    Extract the numeric concrete grade from an item/grade description
+    (e.g. "M30-MIVAN" → 30.0, "M25/M7.5" → 25.0, "FGJKL079" → None).
+
+    Returns None when no confident M<number> pattern is found — callers must
+    treat that as "unknown grade", never as grade 0.
+    """
+    if desc is None:
+        return None
+    m = _GRADE_RE.search(str(desc))
+    if not m:
+        return None
+    try:
+        val = float(m.group(1))
+    except ValueError:
+        return None
+    return val if val > 0 else None
 
 
 # ── Oracle data cleaning & parsing ───────────────────────────────────────────
@@ -119,6 +165,10 @@ def parse_oracle_df(raw_df: pd.DataFrame) -> tuple:
             "batch_ref":       batch_ref,
             "quantity":        qty,
             "time_taken_min":  time_min,
+            # Grade-Adjusted Throughput only — not used by the existing
+            # throughput calculation. None when ungraded/unparseable.
+            "grade":           parse_grade(r.get("grade_desc")),
+            "grade_desc":      "" if r.get("grade_desc") is None else str(r.get("grade_desc")),
         })
 
     return rows, skip_log
@@ -197,17 +247,33 @@ def run_tp_calculation(month: int, year: int,
             lambda b: _parse_batch(str(b))[2]
         )
 
+    # Grade-Adjusted Throughput: "grade" is only present when the caller passed
+    # an in-memory df from parse_oracle_df() (the live Reports/Calculate path).
+    # The persisted oracle_raw_data / tp_oracle_data cache tables carry no
+    # grade column, so grade-adjusted figures are simply unavailable there —
+    # never treated as grade 0.
+    has_grade = "grade" in ora_df.columns
+    if has_grade:
+        ora_df["grade"] = pd.to_numeric(ora_df["grade"], errors="coerce")
+        ora_df["graded_qty"] = ora_df["quantity"].where(ora_df["grade"].notna(), 0.0)
+        ora_df["grade_x_qty"] = (ora_df["grade"] * ora_df["quantity"]).where(ora_df["grade"].notna(), 0.0)
+
     # Drop zero-time and zero-qty rows (already filtered in fetch but guard here too)
     ora_df = ora_df[(ora_df["time_taken_min"] > 0) & (ora_df["time_taken_min"] <= 100)
                     & (ora_df["quantity"] > 0)]
 
+    agg_kwargs = dict(
+        total_quantity=("quantity",      "sum"),
+        total_time_min=("time_taken_min","sum"),
+        batch_count=("quantity",         "count"),
+    )
+    if has_grade:
+        agg_kwargs["graded_quantity"] = ("graded_qty",   "sum")
+        agg_kwargs["grade_x_qty_sum"] = ("grade_x_qty",  "sum")
+
     grouped = (
         ora_df.groupby("lookup_code", sort=True)
-        .agg(
-            total_quantity=("quantity",      "sum"),
-            total_time_min=("time_taken_min","sum"),
-            batch_count=("quantity",         "count"),
-        )
+        .agg(**agg_kwargs)
         .reset_index()
     )
 
@@ -228,12 +294,32 @@ def run_tp_calculation(month: int, year: int,
             continue
 
         mixer_cap = float(info.get("mixer_theo_cap") or 0)
+        actualProductionRate = row["total_quantity"] / total_time_hrs   # units/hr
         if mixer_cap <= 0:
             warnings.append(f"'{lookup}' has zero Mixer Theo. Capacity — throughput set to 0%.")
             throughput_pct = 0.0
         else:
-            avg_rate       = row["total_quantity"] / total_time_hrs   # units/hr
+            avg_rate       = actualProductionRate
             throughput_pct = (avg_rate / mixer_cap) * 100.0
+        existingThroughput = throughput_pct
+
+        # ── Grade-Adjusted Throughput (additive; does not affect the above) ──
+        weightedAverageGrade = None
+        gradeAdjustedCapacity = None
+        gradeAdjustedThroughput = None
+        if has_grade:
+            graded_qty = float(row.get("graded_quantity") or 0)
+            if graded_qty > 0:
+                weightedAverageGrade = float(row["grade_x_qty_sum"]) / graded_qty
+                # RAG = Rational Average Grade — dampens the raw weighted-average
+                # grade's deviation from REFERENCE_GRADE by half before it's used
+                # to scale capacity, so grade_adjusted_throughput_pct stops
+                # swinging past 100%.
+                rationalAverageGrade = REFERENCE_GRADE + (weightedAverageGrade - REFERENCE_GRADE) / 2
+                if mixer_cap > 0 and rationalAverageGrade > 0:
+                    gradeAdjustedCapacity = mixer_cap * (REFERENCE_GRADE / rationalAverageGrade)
+                    if gradeAdjustedCapacity > 0:
+                        gradeAdjustedThroughput = (actualProductionRate / gradeAdjustedCapacity) * 100.0
 
         plant_rows.append({
             "month":          month,
@@ -250,6 +336,13 @@ def run_tp_calculation(month: int, year: int,
             "throughput_pct": round(throughput_pct, 2),
             "batch_count":    int(row["batch_count"]),
             "generated_at":   now,
+            # Grade-Adjusted Throughput KPI — None when no graded rows exist
+            # for this plant (never displayed as 0%, see templates).
+            "weighted_avg_grade":          round(weightedAverageGrade, 2) if weightedAverageGrade is not None else None,
+            "rational_average_grade":      round(rationalAverageGrade, 2) if weightedAverageGrade is not None else None,
+            "grade_adjusted_capacity":     round(gradeAdjustedCapacity, 2) if gradeAdjustedCapacity is not None else None,
+            "grade_adjusted_throughput_pct": round(gradeAdjustedThroughput, 2) if gradeAdjustedThroughput is not None else None,
+            "graded_quantity":             round(float(row.get("graded_quantity") or 0), 2) if has_grade else None,
         })
 
     # 4. Sort plant rows lowest → highest and build location summary
@@ -272,17 +365,36 @@ def build_location_rows(plant_rows: list, month: int, year: int) -> list:
             continue
         if loc not in location_map:
             location_map[loc] = {"plant_count": 0, "total_throughput_pct": 0.0,
-                                 "total_quantity": 0.0, "total_time_min": 0.0}
+                                 "total_quantity": 0.0, "total_time_min": 0.0,
+                                 "grade_x_qty_sum": 0.0, "graded_quantity": 0.0,
+                                 "gat_pct_sum": 0.0, "gat_pct_count": 0}
         location_map[loc]["plant_count"]          += 1
         location_map[loc]["total_throughput_pct"] += pr["throughput_pct"]
         location_map[loc]["total_quantity"]        += pr["total_quantity"]
         location_map[loc]["total_time_min"]        += pr.get("total_time_min", 0.0)
+        # Grade-Adjusted Throughput: recompute the location's weighted grade
+        # from underlying qty×grade sums — never average plant weighted grades.
+        gqty = pr.get("graded_quantity")
+        wag  = pr.get("weighted_avg_grade")
+        if gqty and wag is not None:
+            location_map[loc]["grade_x_qty_sum"] += wag * gqty
+            location_map[loc]["graded_quantity"]  += gqty
+        gat = pr.get("grade_adjusted_throughput_pct")
+        if gat is not None:
+            location_map[loc]["gat_pct_sum"]   += gat
+            location_map[loc]["gat_pct_count"] += 1
 
     location_rows = []
     all_pct_sum = all_qty_sum = all_time_sum = 0.0
+    all_grade_x_qty = all_graded_qty = 0.0
+    all_gat_sum = 0.0
+    all_gat_count = 0
     all_count = 0
     for loc, d in sorted(location_map.items()):
         cnt = d["plant_count"]
+        loc_weighted_grade = (d["grade_x_qty_sum"] / d["graded_quantity"]) if d["graded_quantity"] > 0 else None
+        loc_rag = (REFERENCE_GRADE + (loc_weighted_grade - REFERENCE_GRADE) / 2) if loc_weighted_grade is not None else None
+        loc_avg_gat = (d["gat_pct_sum"] / d["gat_pct_count"]) if d["gat_pct_count"] > 0 else None
         location_rows.append({
             "exco_location":      loc,
             "plant_count":        cnt,
@@ -290,15 +402,25 @@ def build_location_rows(plant_rows: list, month: int, year: int) -> list:
             "total_quantity":     round(d["total_quantity"], 2),
             "total_time_min":     round(d["total_time_min"], 1),
             "month": month, "year": year, "is_pan_india": False,
+            "weighted_avg_grade":               round(loc_weighted_grade, 2) if loc_weighted_grade is not None else None,
+            "rational_average_grade":           round(loc_rag, 2) if loc_rag is not None else None,
+            "avg_grade_adjusted_throughput_pct": round(loc_avg_gat, 2) if loc_avg_gat is not None else None,
         })
-        all_pct_sum  += d["total_throughput_pct"]
-        all_qty_sum  += d["total_quantity"]
-        all_time_sum += d["total_time_min"]
-        all_count    += cnt
+        all_pct_sum     += d["total_throughput_pct"]
+        all_qty_sum     += d["total_quantity"]
+        all_time_sum    += d["total_time_min"]
+        all_grade_x_qty += d["grade_x_qty_sum"]
+        all_graded_qty  += d["graded_quantity"]
+        all_gat_sum     += d["gat_pct_sum"]
+        all_gat_count   += d["gat_pct_count"]
+        all_count       += cnt
 
     location_rows.sort(key=lambda r: r["avg_throughput_pct"])
 
     if all_count:
+        pan_weighted_grade = (all_grade_x_qty / all_graded_qty) if all_graded_qty > 0 else None
+        pan_rag = (REFERENCE_GRADE + (pan_weighted_grade - REFERENCE_GRADE) / 2) if pan_weighted_grade is not None else None
+        pan_avg_gat = (all_gat_sum / all_gat_count) if all_gat_count > 0 else None
         location_rows.append({
             "exco_location":      "PAN India",
             "plant_count":        all_count,
@@ -306,6 +428,9 @@ def build_location_rows(plant_rows: list, month: int, year: int) -> list:
             "total_quantity":     round(all_qty_sum, 2),
             "total_time_min":     round(all_time_sum, 1),
             "month": month, "year": year, "is_pan_india": True,
+            "weighted_avg_grade":               round(pan_weighted_grade, 2) if pan_weighted_grade is not None else None,
+            "rational_average_grade":           round(pan_rag, 2) if pan_rag is not None else None,
+            "avg_grade_adjusted_throughput_pct": round(pan_avg_gat, 2) if pan_avg_gat is not None else None,
         })
 
     return location_rows

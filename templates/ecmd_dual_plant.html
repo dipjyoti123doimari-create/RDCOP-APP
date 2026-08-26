@@ -136,14 +136,33 @@
           {% if bp3 %}{{ '{:,.2f}'.format(bp3.qty) }}{% else %}—{% endif %}
         </td>
 
-        {# All % columns together — no color to avoid confusion #}
-        <td style="padding:9px 12px;text-align:right;font-weight:600;color:var(--text-primary)">
+        {# Each %'s color is based on its distance from an even 50/50 split —
+           0% or 100% (fully unbalanced) is red, 50% (perfectly balanced) is green #}
+        {% macro pct_color(mx) -%}
+          {%- set dist = (mx.pct - 50) | abs * 2 -%}
+          {%- if dist > 60 -%}#f87171
+          {%- elif dist > 30 -%}#fbbf24
+          {%- else -%}#34d399{%- endif -%}
+        {%- endmacro %}
+        {% macro pct_bg(mx) -%}
+          {%- set dist = (mx.pct - 50) | abs * 2 -%}
+          {%- if dist > 60 -%}rgba(248,113,113,0.12)
+          {%- elif dist > 30 -%}rgba(251,191,36,0.12)
+          {%- else -%}rgba(52,211,153,0.12){%- endif -%}
+        {%- endmacro %}
+        <td style="padding:9px 12px;text-align:right;font-weight:600;
+                    color:{% if bp1 %}{{ pct_color(bp1) }}{% else %}var(--text-primary){% endif %};
+                    background:{% if bp1 %}{{ pct_bg(bp1) }}{% else %}transparent{% endif %}">
           {% if bp1 %}{{ bp1.pct }}%{% else %}—{% endif %}
         </td>
-        <td style="padding:9px 12px;text-align:right;font-weight:600;color:var(--text-primary)">
+        <td style="padding:9px 12px;text-align:right;font-weight:600;
+                    color:{% if bp2 %}{{ pct_color(bp2) }}{% else %}var(--text-primary){% endif %};
+                    background:{% if bp2 %}{{ pct_bg(bp2) }}{% else %}transparent{% endif %}">
           {% if bp2 %}{{ bp2.pct }}%{% else %}—{% endif %}
         </td>
-        <td style="padding:9px 12px;text-align:right;font-weight:600;color:var(--text-primary)">
+        <td style="padding:9px 12px;text-align:right;font-weight:600;
+                    color:{% if bp3 %}{{ pct_color(bp3) }}{% else %}var(--text-primary){% endif %};
+                    background:{% if bp3 %}{{ pct_bg(bp3) }}{% else %}transparent{% endif %}">
           {% if bp3 %}{{ bp3.pct }}%{% else %}—{% endif %}
         </td>
 
