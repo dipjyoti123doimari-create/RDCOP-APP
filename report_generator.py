@@ -131,11 +131,26 @@ def _build_formats(wb):
                 spec["num_format"] = numfmt
             spec["align"] = "left" if tname == "text" else "right"
             fmts[f"{bname}_{tname}"] = wb.add_format(spec)
+            # Same look, but styled as a clickable link (blue, underlined) —
+            # used for cells that carry a hyperlink (e.g. Batching Quantity ->
+            # Batching Detail), so it's visibly clickable, not just data.
+            link_spec = dict(spec)
+            link_spec["font_color"] = "#0563C1"
+            link_spec["underline"] = 1
+            fmts[f"{bname}_{tname}_link"] = wb.add_format(link_spec)
     return fmts
 
 
-def _write_table(ws, fmts, out_df, header_overrides=None, add_srno=True):
-    """Write a DataFrame to a worksheet with header, colours and widths."""
+def _write_table(ws, fmts, out_df, header_overrides=None, add_srno=True,
+                 batch_detail_rows=None, detail_sheet_name=None):
+    """Write a DataFrame to a worksheet with header, colours and widths.
+
+    batch_detail_rows: optional {employee_code: first_data_row_number} map
+    (1-indexed, into detail_sheet_name) — when given, each row's "Batching
+    Quantity" cell becomes a clickable link to that employee's batch rows on
+    the shared Batching Detail sheet, so readers can check the underlying
+    batches behind the number.
+    """
     headers = list(out_df.columns)
     overrides = header_overrides or {}
 
@@ -157,6 +172,8 @@ def _write_table(ws, fmts, out_df, header_overrides=None, add_srno=True):
 
     # Data rows
     data_headers = headers[1:] if add_srno else headers
+    qty_col = data_headers.index("Batching Quantity") if "Batching Quantity" in data_headers else None
+    emp_col = data_headers.index("Employee Code") if "Employee Code" in data_headers else None
     for r, (_, row) in enumerate(out_df.iterrows(), start=1):
         inc = row.get("Incentive Amount", 0) or 0
         ded = row.get("Deduction Amount", 0) or 0
@@ -170,6 +187,16 @@ def _write_table(ws, fmts, out_df, header_overrides=None, add_srno=True):
             val = row[h]
             if pd.isna(val):
                 ws.write_blank(r, c + col_offset, None, fmt)
+            elif c == qty_col and batch_detail_rows is not None and emp_col is not None:
+                emp_code = str(row[data_headers[emp_col]]).strip()
+                target_row = batch_detail_rows.get(emp_code)
+                if target_row:
+                    link_fmt = fmts[f"{band}_{_coltype(h)}_link"]
+                    ws.write_url(r, c + col_offset,
+                                 f"internal:'{detail_sheet_name}'!A{target_row}",
+                                 link_fmt, string=f"{val:,.2f}" if isinstance(val, (int, float)) else str(val))
+                else:
+                    ws.write(r, c + col_offset, val, fmt)
             else:
                 ws.write(r, c + col_offset, val, fmt)
 
@@ -367,10 +394,69 @@ def _write_summary(ws, fmts, meta):
             ws.write(i, 1, str(v), fmts["normal_text"])
 
 
+def _sort_batch_detail(batch_detail_df):
+    """Sort raw batch rows by employee code then date — the order they'll
+    appear in on the Batching Detail sheet."""
+    if batch_detail_df is None or batch_detail_df.empty:
+        return batch_detail_df
+    return batch_detail_df.sort_values(["created_by", "date"]).reset_index(drop=True)
+
+
+def _batch_detail_row_map(sorted_batch_df):
+    """Return {employee_code: first_data_row} (1-indexed, into the eventual
+    Batching Detail sheet) so category sheets can link to it before that
+    sheet has actually been created (it's added to the workbook last so its
+    tab appears at the end, but rows must be known up front to link to)."""
+    row_map = {}
+    if sorted_batch_df is None or sorted_batch_df.empty:
+        return row_map
+    for r, (_, row) in enumerate(sorted_batch_df.iterrows(), start=1):
+        emp_code = str(row["created_by"]).strip()
+        # r is the 0-indexed xlsxwriter row; Excel cell references are 1-indexed
+        # (row 0 = header), so this employee's first data row is A{r+1}.
+        row_map.setdefault(emp_code, r + 1)
+    return row_map
+
+
+def _write_batching_detail_sheet(ws, fmts, sorted_batch_df):
+    """
+    Write every underlying batch row (all employees, one shared sheet),
+    already sorted by employee code then date via _sort_batch_detail().
+
+    sorted_batch_df columns: created_by, date, plant_code, batch_ref, quantity.
+    """
+    headers = ["Employee Code", "Date", "Plant Code", "Batch Ref", "Quantity"]
+    ws.set_row(0, 20)
+    for c, h in enumerate(headers):
+        ws.write(0, c, h, fmts["header"])
+    ws.freeze_panes(1, 0)
+
+    if sorted_batch_df is None or sorted_batch_df.empty:
+        ws.write(1, 0, "No batch data.", fmts["normal_text"])
+        for c in range(len(headers)):
+            ws.set_column(c, c, 14)
+        return
+
+    for r, (_, row) in enumerate(sorted_batch_df.iterrows(), start=1):
+        ws.write(r, 0, str(row["created_by"]).strip(), fmts["normal_text"])
+        ws.write(r, 1, str(row.get("date", "")), fmts["normal_text"])
+        ws.write(r, 2, str(row.get("plant_code", "") or ""), fmts["normal_text"])
+        ws.write(r, 3, str(row.get("batch_ref", "") or ""), fmts["normal_text"])
+        qty = row.get("quantity", 0) or 0
+        ws.write_number(r, 4, float(qty), fmts["normal_num"])
+
+    ws.set_column(0, 0, 14)
+    ws.set_column(1, 1, 12)
+    ws.set_column(2, 2, 14)
+    ws.set_column(3, 3, 16)
+    ws.set_column(4, 4, 12)
+
+
 # ---------------------------------------------------------------------------
 # PUBLIC ENTRY POINT
 # ---------------------------------------------------------------------------
-def generate_excel_report(results_df, unmapped_df, validation_df, meta) -> bytes:
+def generate_excel_report(results_df, unmapped_df, validation_df, meta,
+                          batch_detail_df=None) -> bytes:
     """
     Build the full multi-sheet Excel workbook and return it as bytes.
 
@@ -380,6 +466,11 @@ def generate_excel_report(results_df, unmapped_df, validation_df, meta) -> bytes
     validation_df -> validation_errors DataFrame (internal names) or None.
     meta          -> dict with summary info (generated_on, date_range,
                      applied_filters, totals, counts).
+    batch_detail_df -> optional raw per-batch rows (created_by, date,
+                     plant_code, batch_ref, quantity) for the report's period.
+                     When given, adds a shared "Batching Detail" sheet and
+                     makes every category sheet's Batching Quantity cell a
+                     clickable link into that employee's rows there.
     """
     output = io.BytesIO()
     writer = pd.ExcelWriter(output, engine="xlsxwriter")
@@ -389,15 +480,23 @@ def generate_excel_report(results_df, unmapped_df, validation_df, meta) -> bytes
     # 1) Summary sheet
     _write_summary(wb.add_worksheet("Summary"), fmts, meta)
 
+    # Batching Detail's row numbers are needed to link category sheets to it,
+    # but the sheet itself is added to the workbook LAST (sheet tab order
+    # follows add_worksheet() call order) so its tab sits at the end.
+    detail_sheet_name = "Batching Detail"
+    sorted_batch_df = _sort_batch_detail(batch_detail_df)
+    batch_detail_rows = _batch_detail_row_map(sorted_batch_df) if batch_detail_df is not None else None
+
     # 2) One sheet per category group (skip the special sheets)
-    special = {"Summary", "Unmapped Employees", "Validation Errors"}
+    special = {"Summary", "Unmapped Employees", "Validation Errors", detail_sheet_name}
     for sheet_name, categories in config.REPORT_SHEETS.items():
         if sheet_name in special:
             continue
         out_df = _prepare_category_df(results_df, categories)
         ws = wb.add_worksheet(_safe_sheet_name(sheet_name))
         _write_table(ws, fmts, out_df,
-                     header_overrides={"Deduction Amount": _ded_header_label(categories)})
+                     header_overrides={"Deduction Amount": _ded_header_label(categories)},
+                     batch_detail_rows=batch_detail_rows, detail_sheet_name=detail_sheet_name)
 
     # 3) Unmapped Employees
     _write_table(wb.add_worksheet("Unmapped Employees"), fmts,
@@ -406,6 +505,11 @@ def generate_excel_report(results_df, unmapped_df, validation_df, meta) -> bytes
     # 4) Validation Errors
     _write_table(wb.add_worksheet("Validation Errors"), fmts,
                  _prepare_validation_df(validation_df), add_srno=False)
+
+    # 5) Batching Detail — added last so its tab appears at the end of the workbook.
+    if batch_detail_df is not None:
+        _write_batching_detail_sheet(
+            wb.add_worksheet(detail_sheet_name), fmts, sorted_batch_df)
 
     writer.close()
     return output.getvalue()

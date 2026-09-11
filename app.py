@@ -295,6 +295,62 @@ def _gl_maintenance_cost_job_impl():
         print(f"[gl-maintenance] error: {exc}")
 
 
+def _gsheet_auto_sync_job():
+    """
+    Auto-sync all Google Sheet master data sources (I&D employees, TP plant
+    data, BTRTP batchers) so the app never runs on stale reference data
+    without anyone noticing. Runs once at startup and every 4 hours after.
+    Mirrors the sheet_id/worksheet resolution used by each module's manual
+    "Sync Now" button — never raises, just logs.
+    """
+    # I&D master data (global settings, not module-scoped).
+    try:
+        sheet_id = database.get_setting("gsheet_id", "")
+        if sheet_id:
+            worksheet = database.get_setting("gsheet_worksheet", "Sheet1")
+            result = google_sheets.sync_master_data(sheet_id, worksheet)
+            if result["error"]:
+                print(f"[gsheet-autosync] I&D master data failed: {result['error']}")
+            else:
+                print(f"[gsheet-autosync] I&D master data — {result['rows_synced']} rows synced")
+        else:
+            print("[gsheet-autosync] I&D master data — no gsheet_id configured, skipped")
+    except Exception as exc:
+        print(f"[gsheet-autosync] I&D master data error: {exc}")
+
+    # TP plant data.
+    try:
+        sheet_id = database.get_module_setting("tp", "gsheet_id",
+                                               database.get_setting("gsheet_id", ""))
+        if sheet_id:
+            worksheet = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
+            result = google_sheets.sync_tp_plant_data(sheet_id, worksheet)
+            if result["error"]:
+                print(f"[gsheet-autosync] TP plant data failed: {result['error']}")
+            else:
+                print(f"[gsheet-autosync] TP plant data — {result['rows_synced']} rows synced")
+        else:
+            print("[gsheet-autosync] TP plant data — no gsheet_id configured, skipped")
+    except Exception as exc:
+        print(f"[gsheet-autosync] TP plant data error: {exc}")
+
+    # BTRTP master data (batchers).
+    try:
+        sheet_id = database.get_module_setting("btrtp", "gsheet_id",
+                                               database.get_setting("gsheet_id", ""))
+        if sheet_id:
+            worksheet = database.get_module_setting("btrtp", "gsheet_worksheet", "BT Master Data")
+            result = google_sheets.sync_btrtp_master_data(sheet_id, worksheet)
+            if result["error"]:
+                print(f"[gsheet-autosync] BTRTP master data failed: {result['error']}")
+            else:
+                print(f"[gsheet-autosync] BTRTP master data — {result['rows_synced']} rows synced")
+        else:
+            print("[gsheet-autosync] BTRTP master data — no gsheet_id configured, skipped")
+    except Exception as exc:
+        print(f"[gsheet-autosync] BTRTP master data error: {exc}")
+
+
 def _auto_calc_one_period(month, year, fd, td, label):
     """Calculate all 3 modules for a single period. Called for both prev and current month."""
     import calendar as _cal2
@@ -366,6 +422,8 @@ def _startup_oracle_fetch():
     """
     import time as _time
     _time.sleep(45)
+    print("[startup-fetch] running Google Sheet auto-sync for all modules")
+    _gsheet_auto_sync_job()
     if not oracle_connector.is_configured() or not oracle_connector.is_reachable():
         print("[startup-fetch] Oracle not reachable — skipping startup seed")
         return
@@ -388,6 +446,12 @@ def _start_scheduler():
     _scheduler.add_job(_shared_oracle_fetch_job,
                        CronTrigger(hour=0, minute=10),
                        id="oracle_daily_fetch", replace_existing=True)
+    # Google Sheet master-data auto-sync (I&D employees, TP plant data,
+    # BTRTP batchers) — every 4 hours, so plant/manager/employee reference
+    # data never goes stale for long between manual syncs.
+    _scheduler.add_job(_gsheet_auto_sync_job,
+                       IntervalTrigger(hours=4),
+                       id="gsheet_auto_sync", replace_existing=True)
     # Auto-calculate TP and BTRTP for current month daily (after Oracle fetch).
     _scheduler.add_job(_auto_calculate_current_month,
                        CronTrigger(hour=0, minute=30),
@@ -751,7 +815,10 @@ def _rdc_send_report(module, month, year, to_addr, cc_addr,
         df_u   = pd.DataFrame(unmapped) if unmapped else pd.DataFrame()
         val_df = database.read_table("validation_errors")
         meta   = _build_meta(fd, td, rows, unmapped, "Scheduled report")
-        xlsx   = report_generator.generate_excel_report(df_f, df_u, val_df, meta)
+        batch_detail_df = calculator.get_batch_detail_for_period(
+            month, year, start_date=fd, end_date=td)
+        xlsx   = report_generator.generate_excel_report(df_f, df_u, val_df, meta,
+                                                         batch_detail_df=batch_detail_df)
         fname  = f"incentive_report_{fd}_to_{td}.xlsx"
         tables_html = report_generator.build_email_tables_html(df_f)
         import html as _h
@@ -769,12 +836,15 @@ def _rdc_send_report(module, month, year, to_addr, cc_addr,
                              + (f" — {warns[0]}" if warns else "."))
         xlsx  = _build_tp_excel(plant_rows, loc_rows)
         fname = f"RDC_TP_{year}_{month:02d}.xlsx"
-        tables_html = _tp_build_html_tables(plant_rows, loc_rows, month, year)
+        tables_html = _tp_build_html_tables(plant_rows, loc_rows, month, year, from_date=fd, to_date=td)
         import html as _h
+        missing_note = (f'<p style="margin:0 0 6px 0;color:#b45309;">{_h.escape(warns[0])}</p>'
+                        if warns and warns[0].startswith("⚠") else "")
         html_body = (
             f'<html><body style="margin:0;padding:8px 10px;'
             f'font-family:Arial,Calibri,sans-serif;font-size:12px;color:#000;">'
             f'<p style="margin:0 0 6px 0;">{_h.escape(body).replace(chr(10), "<br>")}</p>'
+            f'{missing_note}'
             f'{tables_html}</body></html>')
 
     elif module == "btrtp":
@@ -787,10 +857,13 @@ def _rdc_send_report(module, month, year, to_addr, cc_addr,
         xlsx  = _btrtp_build_excel(rows, month, year)
         fname = f"RDC_BTRTP_{year}_{month:02d}.xlsx"
         import html as _h
+        missing_note = (f'<p style="margin:0 0 6px 0;color:#b45309;">{_h.escape(warns[0])}</p>'
+                        if warns and warns[0].startswith("⚠") else "")
         html_body = (
             f'<html><body style="margin:0;padding:8px 10px;'
             f'font-family:Arial,Calibri,sans-serif;font-size:12px;color:#000;">'
             f'<p style="margin:0 0 6px 0;">{_h.escape(body).replace(chr(10), "<br>")}</p>'
+            f'{missing_note}'
             f'</body></html>')
     else:
         raise ValueError(f"Unknown module {module}")
@@ -1950,6 +2023,11 @@ def tp_fetch_oracle():
         for w in ora_warnings:
             flash(w, "warning")
         flash(f"✅ {len(parsed)} rows fetched & saved ({len(skip_log)} skipped).", "success")
+        missing = tp_calculator.find_missing_plant_codes(parsed)
+        if missing:
+            flash(f"⚠ {len(missing)} plant code(s) in this Oracle fetch are not in Plant Data "
+                  f"— likely new plant(s) not yet added to the 'Plant Data for TP' sheet: "
+                  f"{', '.join(missing)}", "warning")
     except Exception as exc:
         flash(f"Oracle error: {exc}", "error")
     _set_progress(100, "Complete")
@@ -2075,6 +2153,8 @@ def tp_reports():
         _mss("tp", "calc_to", str(td))
         _mss("tp", "calc_month", month)
         _mss("tp", "calc_year", year)
+        if calc_warns and calc_warns[0].startswith("⚠"):
+            flash(calc_warns[0], "warning")
     else:
         all_plants = _ms("tp", "plant_rows", [])
         all_locs   = _ms("tp", "location_rows", [])
@@ -2407,7 +2487,10 @@ def _tp_build_excel(plant_rows, location_rows, month, year, batch_rows=None):
             c = ws_p.cell(ri, ci, v)
             c.border = BDR
             c.alignment = LEFT if ci == 2 else CTR
-            if ci == 9 and detail_sheet_name:          # TP % → hyperlink to detail sheet
+            if ci == 7 and detail_sheet_name:           # Total Qty → hyperlink to detail sheet (underlying batches)
+                c.fill = fill; c.font = _hyperlink_font(fnt)
+                c.hyperlink = f"#'{detail_sheet_name}'!A1"
+            elif ci == 9 and detail_sheet_name:          # TP % → hyperlink to detail sheet
                 c.fill = fill; c.font = _hyperlink_font(fnt)
                 c.hyperlink = f"#'{detail_sheet_name}'!A1"
             elif ci == 12 and gat is not None:          # Grade-Adj TP % cell gets its own color
@@ -2426,12 +2509,17 @@ def _tp_build_excel(plant_rows, location_rows, month, year, batch_rows=None):
     return buf.read()
 
 
-def _tp_build_html_tables(plant_rows, location_rows, month, year):
+def _tp_build_html_tables(plant_rows, location_rows, month, year, from_date=None, to_date=None):
     """Return HTML tables for TP report email.
     width:100% + table-layout:auto lets each column size itself to its content.
     Plant name column wraps; all other columns stay on one line (nowrap).
+
+    When from_date/to_date are given, each plant's Total Qty cell links back
+    to the TP Reports page filtered to that plant and date range, so readers
+    can click through to see the underlying batching data.
     """
     mon_tag = _tp_mon_tag(month, year)
+    _base_url = _app_base_url() if (from_date and to_date) else None
 
     def _bg(pct):
         pct = round(pct or 0)  # colour by displayed (rounded) value
@@ -2551,6 +2639,15 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
         grade_str = _grade_str(r.get("weighted_avg_grade"))
         rag_str   = _grade_str(r.get("rational_average_grade"))
         gat_str   = _gat_str(gat)
+
+        qty_cell = str(qty)
+        if _base_url:
+            import urllib.parse as _up
+            lookup = str(r.get("lookup_code", ""))
+            drill_url = (f"{_base_url}/tp/reports?from_date={_up.quote(from_date)}"
+                         f"&to_date={_up.quote(to_date)}&search={_up.quote(lookup)}")
+            qty_cell = f'<a href="{drill_url}" style="color:#0A2540;text-decoration:underline">{qty}</a>'
+
         plant_body += (
             f'<tr>'
             f'<td {_td(bg, fg, "center")}>{i}</td>'
@@ -2558,7 +2655,7 @@ def _tp_build_html_tables(plant_rows, location_rows, month, year):
             f'<td {_td(bg, fg, "left")}>{bh}</td>'
             f'<td {_td(bg, fg, "left")}>{pm}</td>'
             f'<td {_td(bg, fg, "right")}>{cap}</td>'
-            f'<td {_td(bg, fg, "right")}>{qty}</td>'
+            f'<td {_td(bg, fg, "right")}>{qty_cell}</td>'
             f'<td {_td(bg, fg, "right")}>{mins}</td>'
             f'<td {_td(bg, fg, "center", bold=True)}>{round(pct)}%</td>'
             f'<td {_td(bg, fg, "center")}>{grade_str}</td>'
@@ -2626,6 +2723,8 @@ def tp_send_email():
     batch_rows    = _ms("tp", "report_batch_rows", [])
     month = _ms("tp", "calc_month", _date.today().month)
     year  = _ms("tp", "calc_year",  _date.today().year)
+    calc_from = _ms("tp", "calc_from", str(_date(year, month, 1)))
+    calc_to   = _ms("tp", "calc_to",   str(_date.today()))
     to_addr = request.form.get("to", "").strip()
     cc_addr = request.form.get("cc", "").strip()
     subject = request.form.get("subject", "").strip()
@@ -2648,11 +2747,20 @@ def tp_send_email():
 
     # Compact HTML email body — same style as BTRTP
     _body_font = "font-family:Arial,Calibri,sans-serif;font-size:12px;color:#000000;"
-    tables_html = _tp_build_html_tables(plant_rows, location_rows, month, year)
+    tables_html = _tp_build_html_tables(plant_rows, location_rows, month, year,
+                                         from_date=calc_from, to_date=calc_to)
+    calc_warns = _ms("tp", "calc_warnings", [])
+    missing_note = ""
+    if calc_warns and calc_warns[0].startswith("⚠"):
+        import html as _h
+        missing_note = (
+            f'<p style="margin:0 0 6px 0;color:#b45309;">{_h.escape(calc_warns[0])}</p>'
+        )
     html_body = (
         f'<html><body style="margin:0;padding:8px 10px;{_body_font}">'
         f'<p style="margin:0 0 3px 0;">Dear Team,</p>'
         f'<p style="margin:0 0 3px 0;">Please find attached the Plant Throughput Report for {month_name} {year}.</p>'
+        f'{missing_note}'
         f'<p style="margin:0 0 6px 0;">Regards,<br>RDC Operations</p>'
         f'{tables_html}'
         f'</body></html>'
@@ -2849,6 +2957,11 @@ def btrtp_fetch_oracle():
         for w in ora_warnings:
             flash(w, "warning")
         flash(f"✅ {len(parsed)} rows fetched & saved ({len(skip_log)} skipped).", "success")
+        missing = tp_calculator.find_missing_plant_codes(parsed)
+        if missing:
+            flash(f"⚠ {len(missing)} plant code(s) in this Oracle fetch are not in Plant Data "
+                  f"— likely new plant(s) not yet added to the 'Plant Data for TP' sheet: "
+                  f"{', '.join(missing)}", "warning")
     except Exception as exc:
         flash(f"Oracle error: {exc}", "error")
     _set_progress(100, "Complete")
@@ -2961,6 +3074,8 @@ def btrtp_reports():
         _mss("btrtp", "calc_to",    str(td))
         _mss("btrtp", "calc_month", month)
         _mss("btrtp", "calc_year",  year)
+        if calc_warns and calc_warns[0].startswith("⚠"):
+            flash(calc_warns[0], "warning")
     else:
         all_rows = _ms("btrtp", "batcher_rows", [])
 
@@ -3309,10 +3424,18 @@ def btrtp_send_email():
     _tbl_css = ('border-collapse:collapse;width:auto;font-family:Arial,sans-serif;'
                 'font-size:11px;margin:0;padding:0;')
     _body_font = 'font-family:Arial,Calibri,sans-serif;font-size:12px;color:#000000;'
+    calc_warns = _ms("btrtp", "calc_warnings", [])
+    missing_note = ""
+    if calc_warns and calc_warns[0].startswith("⚠"):
+        import html as _h
+        missing_note = (
+            f'<p style="margin:0 0 6px 0;color:#b45309;">{_h.escape(calc_warns[0])}</p>'
+        )
     html_body = (
         f'<html><body style="margin:0;padding:8px 10px;{_body_font}">'
         f'<p style="margin:0 0 3px 0;">Dear Team,</p>'
         f'<p style="margin:0 0 3px 0;">Please find attached the Batcher Throughput Report for {month_name} {year}.</p>'
+        f'{missing_note}'
         f'<p style="margin:0 0 6px 0;">Regards,<br>RDC Operations</p>'
         f'<p style="margin:0 0 4px 0;font-size:13px;font-weight:bold;color:#082B49;">'
         f'Batcher Throughput Report - {mon_tag}</p>'
@@ -4618,17 +4741,24 @@ def _snapshot_dfs():
     df_f   = pd.DataFrame(filtered) if filtered else pd.DataFrame()
     df_u   = pd.DataFrame(unmapped) if unmapped else pd.DataFrame()
     val_df = database.read_table("validation_errors")
-    return df_f, df_u, val_df, meta, from_s, to_s
+    try:
+        batch_detail_df = calculator.get_batch_detail_for_period(
+            0, 0, start_date=from_s, end_date=to_s)
+    except Exception as exc:
+        print(f"[send/download] batch detail fetch failed: {exc}")
+        batch_detail_df = None
+    return df_f, df_u, val_df, meta, from_s, to_s, batch_detail_df
 
 
 @app.route("/download/excel")
 def download_excel():
-    df_f, df_u, val_df, meta, from_s, to_s = _snapshot_dfs()
+    df_f, df_u, val_df, meta, from_s, to_s, batch_detail_df = _snapshot_dfs()
     if df_f.empty:
         flash("No report data. Load a report on the View Reports page first.", "warning")
         return redirect(url_for("page_reports"))
     try:
-        xlsx = report_generator.generate_excel_report(df_f, df_u, val_df, meta)
+        xlsx = report_generator.generate_excel_report(df_f, df_u, val_df, meta,
+                                                       batch_detail_df=batch_detail_df)
         fname = f"incentive_report_{from_s}_to_{to_s}.xlsx"
         return send_file(
             io.BytesIO(xlsx), as_attachment=True,
@@ -4687,7 +4817,7 @@ def action_delete_waiver():
 
 @app.route("/action/send-email", methods=["POST"])
 def send_email():
-    df_f, df_u, val_df, meta, from_s, to_s = _snapshot_dfs()
+    df_f, df_u, val_df, meta, from_s, to_s, batch_detail_df = _snapshot_dfs()
     if df_f.empty:
         flash("No report data. Load a report on the View Reports page first.", "warning")
         return redirect(url_for("page_reports"))
@@ -4700,7 +4830,8 @@ def send_email():
 
     try:
         fname       = f"incentive_report_{from_s}_to_{to_s}.xlsx"
-        xlsx_data   = report_generator.generate_excel_report(df_f, df_u, val_df, meta)
+        xlsx_data   = report_generator.generate_excel_report(df_f, df_u, val_df, meta,
+                                                              batch_detail_df=batch_detail_df)
         tables_html = report_generator.build_email_tables_html(df_f)
         import html as _html_mod
         _safe_body  = _html_mod.escape(body or "").replace("\n", "<br>")

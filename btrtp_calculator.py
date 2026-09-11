@@ -170,6 +170,7 @@ def run_btrtp_calculation(month: int, year: int,
 
     now = datetime.now().isoformat(timespec="seconds")
     batcher_rows = []
+    missing_plant_codes = []   # lookup codes present in Oracle but absent from tp_plant_data
 
     for _, row in grouped.iterrows():
         batcher_id     = str(row["batcher_id"]).strip()
@@ -183,7 +184,11 @@ def run_btrtp_calculation(month: int, year: int,
             base = lookup.split("_")[0]
             info = plant_map.get(base)
         if not info:
-            warnings.append(f"Plant '{lookup}' not found in Plant Data — skipped.")
+            missing_plant_codes.append(lookup)
+            warnings.append(
+                f"Plant code '{lookup}' not found in Plant Data — {batch_count} "
+                f"batch(es) / {total_qty:.1f} qty skipped from this report."
+            )
             continue
 
         total_time_hrs = total_time_min / 60.0
@@ -220,6 +225,13 @@ def run_btrtp_calculation(month: int, year: int,
 
     # Sort by plant then TP% descending (highest performer first within each plant)
     batcher_rows.sort(key=lambda r: (r["plant_name"], -r["throughput_pct"]))
+
+    if missing_plant_codes:
+        codes = ", ".join(sorted(set(missing_plant_codes)))
+        warnings.insert(0,
+            f"⚠ {len(set(missing_plant_codes))} plant code(s) found in Oracle but missing from "
+            f"Plant Data — likely a new plant not yet added to the 'Plant Data for TP' sheet: {codes}")
+
     return batcher_rows, warnings
 
 

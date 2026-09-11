@@ -174,6 +174,22 @@ def parse_oracle_df(raw_df: pd.DataFrame) -> tuple:
     return rows, skip_log
 
 
+def find_missing_plant_codes(parsed_rows: list) -> list:
+    """
+    Given parsed Oracle rows (each with a "lookup_code"), return the sorted
+    list of distinct lookup codes that have no matching row in tp_plant_data.
+    Used to flag new plants that appeared in Oracle before anyone added them
+    to the "Plant Data for TP" Google Sheet.
+    """
+    if not parsed_rows:
+        return []
+    plant_df = database.read_table("tp_plant_data")
+    known = set(plant_df["plant_code"].astype(str)) if not plant_df.empty else set()
+    seen = {str(r.get("lookup_code", "")) for r in parsed_rows}
+    seen.discard("")
+    return sorted(seen - known)
+
+
 # ── Main calculation ──────────────────────────────────────────────────────────
 
 def run_tp_calculation(month: int, year: int,
@@ -189,7 +205,11 @@ def run_tp_calculation(month: int, year: int,
     Returns:
         plant_rows    – list[dict]  one row per plant/mixer
         location_rows – list[dict]  one row per Exco Location (simple avg)
-        warnings      – list[str]
+        warnings      – list[str]. When Oracle has batches for a plant code
+                        that isn't in tp_plant_data (new plant added in Oracle
+                        but not yet synced from the "Plant Data for TP" sheet),
+                        a summary line listing all missing codes is inserted
+                        at warnings[0], followed by one detail line per code.
     """
     warnings = []
 
@@ -279,13 +299,18 @@ def run_tp_calculation(month: int, year: int,
 
     now = datetime.now().isoformat(timespec="seconds")
     plant_rows = []
+    missing_plant_codes = []   # lookup codes present in Oracle but absent from tp_plant_data
 
     for _, row in grouped.iterrows():
         lookup = str(row["lookup_code"])
         info   = plant_map.get(lookup)
 
         if not info:
-            warnings.append(f"Plant code '{lookup}' not found in Plant Data — skipped.")
+            missing_plant_codes.append(lookup)
+            warnings.append(
+                f"Plant code '{lookup}' not found in Plant Data — {int(row['batch_count'])} "
+                f"batch(es) / {row['total_quantity']:.1f} qty skipped from this report."
+            )
             continue
 
         total_time_hrs = row["total_time_min"] / 60.0
@@ -348,6 +373,12 @@ def run_tp_calculation(month: int, year: int,
     # 4. Sort plant rows lowest → highest and build location summary
     plant_rows.sort(key=lambda r: r["throughput_pct"])
     location_rows = build_location_rows(plant_rows, month, year)
+
+    if missing_plant_codes:
+        codes = ", ".join(sorted(set(missing_plant_codes)))
+        warnings.insert(0,
+            f"⚠ {len(set(missing_plant_codes))} plant code(s) found in Oracle but missing from "
+            f"Plant Data — likely a new plant not yet added to the 'Plant Data for TP' sheet: {codes}")
 
     return plant_rows, location_rows, warnings
 

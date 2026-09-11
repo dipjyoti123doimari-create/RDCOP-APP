@@ -190,6 +190,71 @@ def _fetch_backend_for_period(month: int, year: int,
     return df, excluded_time0
 
 
+def get_batch_detail_for_period(month: int, year: int,
+                                start_date: str = None,
+                                end_date: str = None) -> pd.DataFrame:
+    """
+    Return every underlying batch row (one row per batch, not aggregated) for
+    the given period, for the "Batching Detail" drill-down sheet in reports.
+
+    Same source-selection rule as _fetch_backend_for_period (Oracle-first,
+    backend_data fallback, time_taken_min=0 rows excluded) so the rows shown
+    here always match the quantity totals used by the calculation.
+    """
+    conn = database.get_connection()
+    try:
+        if start_date and end_date:
+            oracle_check = pd.read_sql_query(
+                "SELECT COUNT(*) AS cnt FROM oracle_raw_data "
+                "WHERE production_date >= ? AND production_date <= ?",
+                conn, params=(start_date, end_date)
+            )
+            if oracle_check["cnt"].iloc[0] > 0:
+                df = pd.read_sql_query(
+                    "SELECT created_by, production_date AS date, plant_code, "
+                    "batch_ref, quantity FROM oracle_raw_data "
+                    "WHERE production_date >= ? AND production_date <= ? "
+                    "AND (time_taken_min IS NULL OR time_taken_min <> 0) "
+                    "ORDER BY created_by, production_date",
+                    conn, params=(start_date, end_date)
+                )
+            else:
+                df = pd.read_sql_query(
+                    "SELECT created_by, date, quantity FROM backend_data "
+                    "WHERE date >= ? AND date <= ? ORDER BY created_by, date",
+                    conn, params=(start_date, end_date)
+                )
+        else:
+            period = f"{year:04d}-{month:02d}"
+            oracle_check = pd.read_sql_query(
+                "SELECT COUNT(*) AS cnt FROM oracle_raw_data "
+                "WHERE substr(production_date,1,7) = ?",
+                conn, params=(period,)
+            )
+            if oracle_check["cnt"].iloc[0] > 0:
+                df = pd.read_sql_query(
+                    "SELECT created_by, production_date AS date, plant_code, "
+                    "batch_ref, quantity FROM oracle_raw_data "
+                    "WHERE substr(production_date,1,7) = ? "
+                    "AND (time_taken_min IS NULL OR time_taken_min <> 0) "
+                    "ORDER BY created_by, production_date",
+                    conn, params=(period,)
+                )
+            else:
+                df = pd.read_sql_query(
+                    "SELECT created_by, date, quantity FROM backend_data "
+                    "WHERE substr(date,1,7) = ? ORDER BY created_by, date",
+                    conn, params=(period,)
+                )
+    finally:
+        conn.close()
+    for col in ("plant_code", "batch_ref"):
+        if col not in df.columns:
+            df[col] = ""
+    df["created_by"] = df["created_by"].astype(str).str.strip()
+    return df[["created_by", "date", "plant_code", "batch_ref", "quantity"]]
+
+
 # ---------------------------------------------------------------------------
 # 2. CORE CALCULATION
 # ---------------------------------------------------------------------------
