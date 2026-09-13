@@ -2447,7 +2447,7 @@ def _tp_build_excel(plant_rows, location_rows, month, year, batch_rows=None):
     # ── Plant sheet — Sr. no., Plant, Exco Location, Business Head, Plant Manager,
     #                 Mixer Cap, Total Qty, Time (min), TP %, Weighted Grade, Grade-Adj TP %
     ws_p = wb.create_sheet("Plant Throughput")
-    PLT_HEADS = ["Sr. no.", "Plant", "Exco Location", "Business Head",
+    PLT_HEADS = ["Sr. no.", "Plant", "Plant Code", "Exco Location", "Business Head",
                  "Plant Manager", "Mixer Cap", "Total Qty", "Time (min)", "TP %",
                  "Weighted Grade", "RAG", "Grade-Adj TP %"]
     ws_p.merge_cells(f"A1:{get_column_letter(len(PLT_HEADS))}1")
@@ -2476,7 +2476,7 @@ def _tp_build_excel(plant_rows, location_rows, month, year, batch_rows=None):
             PLAIN_FONT, get_column_letter
         ) if plant_batches else None
 
-        vals = [ri - 2, row.get("plant_name",""), row.get("exco_location",""),
+        vals = [ri - 2, row.get("plant_name",""), row.get("lookup_code", ""), row.get("exco_location",""),
                 row.get("business_head",""), row.get("plant_manager",""),
                 row.get("mixer_theo_cap",""),
                 round(float(row.get("total_quantity",0)), 1),
@@ -2486,21 +2486,21 @@ def _tp_build_excel(plant_rows, location_rows, month, year, batch_rows=None):
         for ci, v in enumerate(vals, 1):
             c = ws_p.cell(ri, ci, v)
             c.border = BDR
-            c.alignment = LEFT if ci == 2 else CTR
-            if ci == 7 and detail_sheet_name:           # Total Qty → hyperlink to detail sheet (underlying batches)
+            c.alignment = LEFT if ci in (2, 3) else CTR
+            if ci == 8 and detail_sheet_name:           # Total Qty → hyperlink to detail sheet (underlying batches)
                 c.fill = fill; c.font = _hyperlink_font(fnt)
                 c.hyperlink = f"#'{detail_sheet_name}'!A1"
-            elif ci == 9 and detail_sheet_name:          # TP % → hyperlink to detail sheet
+            elif ci == 10 and detail_sheet_name:          # TP % → hyperlink to detail sheet
                 c.fill = fill; c.font = _hyperlink_font(fnt)
                 c.hyperlink = f"#'{detail_sheet_name}'!A1"
-            elif ci == 12 and gat is not None:          # Grade-Adj TP % cell gets its own color
+            elif ci == 13 and gat is not None:          # Grade-Adj TP % cell gets its own color
                 c.fill = gat_fill
                 c.font = _hyperlink_font(gat_fnt) if detail_sheet_name else gat_fnt
                 if detail_sheet_name:
                     c.hyperlink = f"#'{detail_sheet_name}'!A1"
             else:
                 c.fill = fill; c.font = fnt
-    for ci, w in enumerate([30, 40, 16, 18, 18, 10, 11, 11, 8, 14, 14, 14], 1):
+    for ci, w in enumerate([30, 40, 14, 16, 18, 18, 10, 11, 11, 8, 14, 14, 14], 1):
         ws_p.column_dimensions[get_column_letter(ci)].width = w
 
     buf = io.BytesIO()
