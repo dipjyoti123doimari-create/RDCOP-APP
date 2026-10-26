@@ -1,88 +1,24 @@
 """
 mapping_service.py
 ==================
-Reads the existing Google Sheet to provide:
-  - Plant Code  → Plant Name
-  - Plant Code  → Plant Manager Email
-  - Plant Code  → BM/EA to MD Email
-  - Plant Code  → Business Head Email
-  - Plant Code  → CC Emails
-  - Batcher Code → Batcher Name
+Reads the app's own database to provide:
+  - Plant Code  -> Plant Name
+  - Plant Code  -> Plant Manager Email
+  - Plant Code  -> BM/EA to MD Email
+  - Plant Code  -> Business Head Email
+  - Plant Code  -> CC Emails
+  - Batcher Code -> Batcher Name
 
-Plant emails live in the SAME "Plant Data for TP" sheet tab as the existing
-TP plant master (extra columns added alongside Plant Code/Plant/Exco Location/
-etc.) — not a separate tab. TP's own sync (google_sheets.sync_tp_plant_data)
-only keeps its 6 required columns, so this module re-reads the raw tab itself
-via fetch_sheet_tab() to pick up the email columns TP's sync discards.
-
-Expected Google Sheet columns (flexible — fuzzy matched):
-  Plant Code / Plant_Code / PlantCode
-  Plant Name / Plant_Name / PlantName / Plant
-  Plant Manager Email / PlantManagerEmail / PM Email
-  BM/EA to MD Email / Business Manager Email / BM Email
-  Business Head Email / BusinessHeadEmail / BH Email
-  CC Email / CC Emails / CCEmail / CC
-  Batcher Code / BatcherCode / Employee Code
-  Batcher Name / BatcherName / Employee Name
-
-Sheet IDs and tab names are read from module_settings (prefix "sla."),
-defaulting to the TP module's own sheet ID + worksheet name:
-  sla.gsheet_id           — Google Sheet ID (defaults to tp.gsheet_id)
-  sla.plant_mapping_tab   — tab name for plant mapping (defaults to tp.gsheet_worksheet, "Plant Data for TP")
-  sla.batcher_mapping_tab — tab name for batcher mapping (default: "SLA Batcher Mapping")
+Plant details and e-mails live in the tp_plant_data table (edit them in
+RDC-TP > Data Uploader > Plant Data). Batcher names come from the RDC-I&D
+Master Data (master_data table). There is no Google Sheet dependency.
 """
 
 import pandas as pd
 import database
-import google_sheets
 
 
-# ── Fuzzy column finders ─────────────────────────────────────────────────────
-
-def _find_col(df: pd.DataFrame, *candidates) -> str | None:
-    """Return the first matching column name (case-insensitive, ignoring spaces/underscores)."""
-    norm = {c.lower().replace(" ", "").replace("_", ""): c for c in df.columns}
-    for cand in candidates:
-        key = cand.lower().replace(" ", "").replace("_", "")
-        if key in norm:
-            return norm[key]
-    return None
-
-
-def _col_val(row, *candidates):
-    for cand in candidates:
-        v = row.get(cand, "")
-        if v and str(v).strip():
-            return str(v).strip()
-    return ""
-
-
-# ── Sheet fetching ────────────────────────────────────────────────────────────
-
-def _get_cfg():
-    def _ms(k, d=""):
-        return (database.get_module_setting("sla", k, d) or d).strip()
-    # Plant emails live in the same "Plant Data for TP" sheet tab (extra columns
-    # added alongside the existing TP plant-master columns) — not a separate tab.
-    tp_sheet_id  = database.get_module_setting("tp", "gsheet_id", "") or ""
-    tp_worksheet = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP") or "Plant Data for TP"
-    sheet_id    = _ms("gsheet_id", tp_sheet_id)
-    plant_tab   = _ms("plant_mapping_tab",   tp_worksheet)
-    batcher_tab = _ms("batcher_mapping_tab", "SLA Batcher Mapping")
-    return sheet_id, plant_tab, batcher_tab
-
-
-def _fetch_tab(sheet_id: str, tab: str) -> pd.DataFrame:
-    if not sheet_id:
-        return pd.DataFrame()
-    try:
-        return google_sheets.fetch_sheet_tab(sheet_id, tab)
-    except Exception as exc:
-        print(f"[sla-mapping] could not fetch tab '{tab}': {exc}")
-        return pd.DataFrame()
-
-
-# ── Public API ────────────────────────────────────────────────────────────────
+# -- Plant mapping ------------------------------------------------------------
 
 def _strip_variant(code: str) -> str:
     """Return the bare plant code without a _BPn mixer-variant suffix.
@@ -91,82 +27,6 @@ def _strip_variant(code: str) -> str:
     if "_" in c:
         return c.split("_")[0]
     return c
-
-
-def _fallback_plant_mapping_from_tp() -> dict:
-    """
-    Build plant mapping from the existing TP plant master (tp_plant_data).
-    Provides plant_name + exco_location + mixer_capacity per plant code.
-
-    Oracle reports the BARE plant code (e.g. 'MU7'), but the TP master stores
-    plants under mixer-variant codes (e.g. 'MU7_BP1', 'MU7_BP2'). So in addition
-    to the exact variant codes we ALSO register the bare code as an alias that
-    points to the variant's location/name (all variants of a plant share one
-    Exco Location). Mixer capacity for the bare alias uses the largest variant
-    capacity (representative of the plant); the exact variant code keeps its own.
-
-    Email fields are blank — they require the SLA Plant Mapping sheet tab.
-    """
-    mapping = {}
-    bare_groups = {}  # bare_code -> list of (name, location, mixer_cap)
-    try:
-        conn = database.get_connection()
-        try:
-            cur = conn.execute(
-                "SELECT plant_code, plant_name, exco_location, mixer_theo_cap "
-                "FROM tp_plant_data"
-            )
-            for code, name, loc, cap in cur.fetchall():
-                if not code:
-                    continue
-                c = str(code).strip()
-                try:
-                    mc = float(cap) if cap is not None else None
-                except (TypeError, ValueError):
-                    mc = None
-                rec = {
-                    "plant_name":     (name or "").strip(),
-                    "exco_location":  (loc or "").strip(),
-                    "pm_email":       "",   # TP master has names, not emails
-                    "bm_email":       "",
-                    "bh_email":       "",
-                    "cc_emails":      "",
-                    "mixer_capacity": mc,
-                }
-                mapping[c] = rec
-                bare_groups.setdefault(_strip_variant(c), []).append(rec)
-        finally:
-            conn.close()
-    except Exception as exc:
-        print(f"[sla-mapping] TP fallback failed: {exc}")
-        return mapping
-
-    # Register bare-code aliases (only when the bare code isn't already a real row)
-    for bare, recs in bare_groups.items():
-        if bare in mapping:
-            continue
-        # Plant name without the _BPn suffix; first non-empty location.
-        name = ""
-        loc = ""
-        caps = []
-        for r in recs:
-            if not name and r["plant_name"]:
-                name = _strip_variant_name(r["plant_name"])
-            if not loc and r["exco_location"]:
-                loc = r["exco_location"]
-            if r["mixer_capacity"] is not None:
-                caps.append(r["mixer_capacity"])
-        mapping[bare] = {
-            "plant_name":     name or bare,
-            "exco_location":  loc,
-            "pm_email":       "",
-            "bm_email":       "",
-            "bh_email":       "",
-            "cc_emails":      "",
-            # representative capacity for the bare code = largest variant cap
-            "mixer_capacity": max(caps) if caps else None,
-        }
-    return mapping
 
 
 def _strip_variant_name(name: str) -> str:
@@ -181,101 +41,85 @@ def get_plant_mapping() -> dict:
     """
     Return dict keyed by plant_code:
     {
-      "P001": {
-         "plant_name": "...",
-         "pm_email": "...",
-         "bm_email": "...",
-         "bh_email": "...",
-         "cc_emails": "...",
+      "MU7_BP1": {
+         "plant_name": "...", "exco_location": "...", "mixer_capacity": 7.0,
+         "pm_email": "...", "bm_email": "...", "bh_email": "...", "cc_emails": "...",
       },
       ...
     }
+
+    Oracle reports the BARE plant code (e.g. 'MU7'), but the plant master stores
+    plants under mixer-variant codes (e.g. 'MU7_BP1', 'MU7_BP2'). So in addition
+    to the exact codes we ALSO register the bare code as an alias that points to
+    the first variant's details (all variants of a plant share one location and
+    the same managers). Mixer capacity for the bare alias is the largest variant
+    capacity; the exact variant code keeps its own.
     """
-    sheet_id, plant_tab, _ = _get_cfg()
-    df = _fetch_tab(sheet_id, plant_tab)
-
-    col_code = _find_col(df, "Plant Code", "PlantCode", "Plant_Code") if not df.empty else None
-    col_name = _find_col(df, "Plant Name", "PlantName", "Plant_Name", "Plant") if not df.empty else None
-    col_pm   = _find_col(df, "Plant Manager Email", "PM Email", "PlantManagerEmail", "PMEmail") if not df.empty else None
-    col_bm   = _find_col(df, "BM/EA to MD Email", "BM/EA to MD", "Business Manager Email",
-                         "BM Email", "BusinessManagerEmail", "BMEmail") if not df.empty else None
-    col_bh   = _find_col(df, "Business Head Email", "BH Email", "BusinessHeadEmail", "BHEmail") if not df.empty else None
-    col_cc   = _find_col(df, "CC Email", "CC Emails", "CCEmail", "CC", "CCEmails") if not df.empty else None
-    col_mc   = _find_col(df, "Mixer Capacity", "MixerCapacity", "Mixer_Capacity",
-                         "Mixer Cap", "MixerCap", "Mixer Theo. Capacity",
-                         "Mixer Theo Capacity") if not df.empty else None
-    col_loc  = _find_col(df, "Exco Location", "ExcoLocation", "Exco_Location",
-                         "Location") if not df.empty else None
-
-    # Guard against the public-CSV fallback returning the wrong tab.
-    # A valid plant tab must have at least a plant code AND one email column.
-    is_valid_sla_tab = bool(col_code and (col_pm or col_bm or col_bh))
     mapping = {}
-
-    if not is_valid_sla_tab:
-        # Email columns not found in the TP plant sheet → fall back to the
-        # TP plant master for plant name + mixer capacity. Emails will be
-        # blank until the email columns are added to the sheet tab.
-        return _fallback_plant_mapping_from_tp()
-
-    # TP master mixer caps — used to fill any plant the sheet leaves blank.
-    tp_fallback = _fallback_plant_mapping_from_tp()
-
-    for _, row in df.iterrows():
-        code = str(row.get(col_code, "") if col_code else "").strip()
-        if not code:
-            continue
-        # Mixer capacity may be blank in the sheet — parse leniently, then fall
-        # back to the TP plant master capacity for that plant code.
-        mc_raw = str(row.get(col_mc, "") if col_mc else "").strip()
+    bare_groups = {}  # bare_code -> list of records
+    try:
+        conn = database.get_connection()
         try:
-            mixer_cap = float(mc_raw) if mc_raw else None
-        except (TypeError, ValueError):
-            mixer_cap = None
-        if mixer_cap is None:
-            mixer_cap = tp_fallback.get(code, {}).get("mixer_capacity")
-        mapping[code] = {
-            "plant_name":     str(row.get(col_name, "") if col_name else "").strip()
-                              or tp_fallback.get(code, {}).get("plant_name", ""),
-            "exco_location":  str(row.get(col_loc, "") if col_loc else "").strip()
-                              or tp_fallback.get(code, {}).get("exco_location", ""),
-            "pm_email":       str(row.get(col_pm,   "") if col_pm   else "").strip(),
-            "bm_email":       str(row.get(col_bm,   "") if col_bm   else "").strip(),
-            "bh_email":       str(row.get(col_bh,   "") if col_bh   else "").strip(),
-            "cc_emails":      str(row.get(col_cc,   "") if col_cc   else "").strip(),
-            "mixer_capacity": mixer_cap,
+            cur = conn.execute(
+                "SELECT plant_code, plant_name, exco_location, mixer_theo_cap, "
+                "pm_email, bm_email, bh_email, cc_emails FROM tp_plant_data"
+            )
+            for code, name, loc, cap, pm, bm, bh, cc in cur.fetchall():
+                if not code:
+                    continue
+                c = str(code).strip()
+                try:
+                    mc = float(cap) if cap is not None else None
+                except (TypeError, ValueError):
+                    mc = None
+                rec = {
+                    "plant_name":     (name or "").strip(),
+                    "exco_location":  (loc or "").strip(),
+                    "pm_email":       (pm or "").strip(),
+                    "bm_email":       (bm or "").strip(),
+                    "bh_email":       (bh or "").strip(),
+                    "cc_emails":      (cc or "").strip(),
+                    "mixer_capacity": mc,
+                }
+                mapping[c] = rec
+                bare_groups.setdefault(_strip_variant(c), []).append(rec)
+        finally:
+            conn.close()
+    except Exception as exc:
+        print(f"[sla-mapping] could not read plant data: {exc}")
+        return mapping
+
+    # Register bare-code aliases (only when the bare code isn't already a real row)
+    for bare, recs in bare_groups.items():
+        if bare in mapping:
+            continue
+        first = recs[0]
+        caps = [r["mixer_capacity"] for r in recs if r["mixer_capacity"] is not None]
+        mapping[bare] = {
+            "plant_name":     _strip_variant_name(first["plant_name"]) or bare,
+            "exco_location":  next((r["exco_location"] for r in recs if r["exco_location"]), ""),
+            "pm_email":       first["pm_email"],
+            "bm_email":       first["bm_email"],
+            "bh_email":       first["bh_email"],
+            "cc_emails":      first["cc_emails"],
+            "mixer_capacity": max(caps) if caps else None,
         }
     return mapping
 
 
-def get_batcher_mapping() -> dict:
-    """Return {batcher_code: batcher_name} from the batcher mapping tab."""
-    sheet_id, _, batcher_tab = _get_cfg()
-    df = _fetch_tab(sheet_id, batcher_tab)
-    mapping = {}
-    if df.empty:
-        # Fallback: use existing btrtp_master_data from the local DB
-        try:
-            import database as _db
-            conn = _db.get_connection()
-            try:
-                cur = conn.execute("SELECT batcher_id, batcher_name FROM btrtp_master_data")
-                for r in cur.fetchall():
-                    if r[0]:
-                        mapping[str(r[0]).strip()] = str(r[1] or "").strip()
-            finally:
-                conn.close()
-        except Exception:
-            pass
-        return mapping
+# -- Batcher mapping ----------------------------------------------------------
 
-    col_code = _find_col(df, "Batcher Code", "BatcherCode", "Employee Code", "EmployeeCode", "Code")
-    col_name = _find_col(df, "Batcher Name", "BatcherName", "Employee Name", "EmployeeName", "Name")
-    for _, row in df.iterrows():
-        code = str(row.get(col_code, "") if col_code else "").strip()
-        name = str(row.get(col_name, "") if col_name else "").strip()
-        if code:
-            mapping[code] = name
+def get_batcher_mapping() -> dict:
+    """Return {batcher_code: batcher_name} from the I&D Master Data."""
+    mapping = {}
+    try:
+        df = database.get_batcher_master()
+        for _, r in df.iterrows():
+            code = str(r["batcher_id"] or "").strip()
+            if code:
+                mapping[code] = str(r["batcher_name"] or "").strip()
+    except Exception as exc:
+        print(f"[sla-mapping] could not read batcher names: {exc}")
     return mapping
 
 

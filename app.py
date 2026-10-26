@@ -44,7 +44,6 @@ import config
 import data_loader
 import database
 import email_helper
-import google_sheets
 import oracle_connector
 import report_generator
 import btrtp_calculator
@@ -295,62 +294,6 @@ def _gl_maintenance_cost_job_impl():
         print(f"[gl-maintenance] error: {exc}")
 
 
-def _gsheet_auto_sync_job():
-    """
-    Auto-sync all Google Sheet master data sources (I&D employees, TP plant
-    data, BTRTP batchers) so the app never runs on stale reference data
-    without anyone noticing. Runs once at startup and every 4 hours after.
-    Mirrors the sheet_id/worksheet resolution used by each module's manual
-    "Sync Now" button — never raises, just logs.
-    """
-    # I&D master data (global settings, not module-scoped).
-    try:
-        sheet_id = database.get_setting("gsheet_id", "")
-        if sheet_id:
-            worksheet = database.get_setting("gsheet_worksheet", "Sheet1")
-            result = google_sheets.sync_master_data(sheet_id, worksheet)
-            if result["error"]:
-                print(f"[gsheet-autosync] I&D master data failed: {result['error']}")
-            else:
-                print(f"[gsheet-autosync] I&D master data — {result['rows_synced']} rows synced")
-        else:
-            print("[gsheet-autosync] I&D master data — no gsheet_id configured, skipped")
-    except Exception as exc:
-        print(f"[gsheet-autosync] I&D master data error: {exc}")
-
-    # TP plant data.
-    try:
-        sheet_id = database.get_module_setting("tp", "gsheet_id",
-                                               database.get_setting("gsheet_id", ""))
-        if sheet_id:
-            worksheet = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
-            result = google_sheets.sync_tp_plant_data(sheet_id, worksheet)
-            if result["error"]:
-                print(f"[gsheet-autosync] TP plant data failed: {result['error']}")
-            else:
-                print(f"[gsheet-autosync] TP plant data — {result['rows_synced']} rows synced")
-        else:
-            print("[gsheet-autosync] TP plant data — no gsheet_id configured, skipped")
-    except Exception as exc:
-        print(f"[gsheet-autosync] TP plant data error: {exc}")
-
-    # BTRTP master data (batchers).
-    try:
-        sheet_id = database.get_module_setting("btrtp", "gsheet_id",
-                                               database.get_setting("gsheet_id", ""))
-        if sheet_id:
-            worksheet = database.get_module_setting("btrtp", "gsheet_worksheet", "BT Master Data")
-            result = google_sheets.sync_btrtp_master_data(sheet_id, worksheet)
-            if result["error"]:
-                print(f"[gsheet-autosync] BTRTP master data failed: {result['error']}")
-            else:
-                print(f"[gsheet-autosync] BTRTP master data — {result['rows_synced']} rows synced")
-        else:
-            print("[gsheet-autosync] BTRTP master data — no gsheet_id configured, skipped")
-    except Exception as exc:
-        print(f"[gsheet-autosync] BTRTP master data error: {exc}")
-
-
 def _auto_calc_one_period(month, year, fd, td, label):
     """Calculate all 3 modules for a single period. Called for both prev and current month."""
     import calendar as _cal2
@@ -422,8 +365,6 @@ def _startup_oracle_fetch():
     """
     import time as _time
     _time.sleep(45)
-    print("[startup-fetch] running Google Sheet auto-sync for all modules")
-    _gsheet_auto_sync_job()
     if not oracle_connector.is_configured() or not oracle_connector.is_reachable():
         print("[startup-fetch] Oracle not reachable — skipping startup seed")
         return
@@ -446,12 +387,6 @@ def _start_scheduler():
     _scheduler.add_job(_shared_oracle_fetch_job,
                        CronTrigger(hour=0, minute=10),
                        id="oracle_daily_fetch", replace_existing=True)
-    # Google Sheet master-data auto-sync (I&D employees, TP plant data,
-    # BTRTP batchers) — every 4 hours, so plant/manager/employee reference
-    # data never goes stale for long between manual syncs.
-    _scheduler.add_job(_gsheet_auto_sync_job,
-                       IntervalTrigger(hours=4),
-                       id="gsheet_auto_sync", replace_existing=True)
     # Auto-calculate TP and BTRTP for current month daily (after Oracle fetch).
     _scheduler.add_job(_auto_calculate_current_month,
                        CronTrigger(hour=0, minute=30),
@@ -1900,22 +1835,17 @@ def tp_dashboard():
         "tp_oracle_data": all_counts.get("oracle_raw_data", 0),
         "tp_results":     all_counts.get("tp_results", 0),
     }
-    last_sync  = google_sheets.get_tp_last_sync_info()
     ora_ready  = oracle_connector.is_configured()
     ctx = _tp_ctx()
     ctx["active_page"] = "dashboard"
     return render_template("tp_dashboard.html", counts=counts,
-                           last_sync=last_sync, ora_ready=ora_ready, **ctx)
+                           ora_ready=ora_ready, **ctx)
 
 
 # ── Data Uploader ─────────────────────────────────────────────────────────────
 @app.route("/tp/data-uploader")
 def tp_data_uploader():
     ora_ready    = oracle_connector.is_configured()
-    last_sync    = google_sheets.get_tp_last_sync_info()
-    sheet_id     = database.get_module_setting("tp", "gsheet_id",
-                                               database.get_setting("gsheet_id", ""))
-    tp_worksheet = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
     ora_counts   = database.get_table_counts().get("oracle_raw_data", 0)
 
     plant_rows  = database.get_tp_plants()
@@ -1931,8 +1861,7 @@ def tp_data_uploader():
     ctx = _tp_ctx()
     ctx["active_page"] = "data_uploader"
     return render_template("tp_data_uploader.html",
-                           ora_ready=ora_ready, last_sync=last_sync,
-                           sheet_id=sheet_id, tp_worksheet=tp_worksheet,
+                           ora_ready=ora_ready,
                            ora_counts=ora_counts,
                            plant_rows=plant_rows, plant_count=plant_count,
                            tp_codes=tp_codes, log_rows=log_rows,
@@ -1949,15 +1878,14 @@ def tp_add_plant():
         "business_head":  request.form.get("business_head", ""),
         "plant_manager":  request.form.get("plant_manager", ""),
         "mixer_theo_cap": request.form.get("mixer_theo_cap", 0),
+        "pm_email":       request.form.get("pm_email", ""),
+        "bm_email":       request.form.get("bm_email", ""),
+        "bh_email":       request.form.get("bh_email", ""),
+        "cc_emails":      request.form.get("cc_emails", ""),
     }
     try:
         database.add_tp_plant(**plant_data)
         flash("✅ Plant added successfully.", "success")
-        res = google_sheets.push_tp_plant_add(plant_data)
-        if res["ok"]:
-            flash(f"☁️ {res['message']}", "info")
-        else:
-            flash(f"⚠️ Saved locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as exc:
         flash(str(exc), "error")
     return redirect(url_for("tp_data_uploader") + "?open_modal=plant&tab=add")
@@ -1972,15 +1900,16 @@ def tp_update_plant(code):
         "business_head":  request.form.get("business_head", ""),
         "plant_manager":  request.form.get("plant_manager", ""),
         "mixer_theo_cap": request.form.get("mixer_theo_cap", 0),
+        # If a form doesn't send an e-mail field, keep what is already saved
+        # (so an old form can never blank a plant's e-mails by accident).
+        "pm_email":       request.form.get("pm_email",  (database.get_tp_plant(code) or {}).get("pm_email") or ""),
+        "bm_email":       request.form.get("bm_email",  (database.get_tp_plant(code) or {}).get("bm_email") or ""),
+        "bh_email":       request.form.get("bh_email",  (database.get_tp_plant(code) or {}).get("bh_email") or ""),
+        "cc_emails":      request.form.get("cc_emails", (database.get_tp_plant(code) or {}).get("cc_emails") or ""),
     }
     try:
         database.update_tp_plant(**plant_data)
         flash("✅ Plant updated successfully.", "success")
-        res = google_sheets.push_tp_plant_update(plant_data)
-        if res["ok"]:
-            flash(f"☁️ {res['message']}", "info")
-        else:
-            flash(f"⚠️ Saved locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as exc:
         flash(str(exc), "error")
     return redirect(url_for("tp_data_uploader") + "?open_modal=plant&tab=edit")
@@ -1991,11 +1920,6 @@ def tp_delete_plant(code):
     try:
         database.delete_tp_plant(code)
         flash(f"✅ Plant '{code}' deleted.", "success")
-        res = google_sheets.push_tp_plant_delete(code)
-        if res["ok"]:
-            flash(f"☁️ {res['message']}", "info")
-        else:
-            flash(f"⚠️ Deleted locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as exc:
         flash(str(exc), "error")
     return redirect(url_for("tp_data_uploader") + "?open_modal=plant&tab=delete")
@@ -2026,33 +1950,12 @@ def tp_fetch_oracle():
         missing = tp_calculator.find_missing_plant_codes(parsed)
         if missing:
             flash(f"⚠ {len(missing)} plant code(s) in this Oracle fetch are not in Plant Data "
-                  f"— likely new plant(s) not yet added to the 'Plant Data for TP' sheet: "
+                  f"— likely new plant(s) not yet added in Plant Data: "
                   f"{', '.join(missing)}", "warning")
     except Exception as exc:
         flash(f"Oracle error: {exc}", "error")
     _set_progress(100, "Complete")
     return jsonify({"ok": True, "redirect": url_for("tp_data_uploader")})
-
-
-@app.route("/tp/action/sync-sheets", methods=["POST"])
-def tp_sync_sheets():
-    sheet_id    = (request.form.get("sheet_id", "").strip()
-                   or database.get_module_setting("tp", "gsheet_id",
-                                                   database.get_setting("gsheet_id", "")))
-    worksheet   = request.form.get("worksheet", "Plant Data for TP").strip()
-    _set_progress(20, "Syncing plant data from Google Sheets…")
-    result      = google_sheets.sync_tp_plant_data(sheet_id, worksheet)
-    _set_progress(85, "Saving settings…")
-    if result["error"]:
-        flash(f"Sync failed: {result['error']}", "error")
-    else:
-        database.set_module_setting("tp", "gsheet_id", google_sheets.extract_sheet_id(sheet_id))
-        database.set_module_setting("tp", "gsheet_worksheet", worksheet)
-        flash(f"✅ {result['rows_synced']} plant rows synced from Google Sheets ({result['mode']} mode).", "success")
-    _set_progress(100, "Complete")
-    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-        return jsonify({"ok": True, "redirect": url_for("tp_data_uploader")})
-    return redirect(url_for("sysconfig_page", open_modal="plant-data"))
 
 
 # ── Calculate ─────────────────────────────────────────────────────────────────
@@ -2793,16 +2696,12 @@ def tp_validation():
 # ── Settings ──────────────────────────────────────────────────────────────────
 @app.route("/tp/settings", methods=["GET"])
 def tp_settings():
-    sheet_id    = database.get_module_setting("tp", "gsheet_id",
-                                              database.get_setting("gsheet_id", ""))
-    worksheet   = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
     plant_col   = database.get_module_setting("tp", "oracle_plant_col", "PLANTNO")
     batch_col   = database.get_module_setting("tp", "oracle_batch_col", "BATCHCODE")
     time_col    = database.get_module_setting("tp", "oracle_time_col",  "TIMETAKEN")
     smtp        = email_helper.get_smtp_config()
     email_configured = bool(smtp.get("host") and smtp.get("sender"))
     ora_configured   = oracle_connector.is_configured()
-    last_sync        = google_sheets.get_tp_last_sync_info()
     tp_email_to        = database.get_module_setting("tp", "email_default_to", "")
     tp_email_cc        = database.get_module_setting("tp", "email_default_cc", "")
     tp_email_subject   = database.get_module_setting("tp", "email_default_subject", "")
@@ -2810,10 +2709,9 @@ def tp_settings():
     ctx = _tp_ctx()
     ctx["active_page"] = "settings"
     return render_template("tp_settings.html",
-                           sheet_id=sheet_id, worksheet=worksheet,
                            plant_col=plant_col, batch_col=batch_col, time_col=time_col,
                            smtp=smtp, email_configured=email_configured,
-                           ora_configured=ora_configured, last_sync=last_sync,
+                           ora_configured=ora_configured,
                            tp_email_to=tp_email_to, tp_email_cc=tp_email_cc,
                            tp_email_subject=tp_email_subject, tp_email_body=tp_email_body,
                            **ctx)
@@ -2828,18 +2726,6 @@ def tp_save_oracle_cols():
     })
     flash("Oracle column names saved.", "success")
     return redirect(url_for("tp_settings", m="oracle-cols"))
-
-
-@app.route("/tp/settings/save-worksheet", methods=["POST"])
-def tp_save_worksheet():
-    worksheet = request.form.get("worksheet", "Plant Data for TP").strip()
-    sheet_id  = request.form.get("sheet_id", "").strip()
-    database.set_module_setting("tp", "gsheet_worksheet", worksheet)
-    if sheet_id:
-        # Save to the TP-scoped id so we never disturb RDC-I&D's sheet.
-        database.set_module_setting("tp", "gsheet_id", google_sheets.extract_sheet_id(sheet_id))
-    flash("Sheet settings saved.", "success")
-    return redirect(url_for("tp_settings", m="sheet"))
 
 
 @app.route("/tp/settings/save-email-defaults", methods=["POST"])
@@ -2890,47 +2776,32 @@ def btrtp_dashboard():
     all_counts = database.get_table_counts()
     counts = {
         "btrtp_oracle_data": all_counts.get("oracle_raw_data",   0),
-        "btrtp_master_data": all_counts.get("btrtp_master_data", 0),
+        "btrtp_master_data": all_counts.get("master_data",       0),
         "btrtp_results":     all_counts.get("btrtp_results",     0),
         "tp_plant_data":     all_counts.get("tp_plant_data",     0),
     }
-    last_sync = google_sheets.get_btrtp_last_sync_info()
     ora_ready = oracle_connector.is_configured()
     ctx = _btrtp_ctx()
     ctx["active_page"] = "dashboard"
     return render_template("btrtp_dashboard.html", counts=counts,
-                           last_sync=last_sync, ora_ready=ora_ready, **ctx)
+                           ora_ready=ora_ready, **ctx)
 
 
 # ── Data Uploader ─────────────────────────────────────────────────────────────
 @app.route("/btrtp/data-uploader")
 def btrtp_data_uploader():
     ora_ready    = oracle_connector.is_configured()
-    last_master  = google_sheets.get_btrtp_last_sync_info()
-    last_plant   = google_sheets.get_tp_last_sync_info()
-
-    # BT Master sheet settings
-    master_sheet_id  = database.get_module_setting("btrtp", "gsheet_id",
-                                                    database.get_setting("gsheet_id", ""))
-    master_worksheet = database.get_module_setting("btrtp", "gsheet_worksheet", "BT Master Data")
-
-    # Plant Data sheet settings (shared reference with TP)
-    plant_sheet_id   = database.get_module_setting("tp", "gsheet_id",
-                                                    database.get_setting("gsheet_id", ""))
-    plant_worksheet  = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
 
     all_counts   = database.get_table_counts()
     ora_counts   = all_counts.get("oracle_raw_data", 0)
-    master_count = all_counts.get("btrtp_master_data", 0)
+    # Batchers are the employees in the RDC-I&D Master Data (one shared list)
+    master_count = all_counts.get("master_data", 0)
     plant_count  = all_counts.get("tp_plant_data", 0)
 
     ctx = _btrtp_ctx()
     ctx["active_page"] = "data_uploader"
     return render_template("btrtp_data_uploader.html",
                            ora_ready=ora_ready,
-                           last_master=last_master, last_plant=last_plant,
-                           master_sheet_id=master_sheet_id, master_worksheet=master_worksheet,
-                           plant_sheet_id=plant_sheet_id, plant_worksheet=plant_worksheet,
                            ora_counts=ora_counts, master_count=master_count,
                            plant_count=plant_count, **ctx)
 
@@ -2960,55 +2831,10 @@ def btrtp_fetch_oracle():
         missing = tp_calculator.find_missing_plant_codes(parsed)
         if missing:
             flash(f"⚠ {len(missing)} plant code(s) in this Oracle fetch are not in Plant Data "
-                  f"— likely new plant(s) not yet added to the 'Plant Data for TP' sheet: "
+                  f"— likely new plant(s) not yet added in Plant Data: "
                   f"{', '.join(missing)}", "warning")
     except Exception as exc:
         flash(f"Oracle error: {exc}", "error")
-    _set_progress(100, "Complete")
-    return jsonify({"ok": True, "redirect": url_for("btrtp_data_uploader")})
-
-
-@app.route("/btrtp/action/sync-master", methods=["POST"])
-def btrtp_sync_master():
-    sheet_id  = (request.form.get("sheet_id", "").strip()
-                 or database.get_module_setting("btrtp", "gsheet_id",
-                                                database.get_setting("gsheet_id", "")))
-    worksheet = request.form.get("worksheet", "BT Master Data").strip()
-    _set_progress(20, "Syncing BT Master Data from Google Sheets…")
-    result = google_sheets.sync_btrtp_master_data(sheet_id, worksheet)
-    _set_progress(85, "Saving settings…")
-    if result["error"]:
-        flash(f"Sync failed: {result['error']}", "error")
-    elif result["rows_synced"] == 0:
-        flash("⚠️ Sync completed but 0 batcher rows were saved. "
-              "Check that the sheet tab name, 'Batcher ID' and 'Batcher Name' columns exist and have data.",
-              "warning")
-    else:
-        database.set_module_setting("btrtp", "gsheet_id",
-                                    google_sheets.extract_sheet_id(sheet_id))
-        database.set_module_setting("btrtp", "gsheet_worksheet", worksheet)
-        flash(f"✅ {result['rows_synced']} batcher rows synced from Google Sheets ({result['mode']} mode).",
-              "success")
-    _set_progress(100, "Complete")
-    return jsonify({"ok": True, "redirect": url_for("btrtp_data_uploader")})
-
-
-@app.route("/btrtp/action/sync-plant", methods=["POST"])
-def btrtp_sync_plant():
-    sheet_id  = (request.form.get("sheet_id", "").strip()
-                 or database.get_module_setting("tp", "gsheet_id",
-                                                database.get_setting("gsheet_id", "")))
-    worksheet = request.form.get("worksheet", "Plant Data for TP").strip()
-    _set_progress(20, "Syncing Plant Data from Google Sheets…")
-    result = google_sheets.sync_tp_plant_data(sheet_id, worksheet)
-    _set_progress(85, "Saving settings…")
-    if result["error"]:
-        flash(f"Sync failed: {result['error']}", "error")
-    else:
-        database.set_module_setting("tp", "gsheet_id", google_sheets.extract_sheet_id(sheet_id))
-        database.set_module_setting("tp", "gsheet_worksheet", worksheet)
-        flash(f"✅ {result['rows_synced']} plant rows synced from Google Sheets ({result['mode']} mode).",
-              "success")
     _set_progress(100, "Complete")
     return jsonify({"ok": True, "redirect": url_for("btrtp_data_uploader")})
 
@@ -3470,21 +3296,10 @@ def btrtp_validation():
 # ── Settings ──────────────────────────────────────────────────────────────────
 @app.route("/btrtp/settings", methods=["GET"])
 def btrtp_settings():
-    # BT Master sheet
-    master_sheet_id  = database.get_module_setting("btrtp", "gsheet_id",
-                                                    database.get_setting("gsheet_id", ""))
-    master_worksheet = database.get_module_setting("btrtp", "gsheet_worksheet", "BT Master Data")
-    # Plant Data sheet (shared with TP)
-    plant_sheet_id   = database.get_module_setting("tp", "gsheet_id",
-                                                    database.get_setting("gsheet_id", ""))
-    plant_worksheet  = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
-
     batcher_col = database.get_module_setting("btrtp", "oracle_batcher_col", "CREATED_BY")
     smtp        = email_helper.get_smtp_config()
     email_configured = bool(smtp.get("host") and smtp.get("sender"))
     ora_configured   = oracle_connector.is_configured()
-    last_master = google_sheets.get_btrtp_last_sync_info()
-    last_plant  = google_sheets.get_tp_last_sync_info()
     btrtp_email_to      = database.get_module_setting("btrtp", "email_default_to", "")
     btrtp_email_cc      = database.get_module_setting("btrtp", "email_default_cc", "")
     btrtp_email_subject = database.get_module_setting("btrtp", "email_default_subject", "")
@@ -3492,12 +3307,9 @@ def btrtp_settings():
     ctx = _btrtp_ctx()
     ctx["active_page"] = "settings"
     return render_template("btrtp_settings.html",
-                           master_sheet_id=master_sheet_id, master_worksheet=master_worksheet,
-                           plant_sheet_id=plant_sheet_id, plant_worksheet=plant_worksheet,
                            batcher_col=batcher_col,
                            smtp=smtp, email_configured=email_configured,
                            ora_configured=ora_configured,
-                           last_master=last_master, last_plant=last_plant,
                            btrtp_email_to=btrtp_email_to, btrtp_email_cc=btrtp_email_cc,
                            btrtp_email_subject=btrtp_email_subject,
                            btrtp_email_body=btrtp_email_body, **ctx)
@@ -3509,30 +3321,6 @@ def btrtp_save_oracle_cols():
                                 request.form.get("batcher_col", "CREATED_BY").strip())
     flash("Oracle column settings saved.", "success")
     return redirect(url_for("btrtp_settings", m="oracle-cols"))
-
-
-@app.route("/btrtp/settings/save-master-sheet", methods=["POST"])
-def btrtp_save_master_sheet():
-    worksheet = request.form.get("worksheet", "BT Master Data").strip()
-    sheet_id  = request.form.get("sheet_id", "").strip()
-    database.set_module_setting("btrtp", "gsheet_worksheet", worksheet)
-    if sheet_id:
-        database.set_module_setting("btrtp", "gsheet_id",
-                                    google_sheets.extract_sheet_id(sheet_id))
-    flash("BT Master Data sheet settings saved.", "success")
-    return redirect(url_for("btrtp_settings", m="master-sheet"))
-
-
-@app.route("/btrtp/settings/save-plant-sheet", methods=["POST"])
-def btrtp_save_plant_sheet():
-    worksheet = request.form.get("worksheet", "Plant Data for TP").strip()
-    sheet_id  = request.form.get("sheet_id", "").strip()
-    database.set_module_setting("tp", "gsheet_worksheet", worksheet)
-    if sheet_id:
-        database.set_module_setting("tp", "gsheet_id",
-                                    google_sheets.extract_sheet_id(sheet_id))
-    flash("Plant Data sheet settings saved.", "success")
-    return redirect(url_for("btrtp_settings", m="plant-sheet"))
 
 
 @app.route("/btrtp/settings/save-email-defaults", methods=["POST"])
@@ -3557,11 +3345,8 @@ def page_jldc():
 @app.route("/data-uploader")
 def page_data_uploader():
     _ss("active_page", "data_uploader")
-    last_sync = google_sheets.get_last_sync_info()
-    has_creds = google_sheets.credentials_exist()
     ora_cfg   = oracle_connector.get_oracle_config()
     ora_ready = oracle_connector.is_configured(ora_cfg)
-    auto_sync = database.get_setting("gsheet_auto_sync", "false") == "true"
 
     m_count = database.get_table_counts().get("master_data", 0)
     master_cols, master_rows = [], []
@@ -3632,8 +3417,7 @@ def page_data_uploader():
     del_emp   = database.get_employee(del_code)  if del_code  else None
 
     return render_template("data_uploader.html",
-                           last_sync=last_sync, has_creds=has_creds,
-                           ora_cfg=ora_cfg, ora_ready=ora_ready, auto_sync=auto_sync,
+                           ora_cfg=ora_cfg, ora_ready=ora_ready,
                            m_count=m_count, master_cols=master_cols, master_rows=master_rows,
                            b_count=b_count, b_earliest=b_earliest, b_latest=b_latest,
                            backend_preview=backend_preview,
@@ -3943,12 +3727,12 @@ def page_validation():
 
     # Human-readable labels and fix instructions for each error type
     _ERR_META = {
-        "BLANK_FIELD":          ("🔴 Blank Field",          "A required column is empty. Fill it in the Google Sheet and re-sync."),
-        "INVALID_CATEGORY":     ("🔴 Invalid Category",     f"Category value is not in the allowed list: {config.CATEGORIES}. Fix spelling in the Google Sheet and re-sync."),
-        "DUPLICATE_CODE":       ("🔴 Duplicate Employee Code", "The same Employee Code appears more than once. Remove the duplicate row from the Google Sheet and re-sync."),
+        "BLANK_FIELD":          ("🔴 Blank Field",          "A required column is empty. Fill it in on the Master Data page."),
+        "INVALID_CATEGORY":     ("🔴 Invalid Category",     f"Category value is not in the allowed list: {config.CATEGORIES}. Fix it on the Master Data page."),
+        "DUPLICATE_CODE":       ("🔴 Duplicate Employee Code", "The same Employee Code appears more than once. Delete the duplicate on the Master Data page."),
         "NO_DATA":              ("⚠️ No Data",              "This data source is empty. Upload or sync data first."),
         "BLANK_EMPLOYEE_CODE":  ("🔴 Blank Employee Code",  "The 'Created by' column is blank for this batch row. Fix in the Backend Data Excel."),
-        "UNMAPPED_EMPLOYEE":    ("🟡 Unmapped Employee",    "Employee Code exists in Backend Data but not in Master Data. Add the employee to the Master Data Google Sheet and re-sync."),
+        "UNMAPPED_EMPLOYEE":    ("🟡 Unmapped Employee",    "Employee Code exists in Backend Data but not in Master Data. Add the employee on the Master Data page."),
         "INVALID_QUANTITY":     ("🔴 Invalid Quantity",     "Quantity is zero, negative, or not a number. Fix in the Backend Data Excel."),
         "INVALID_DATE":         ("🔴 Invalid Date",         "Date is not in YYYY-MM-DD format. Fix in the Backend Data Excel."),
         "BLANK_PLANT_CODE":     ("🔴 Blank Plant Code",     "Plant Code is missing in the Maintenance Cost file."),
@@ -4037,54 +3821,6 @@ def page_settings():
 
 # ── ACTIONS ───────────────────────────────────────────────────────────────────
 
-@app.route("/action/sync-gsheet", methods=["POST"])
-def sync_gsheet():
-    sheet_id  = request.form.get("sheet_id", "").strip()
-    worksheet = request.form.get("worksheet", "Sheet1").strip()
-    if not sheet_id:
-        flash("Please enter a Google Sheet ID.", "error")
-        return jsonify({"ok": False, "redirect": url_for("page_data_uploader")})
-    try:
-        _set_progress(15, "Connecting to Google Sheets…")
-        clean_id = google_sheets.extract_sheet_id(sheet_id)
-        _set_progress(35, "Fetching master data…")
-        df_sync  = google_sheets.fetch_master_data(clean_id, worksheet)
-        now = _dt.now().isoformat(timespec="seconds")
-        def _sv(v):
-            """Safe string: NaN/None/blank → empty string."""
-            import math
-            if v is None: return ""
-            if isinstance(v, float) and math.isnan(v): return ""
-            s = str(v).strip()
-            return "" if s.lower() == "nan" else s
-
-        rows = [{"employee_code": _sv(r["Employee Code"]),
-                 "employee_name": _sv(r["Employee Name"]),
-                 "designation":   _sv(r["Designation"]),
-                 "category":      _sv(r["Category"]),
-                 "plant":         _sv(r["Plant"]),
-                 "plant_code":    _sv(r["Plant Code"]),
-                 "updated_at":    now}
-                for _, r in df_sync.iterrows()]
-        _set_progress(70, "Saving employee records…")
-        inserted = database.replace_table_rows("master_data", rows)
-        _set_progress(90, "Updating settings…")
-        database.set_settings_bulk({"gsheet_id": clean_id, "gsheet_worksheet": worksheet,
-                                    "gsheet_last_sync": now, "gsheet_last_count": str(inserted)})
-        flash(f"Synced {inserted:,} employees from Google Sheets.", "success")
-    except Exception as exc:
-        flash(f"Sync failed: {exc}", "error")
-    _set_progress(100, "Complete")
-    return jsonify({"ok": True, "redirect": url_for("page_data_uploader")})
-
-
-@app.route("/action/toggle-auto-sync", methods=["POST"])
-def toggle_auto_sync():
-    enabled = "enabled" in request.form
-    database.set_setting("gsheet_auto_sync", "true" if enabled else "false")
-    return redirect(url_for("page_data_uploader"))
-
-
 @app.route("/action/add-employee", methods=["POST"])
 def add_employee():
     emp = {
@@ -4101,11 +3837,6 @@ def add_employee():
             emp["category"], emp["plant"], emp["plant_code"],
         )
         flash(f"Added employee {emp['employee_code']}.", "success")
-        res = google_sheets.push_id_employee_add(emp)
-        if res["ok"]:
-            flash(f"☁️ {res['message']}", "info")
-        else:
-            flash(f"⚠️ Saved locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as e:
         flash(str(e), "error")
     if request.form.get("_next") == "sysconfig":
@@ -4129,11 +3860,6 @@ def update_employee(code):
             emp["category"], emp["plant"], emp["plant_code"],
         )
         flash(f"Updated employee {code}.", "success")
-        res = google_sheets.push_id_employee_update(emp)
-        if res["ok"]:
-            flash(f"☁️ {res['message']}", "info")
-        else:
-            flash(f"⚠️ Saved locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as e:
         flash(str(e), "error")
     if request.form.get("_next") == "sysconfig":
@@ -4146,11 +3872,6 @@ def delete_employee(code):
     try:
         database.delete_employee(code)
         flash(f"Deleted employee {code}.", "success")
-        res = google_sheets.push_id_employee_delete(code)
-        if res["ok"]:
-            flash(f"☁️ {res['message']}", "info")
-        else:
-            flash(f"⚠️ Deleted locally but Google Sheet not updated: {res['message']}", "warning")
     except ValueError as e:
         flash(str(e), "error")
     if request.form.get("_next") == "sysconfig":
@@ -6448,7 +6169,7 @@ def _build_pfs_excel(rows, label):
 def _pfs_manager_to(rows) -> str:
     """
     Look up the plant-manager email for every plant appearing in this PFS
-    period (via the shared Sys Config Email Mapping / SLA Google Sheet) and
+    period (via the Plant Data e-mail columns) and
     return them as a comma-joined string, ready to fold into the To list.
     """
     if not rows:
@@ -6874,9 +6595,6 @@ def sysconfig_page():
     email_configured = bool(smtp["host"] and smtp["sender"] and smtp["password"])
     ora              = oracle_connector.get_oracle_config()
     ora_configured   = oracle_connector.is_configured(ora)
-    last_sync        = google_sheets.get_last_sync_info()
-    has_creds        = google_sheets.credentials_exist()
-    auto_sync        = database.get_setting("gsheet_auto_sync", "false") == "true"
     last_oracle_fetch = database.get_setting("sysconfig_last_oracle_fetch", "")
     last_gl_maintenance_fetch = database.get_setting("sysconfig_last_gl_maintenance_fetch", "")
 
@@ -6945,17 +6663,11 @@ def sysconfig_page():
     edit_emp  = database.get_employee(edit_code) if edit_code else None
     del_emp   = database.get_employee(del_code)  if del_code  else None
 
-    last_master_sync = last_sync.get("last_sync", "") if last_sync else ""
-
     # Plant data (shared across TP / BTRTP / UEP)
     plant_rows   = database.get_tp_plants()
     plant_count  = len(plant_rows)
     tp_codes     = database.get_tp_plant_codes()
     plant_log    = database.get_tp_plant_log()
-    tp_last_sync = google_sheets.get_tp_last_sync_info()
-    tp_sheet_id  = database.get_module_setting("tp", "gsheet_id",
-                                               database.get_setting("gsheet_id", ""))
-    tp_worksheet = database.get_module_setting("tp", "gsheet_worksheet", "Plant Data for TP")
     edit_plant   = database.get_tp_plant(edit_code) if edit_code else None
     del_plant    = database.get_tp_plant(del_code)  if del_code  else None
     # Dynamic dropdown options — pulled from existing plant data
@@ -6967,8 +6679,6 @@ def sysconfig_page():
                            ora=ora, ora_configured=ora_configured,
                            last_oracle_fetch=last_oracle_fetch,
                            last_gl_maintenance_fetch=last_gl_maintenance_fetch,
-                           last_sync=last_sync, has_creds=has_creds, auto_sync=auto_sync,
-                           last_master_sync=last_master_sync,
                            m_count=m_count, master_cols=master_cols, master_rows=master_rows,
                            b_count=b_count, b_earliest=b_earliest, b_latest=b_latest,
                            backend_preview=backend_preview, ora_b_preview=ora_b_preview,
@@ -6985,8 +6695,6 @@ def sysconfig_page():
                            plant_list=plant_rows,
                            plant_rows=plant_rows, plant_count=plant_count,
                            tp_codes=tp_codes, plant_log=plant_log,
-                           tp_last_sync=tp_last_sync, tp_sheet_id=tp_sheet_id,
-                           tp_worksheet=tp_worksheet,
                            edit_plant=edit_plant, del_plant=del_plant,
                            exco_opts=exco_opts, bh_opts=bh_opts,
                            today=str(_date.today()),
@@ -7144,58 +6852,6 @@ def sysconfig_fetch_all_oracle():
         flash(f"Oracle fetch failed: {exc}", "error")
     _set_progress(100, "Complete")
     return jsonify({"ok": True, "redirect": url_for("sysconfig_page") + "?m=fetch"})
-
-
-@app.route("/sysconfig/action/sync-master", methods=["POST"])
-@auth.login_required
-def sysconfig_sync_master():
-    sheet_id  = request.form.get("sheet_id", "").strip()
-    worksheet = request.form.get("worksheet", "Sheet1").strip()
-    if not sheet_id:
-        flash("Please enter a Google Sheet ID.", "error")
-        return jsonify({"ok": False, "redirect": url_for("sysconfig_page") + "?m=master"})
-    try:
-        _set_progress(15, "Connecting to Google Sheets…")
-        clean_id = google_sheets.extract_sheet_id(sheet_id)
-        _set_progress(35, "Fetching master data…")
-        df_sync  = google_sheets.fetch_master_data(clean_id, worksheet)
-        now = _dt.now().isoformat(timespec="seconds")
-        def _sv(v):
-            import math
-            if v is None: return ""
-            if isinstance(v, float) and math.isnan(v): return ""
-            s = str(v).strip()
-            return "" if s.lower() == "nan" else s
-        rows = [{"employee_code": _sv(r["Employee Code"]),
-                 "employee_name": _sv(r["Employee Name"]),
-                 "designation":   _sv(r["Designation"]),
-                 "category":      _sv(r["Category"]),
-                 "plant":         _sv(r["Plant"]),
-                 "plant_code":    _sv(r["Plant Code"]),
-                 "updated_at":    now}
-                for _, r in df_sync.iterrows()]
-        _set_progress(70, "Saving employee records…")
-        count = google_sheets.save_master_data(rows)
-        _set_progress(85, "Updating sync metadata…")
-        database.set_settings_bulk({
-            "gsheet_id":          clean_id,
-            "gsheet_worksheet":   worksheet,
-            "gsheet_last_sync":   now,
-            "gsheet_last_count":  str(count),
-        })
-        flash(f"✅ {count} employees synced from Google Sheets.", "success")
-    except Exception as exc:
-        flash(f"Sync failed: {exc}", "error")
-    _set_progress(100, "Complete")
-    return jsonify({"ok": True, "redirect": url_for("sysconfig_page") + "?m=master"})
-
-
-@app.route("/sysconfig/action/toggle-auto-sync", methods=["POST"])
-@auth.login_required
-def sysconfig_toggle_auto_sync():
-    enabled = "enabled" in request.form
-    database.set_settings_bulk({"gsheet_auto_sync": "true" if enabled else "false"})
-    return redirect(url_for("sysconfig_page") + "?m=master")
 
 
 @app.route("/sysconfig/action/upload-maintenance", methods=["POST"])
@@ -7523,7 +7179,7 @@ def sysconfig_email_mapping():
 @app.route("/sysconfig/email-mapping/refresh", methods=["POST"])
 @auth.login_required
 def sysconfig_refresh_email_mapping():
-    flash("Mapping refreshed from Google Sheet.", "success")
+    flash("Mapping reloaded from Plant Data.", "success")
     return redirect(url_for("sysconfig_email_mapping"))
 
 
@@ -7547,8 +7203,7 @@ def sla_configuration():
     thresholds = database.sla_get_all_thresholds()
     _setting_keys = [
         "hourly_alert_enabled", "daily_summary_enabled", "daily_summary_time",
-        "min_threshold_min", "global_cc", "test_recipient", "gsheet_id", "plant_mapping_tab",
-        "batcher_mapping_tab",
+        "min_threshold_min", "global_cc", "test_recipient",
         "oracle_plant_col", "oracle_salesorder_col", "oracle_linenumber_col",
         "oracle_grade_col", "oracle_batcher_col", "oracle_truck_col",
         "oracle_quantity_col", "oracle_time_col", "oracle_cust_name_col",
@@ -7649,18 +7304,6 @@ def sla_save_oracle_cols():
               "oracle_mixer_cap_col"]:
         database.set_module_setting("sla", k, request.form.get(k, "").strip())
     flash("Oracle column names saved.", "success")
-    return redirect(url_for("sla_configuration"))
-
-
-@app.route("/sla/sheet-config/save", methods=["POST"])
-@auth.login_required
-def sla_save_sheet_config():
-    if g.current_user.get("role") != auth.SUPER_ADMIN:
-        return render_template("access_denied.html", current_user=g.current_user,
-                               required_roles=[auth.SUPER_ADMIN]), 403
-    for k in ["gsheet_id", "plant_mapping_tab", "batcher_mapping_tab"]:
-        database.set_module_setting("sla", k, request.form.get(k, "").strip())
-    flash("Google Sheet configuration saved.", "success")
     return redirect(url_for("sla_configuration"))
 
 

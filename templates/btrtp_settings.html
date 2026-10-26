@@ -22,30 +22,6 @@
     <span class="settings-tile-arrow">›</span>
   </div>
 
-  <!-- Plant Data Google Sheet -->
-  <div class="settings-tile" onclick="openModal('modal-plant-sheet')">
-    <div class="settings-tile-icon">🏭</div>
-    <div class="settings-tile-info">
-      <div class="settings-tile-title">Google Sheet — Plant Data for TP</div>
-      <div class="settings-tile-status {% if last_plant.last_sync %}status-ok{% else %}status-warn{% endif %}">
-        {% if last_plant.last_sync %}✅ {{ last_plant.last_count }} plant rows · {{ plant_worksheet }}{% else %}⚠️ Not synced yet{% endif %}
-      </div>
-    </div>
-    <span class="settings-tile-arrow">›</span>
-  </div>
-
-  <!-- BT Master Google Sheet -->
-  <div class="settings-tile" onclick="openModal('modal-master-sheet')">
-    <div class="settings-tile-icon">👤</div>
-    <div class="settings-tile-info">
-      <div class="settings-tile-title">Google Sheet — BT Master Data</div>
-      <div class="settings-tile-status {% if last_master.last_sync %}status-ok{% else %}status-warn{% endif %}">
-        {% if last_master.last_sync %}✅ {{ last_master.last_count }} batcher rows · {{ master_worksheet }}{% else %}⚠️ Not synced yet{% endif %}
-      </div>
-    </div>
-    <span class="settings-tile-arrow">›</span>
-  </div>
-
   <!-- Email defaults -->
   <div class="settings-tile" onclick="openModal('modal-email')">
     <div class="settings-tile-icon">✉️</div>
@@ -85,67 +61,6 @@
           <input type="text" name="batcher_col" value="{{ batcher_col }}" placeholder="CREATED_BY">
         </div>
         <button type="submit" class="btn btn-primary">💾 Save Column Setting</button>
-      </form>
-    </div>
-  </div>
-</div>
-
-
-<!-- ══════════════════════════════════════════════════════════════
-     MODAL: Google Sheet — Plant Data for TP
-══════════════════════════════════════════════════════════════ -->
-<div id="modal-plant-sheet" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-plant-sheet')">
-  <div class="modal-box" style="max-width:620px">
-    <div class="modal-header">
-      <span>🏭 Google Sheet — Plant Data for TP</span>
-      <button class="modal-close" onclick="closeModal('modal-plant-sheet')">✕</button>
-    </div>
-    <div class="modal-body">
-      <p class="caption" style="margin-bottom:12px">
-        Plant master sheet with mixer theoretical capacities (BP1, BP2, etc.).
-        Shared with RDC-TP — changing it here also updates RDC-TP's plant reference.
-        <br>Required columns: <strong>Plant Code, Exco Location, Plant, Business Head, Plant Manager / Asst. PI, Mixer Theo. Capacity</strong>
-      </p>
-      <form method="POST" action="{{ url_for('btrtp_save_plant_sheet') }}">
-        <div class="form-group">
-          <label>Google Sheet URL or ID</label>
-          <input type="text" name="sheet_id" value="{{ plant_sheet_id }}" placeholder="Paste Sheet URL or ID">
-        </div>
-        <div class="form-group">
-          <label>Worksheet / Tab Name</label>
-          <input type="text" name="worksheet" value="{{ plant_worksheet }}" placeholder="Plant Data for TP">
-        </div>
-        <button type="submit" class="btn btn-primary">💾 Save Plant Sheet Settings</button>
-      </form>
-    </div>
-  </div>
-</div>
-
-
-<!-- ══════════════════════════════════════════════════════════════
-     MODAL: Google Sheet — BT Master Data
-══════════════════════════════════════════════════════════════ -->
-<div id="modal-master-sheet" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-master-sheet')">
-  <div class="modal-box" style="max-width:620px">
-    <div class="modal-header">
-      <span>👤 Google Sheet — BT Master Data</span>
-      <button class="modal-close" onclick="closeModal('modal-master-sheet')">✕</button>
-    </div>
-    <div class="modal-body">
-      <p class="caption" style="margin-bottom:12px">
-        Maps Batcher IDs (Oracle <code>CREATED_BY</code>) to human-readable names for reports.
-        <br>Required columns: <strong>Batcher ID, Batcher Name</strong>
-      </p>
-      <form method="POST" action="{{ url_for('btrtp_save_master_sheet') }}">
-        <div class="form-group">
-          <label>Google Sheet URL or ID</label>
-          <input type="text" name="sheet_id" value="{{ master_sheet_id }}" placeholder="Paste Sheet URL or ID">
-        </div>
-        <div class="form-group">
-          <label>Worksheet / Tab Name</label>
-          <input type="text" name="worksheet" value="{{ master_worksheet }}" placeholder="BT Master Data">
-        </div>
-        <button type="submit" class="btn btn-primary">💾 Save BT Master Sheet Settings</button>
       </form>
     </div>
   </div>

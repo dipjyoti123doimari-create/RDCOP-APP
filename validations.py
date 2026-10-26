@@ -63,7 +63,7 @@ def _validate_master_data(errors: list) -> int:
             "row_number": 0,
             "column_name": "—",
             "error_type": "NO_DATA",
-            "error_message": "Master Data table is empty. Sync from Google Sheets first.",
+            "error_message": "Master Data table is empty. Add employees on the Master Data page first.",
             "created_at": _now(),
         })
         return 1
@@ -88,7 +88,7 @@ def _validate_master_data(errors: list) -> int:
                     "error_type": "BLANK_FIELD",
                     "error_message": (
                         f"Row {row_num}: '{field}' is blank for Employee '{name}' "
-                        f"(Code: {emp}). Fill this column in the Google Sheet and re-sync."
+                        f"(Code: {emp}). Fill this column on the Master Data page."
                     ),
                     "created_at": _now(),
                 })

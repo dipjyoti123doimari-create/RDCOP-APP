@@ -22,18 +22,6 @@
     <span class="settings-tile-arrow">›</span>
   </div>
 
-  <!-- Google Sheet -->
-  <div class="settings-tile" onclick="openModal('modal-sheet')">
-    <div class="settings-tile-icon">📊</div>
-    <div class="settings-tile-info">
-      <div class="settings-tile-title">Google Sheet — Plant Data</div>
-      <div class="settings-tile-status {% if last_sync.last_sync %}status-ok{% else %}status-warn{% endif %}">
-        {% if last_sync.last_sync %}✅ {{ last_sync.last_count }} rows · {{ worksheet }}{% else %}⚠️ Not synced yet{% endif %}
-      </div>
-    </div>
-    <span class="settings-tile-arrow">›</span>
-  </div>
-
   <!-- Email (shared SMTP) -->
   <div class="settings-tile" onclick="openModal('modal-email')">
     <div class="settings-tile-icon">✉️</div>
@@ -77,27 +65,6 @@
           <div class="form-group"><label>Mixing Time Column (minutes)</label><input type="text" name="time_col" value="{{ time_col }}" placeholder="MIXING_TIME"></div>
         </div>
         <button type="submit" class="btn btn-primary">💾 Save Oracle Columns</button>
-      </form>
-    </div>
-  </div>
-</div>
-
-
-<!-- ══════════════════════════════════════════════════════════════
-     MODAL: Google Sheet
-══════════════════════════════════════════════════════════════ -->
-<div id="modal-sheet" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('modal-sheet')">
-  <div class="modal-box" style="max-width:620px">
-    <div class="modal-header">
-      <span>📊 Google Sheet — Plant Data</span>
-      <button class="modal-close" onclick="closeModal('modal-sheet')">✕</button>
-    </div>
-    <div class="modal-body">
-      <p class="caption" style="margin-bottom:12px">The same Google Sheet used by RDC-I&amp;D, but a different tab. Required columns: <strong>Plant Code, Exco Location, Plant, Business Head, Plant Manager/ Asst. PI, Mixer Theo. Capacity</strong></p>
-      <form method="POST" action="{{ url_for('tp_save_worksheet') }}">
-        <div class="form-group"><label>Google Sheet URL or ID</label><input type="text" name="sheet_id" value="{{ sheet_id }}" placeholder="Paste Sheet URL or ID"></div>
-        <div class="form-group"><label>Worksheet / Tab Name</label><input type="text" name="worksheet" value="{{ worksheet }}" placeholder="Plant Data for TP"></div>
-        <button type="submit" class="btn btn-primary">💾 Save Sheet Settings</button>
       </form>
     </div>
   </div>

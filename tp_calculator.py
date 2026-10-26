@@ -179,7 +179,7 @@ def find_missing_plant_codes(parsed_rows: list) -> list:
     Given parsed Oracle rows (each with a "lookup_code"), return the sorted
     list of distinct lookup codes that have no matching row in tp_plant_data.
     Used to flag new plants that appeared in Oracle before anyone added them
-    to the "Plant Data for TP" Google Sheet.
+    to Plant Data.
     """
     if not parsed_rows:
         return []
@@ -207,7 +207,7 @@ def run_tp_calculation(month: int, year: int,
         location_rows – list[dict]  one row per Exco Location (simple avg)
         warnings      – list[str]. When Oracle has batches for a plant code
                         that isn't in tp_plant_data (new plant added in Oracle
-                        but not yet synced from the "Plant Data for TP" sheet),
+                        but not yet added in Plant Data),
                         a summary line listing all missing codes is inserted
                         at warnings[0], followed by one detail line per code.
     """
@@ -250,7 +250,7 @@ def run_tp_calculation(month: int, year: int,
     # 2. Load plant reference data
     plant_df = database.read_table("tp_plant_data")
     if plant_df.empty:
-        warnings.append("No Plant Data found — sync from Google Sheets first.")
+        warnings.append("No Plant Data found — add plants in RDC-TP → Plant Data first.")
         return [], [], warnings
 
     plant_map = {
@@ -378,7 +378,7 @@ def run_tp_calculation(month: int, year: int,
         codes = ", ".join(sorted(set(missing_plant_codes)))
         warnings.insert(0,
             f"⚠ {len(set(missing_plant_codes))} plant code(s) found in Oracle but missing from "
-            f"Plant Data — likely a new plant not yet added to the 'Plant Data for TP' sheet: {codes}")
+            f"Plant Data — likely a new plant not yet added in Plant Data: {codes}")
 
     return plant_rows, location_rows, warnings
 

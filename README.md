@@ -69,7 +69,7 @@ Stop with `Ctrl + C`.
 | Page | Description |
 |------|-------------|
 | **Dashboard** | Live KPI cards (master data rows, backend rows, maintenance rows, calculated rows) and database status |
-| **Data Uploader** | Three tabs: sync Master Data from Google Sheets, upload Backend Data Excel, upload Maintenance Cost Excel |
+| **Data Uploader** | Three tabs: manage Master Data, upload Backend Data Excel, upload Maintenance Cost Excel |
 | **Calculate Incentive & Deduction** | Pick a date range, run the full category-wise calculation, browse results by category with colour-coded rows |
 | **View Reports** | Browse any date range with multi-select filters (Category, Designation, Plant), generate a report snapshot, download Excel / CSV, or email the report |
 | **Error / Validation Report** | Run data quality checks across all three data sources; review and clear validation errors |
@@ -99,18 +99,14 @@ To create a Gmail App Password: Google Account → Security → 2-Step Verificat
 
 ---
 
-## 6. Google Sheets setup (Master Data)
+## 6. Master Data
 
-Go to **Data Uploader → Master Data Sync & Management**.
+Master Data (employees) and Plant Data (plants and their e-mail addresses) are
+kept inside the app's own database — there is no Google Sheet. Add, edit and
+delete them on the **Master Data** page (System Config) and **Plant Data** page
+(RDC-TP). Every change is written to a change log.
 
-**Public mode (easiest):** Share your sheet as "Anyone with the link can view",
-paste the URL, click Sync Now.
-
-**Private mode:** Add `credentials/service_account.json` (Google Cloud service
-account). See `credentials/README.txt` for setup steps.
-
-Your sheet must have these columns (spelling matters, case does not):
-`Employee Code · Employee Name · Designation · Category · Plant · Plant Code`
+Employee fields: `Employee Code · Employee Name · Designation · Category · Plant · Plant Code`
 
 ---
 
@@ -124,7 +120,6 @@ Incentive_Calculator/
 ├── ui_helpers.py         # Theme/CSS, headers, cards, messages, progress tracker
 │
 ├── database.py           # SQLite database — all read/write/table helpers
-├── google_sheets.py      # Google Sheets sync (public URL or service account)
 ├── data_loader.py        # Read and clean uploaded Excel files
 ├── validations.py        # Data quality checks across all three data sources
 ├── calculator.py         # Category-wise incentive & deduction calculation engine
@@ -172,7 +167,7 @@ Quick-select dropdown in the top-right corner of every page.
 |------:|---------|
 | 1 | Project skeleton, theme, logo, sidebar navigation |
 | 2 | SQLite database and all 9 tables |
-| 3 | Google Sheets Master Data sync (public + private modes) |
+| 3 | Master Data kept in the app database (originally synced from Google Sheets) |
 | 4 | Upload Backend Data and Maintenance Cost Excel files |
 | 5 | Data validation with friendly error messages |
 | 6 | Incentive & deduction calculation rules (all categories) |

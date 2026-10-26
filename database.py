@@ -64,7 +64,7 @@ def _now():
 #   REAL    = numbers with decimals (quantities, amounts, rates)
 
 TABLE_SCHEMAS = {
-    # Employees synced from Google Sheets (Phase 3) and editable in-app (Phase 11)
+    # Employees — maintained in the app (add / edit / delete) and used by every module
     "master_data": """
         CREATE TABLE IF NOT EXISTS master_data (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -222,7 +222,9 @@ TABLE_SCHEMAS = {
 
     # ── RDC-TP tables ────────────────────────────────────────────────────────
 
-    # Plant reference data synced from "Plant Data for TP" Google Sheet tab
+    # Plant reference data — maintained in the app (add / edit / delete).
+    # The 4 e-mail columns are used by the Slow Loading Alert module to know
+    # who to send each plant's alerts to.
     "tp_plant_data": """
         CREATE TABLE IF NOT EXISTS tp_plant_data (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -232,7 +234,11 @@ TABLE_SCHEMAS = {
             business_head  TEXT,
             plant_manager  TEXT,
             mixer_theo_cap REAL,
-            updated_at     TEXT
+            updated_at     TEXT,
+            pm_email       TEXT,
+            bm_email       TEXT,
+            bh_email       TEXT,
+            cc_emails      TEXT
         )
     """,
 
@@ -443,7 +449,7 @@ TABLE_SCHEMAS = {
         )
     """,
 
-    # BT Master synced from Google Sheets (batcher_id → batcher_name)
+    # (legacy, no longer used) BT Master — batchers now come from master_data
     "btrtp_master_data": """
         CREATE TABLE IF NOT EXISTS btrtp_master_data (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -686,6 +692,13 @@ def init_db():
                 f"SELECT {_collist} FROM maintenance_cost_old"
             )
             cur.execute("DROP TABLE maintenance_cost_old")
+
+        # Migration: older DBs have no e-mail columns on tp_plant_data
+        cur.execute("PRAGMA table_info(tp_plant_data)")
+        _plant_cols = {row[1] for row in cur.fetchall()}
+        for _col in ("pm_email", "bm_email", "bh_email", "cc_emails"):
+            if _col not in _plant_cols:
+                cur.execute(f"ALTER TABLE tp_plant_data ADD COLUMN {_col} TEXT")
 
         # Index for fast date-range queries on the shared Oracle raw cache
         cur.execute("""CREATE INDEX IF NOT EXISTS idx_oracle_raw_date
@@ -1115,8 +1128,8 @@ def log_email(report_file_name, to_emails, cc_emails, subject,
 # ---------------------------------------------------------------------------
 # 7. MASTER DATA SINGLE-ROW HELPERS (Phase 11: Add / Edit / Delete)
 # ---------------------------------------------------------------------------
-# These let the admin manage ONE employee at a time (the sync in google_sheets
-# handles bulk replace). Every change is written to master_data_change_log so
+# These let the admin manage ONE employee at a time in the app (the app
+# database is the only source of truth). Every change is written to master_data_change_log so
 # there is a full audit trail. Employee codes are kept as TEXT.
 
 # The fields the admin can edit (id and updated_at are managed automatically).
@@ -1229,7 +1242,28 @@ def delete_employee(employee_code, changed_by="Admin"):
 # 8. TP PLANT DATA SINGLE-ROW HELPERS
 # ---------------------------------------------------------------------------
 _TP_PLANT_FIELDS = ["exco_location", "plant_name", "business_head",
-                    "plant_manager", "mixer_theo_cap"]
+                    "plant_manager", "mixer_theo_cap",
+                    "pm_email", "bm_email", "bh_email", "cc_emails"]
+
+
+def get_batcher_master():
+    """
+    Return the batcher list used by RDC-BTRTP and the Slow Loading Alert module
+    as a DataFrame with columns batcher_id, batcher_name.
+
+    There is no separate batcher table any more — batchers ARE the employees in
+    the RDC-I&D Master Data (same employee code = same person), so editing an
+    employee once updates every module.
+    """
+    conn = get_connection()
+    try:
+        return pd.read_sql_query(
+            "SELECT employee_code AS batcher_id, employee_name AS batcher_name "
+            "FROM master_data",
+            conn,
+        )
+    finally:
+        conn.close()
 
 
 def get_tp_plants():
@@ -1292,7 +1326,8 @@ def get_tp_plant_log():
 
 
 def add_tp_plant(plant_code, exco_location, plant_name, business_head,
-                 plant_manager, mixer_theo_cap, changed_by="Admin"):
+                 plant_manager, mixer_theo_cap, changed_by="Admin",
+                 pm_email="", bm_email="", bh_email="", cc_emails=""):
     code = str(plant_code).strip()
     if not code:
         raise ValueError("Plant Code cannot be blank.")
@@ -1304,6 +1339,10 @@ def add_tp_plant(plant_code, exco_location, plant_name, business_head,
         "business_head":  str(business_head).strip(),
         "plant_manager":  str(plant_manager).strip(),
         "mixer_theo_cap": float(mixer_theo_cap) if mixer_theo_cap else 0.0,
+        "pm_email":       str(pm_email).strip(),
+        "bm_email":       str(bm_email).strip(),
+        "bh_email":       str(bh_email).strip(),
+        "cc_emails":      str(cc_emails).strip(),
     }
     insert_rows("tp_plant_data", [{"plant_code": code, **new_values, "updated_at": _now()}])
     log_tp_plant_change("ADD", code, old_value=None, new_value=new_values,
@@ -1311,7 +1350,8 @@ def add_tp_plant(plant_code, exco_location, plant_name, business_head,
 
 
 def update_tp_plant(plant_code, exco_location, plant_name, business_head,
-                    plant_manager, mixer_theo_cap, changed_by="Admin"):
+                    plant_manager, mixer_theo_cap, changed_by="Admin",
+                    pm_email="", bm_email="", bh_email="", cc_emails=""):
     code = str(plant_code).strip()
     old = get_tp_plant(code)
     if old is None:
@@ -1322,15 +1362,22 @@ def update_tp_plant(plant_code, exco_location, plant_name, business_head,
         "business_head":  str(business_head).strip(),
         "plant_manager":  str(plant_manager).strip(),
         "mixer_theo_cap": float(mixer_theo_cap) if mixer_theo_cap else 0.0,
+        "pm_email":       str(pm_email).strip(),
+        "bm_email":       str(bm_email).strip(),
+        "bh_email":       str(bh_email).strip(),
+        "cc_emails":      str(cc_emails).strip(),
     }
     conn = get_connection()
     try:
         conn.execute(
             "UPDATE tp_plant_data SET exco_location=?, plant_name=?, business_head=?, "
-            "plant_manager=?, mixer_theo_cap=?, updated_at=? WHERE plant_code=?",
+            "plant_manager=?, mixer_theo_cap=?, pm_email=?, bm_email=?, bh_email=?, "
+            "cc_emails=?, updated_at=? WHERE plant_code=?",
             (new_values["exco_location"], new_values["plant_name"],
              new_values["business_head"], new_values["plant_manager"],
-             new_values["mixer_theo_cap"], _now(), code),
+             new_values["mixer_theo_cap"], new_values["pm_email"],
+             new_values["bm_email"], new_values["bh_email"],
+             new_values["cc_emails"], _now(), code),
         )
         conn.commit()
     finally:

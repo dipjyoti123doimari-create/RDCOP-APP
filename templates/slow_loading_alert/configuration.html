@@ -202,7 +202,7 @@
         ('oracle_grade_name_col', 'Grade name (master T-col)',   'T006'),
         ('oracle_master_so_col',  'Master sales order (T-col)',  'T004'),
         ('oracle_master_ln_col',  'Master line number (T-col)',  'T003'),
-        ('oracle_mixer_cap_col',  'Mixer Capacity (blank=sheet)',''),
+        ('oracle_mixer_cap_col',  'Mixer Capacity (blank=Plant Data)',''),
       ] %}
       {% for key, label, placeholder in col_fields %}
       <div class="form-group">
@@ -211,28 +211,6 @@
       </div>
       {% endfor %}
       <button type="submit" class="btn btn-primary btn-sm">💾 Save Column Names</button>
-    </div>
-    </form>
-  </div>
-
-  <!-- Google Sheet mapping config -->
-  <div class="card">
-    <div class="card-header">Google Sheet Mapping</div>
-    <form method="POST" action="{{ url_for('sla_save_sheet_config') }}">
-    <div style="display:flex;flex-direction:column;gap:8px;padding:4px 0">
-      <div class="form-group">
-        <label class="form-label">Google Sheet ID / URL</label>
-        <input type="text" name="gsheet_id" value="{{ settings.gsheet_id or '' }}" class="form-control" placeholder="Sheet ID or full URL">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Plant Mapping Tab Name</label>
-        <input type="text" name="plant_mapping_tab" value="{{ settings.plant_mapping_tab or 'SLA Plant Mapping' }}" class="form-control">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Batcher Mapping Tab Name</label>
-        <input type="text" name="batcher_mapping_tab" value="{{ settings.batcher_mapping_tab or 'SLA Batcher Mapping' }}" class="form-control">
-      </div>
-      <button type="submit" class="btn btn-primary btn-sm">💾 Save Sheet Config</button>
     </div>
     </form>
   </div>

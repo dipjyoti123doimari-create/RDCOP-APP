@@ -137,8 +137,8 @@ def run_btrtp_calculation(month: int, year: int,
 
     plant_map = {str(r["plant_code"]): r.to_dict() for _, r in plant_df.iterrows()}
 
-    # 3. Load BT Master (batcher_id → batcher_name)
-    master_df = database.read_table("btrtp_master_data")
+    # 3. Load batcher names (batcher_id → batcher_name) from the I&D Master Data
+    master_df = database.get_batcher_master()
     master_map = {}
     if not master_df.empty:
         for _, r in master_df.iterrows():
@@ -230,7 +230,7 @@ def run_btrtp_calculation(month: int, year: int,
         codes = ", ".join(sorted(set(missing_plant_codes)))
         warnings.insert(0,
             f"⚠ {len(set(missing_plant_codes))} plant code(s) found in Oracle but missing from "
-            f"Plant Data — likely a new plant not yet added to the 'Plant Data for TP' sheet: {codes}")
+            f"Plant Data — likely a new plant not yet added in Plant Data: {codes}")
 
     return batcher_rows, warnings
 

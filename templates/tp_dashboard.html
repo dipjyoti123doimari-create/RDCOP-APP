@@ -12,7 +12,7 @@
   <div class="kpi-card">
     <div class="kpi-label">Plant Reference Rows</div>
     <div class="kpi-value">{{ counts.tp_plant_data | format_int }}</div>
-    <div class="kpi-sub">Synced from Google Sheets</div>
+    <div class="kpi-sub">Plants maintained in the app</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Oracle Rows Fetched</div>
@@ -39,14 +39,8 @@
       <thead><tr><th>Source</th><th>Details</th></tr></thead>
       <tbody>
         <tr>
-          <td>Google Sheets (Plant Data)</td>
-          <td>
-            {% if last_sync.last_sync %}
-              Last synced: <strong>{{ last_sync.last_sync }}</strong> · <strong>{{ last_sync.last_count }}</strong> rows
-            {% else %}
-              <span style="color:var(--text-faint)">Not synced yet</span>
-            {% endif %}
-          </td>
+          <td>Plant Data</td>
+          <td>{{ counts.tp_plant_data | format_int }} plants in the app (edit in Data Uploader)</td>
         </tr>
         <tr>
           <td>Oracle Production Data</td>
@@ -65,7 +59,7 @@
 <div class="card">
   <div class="section-title">🚀 Quick Start</div>
   <ol style="color:var(--text-muted);line-height:2;margin:0;padding-left:20px">
-    <li>Go to <a href="{{ url_for('tp_data_uploader') }}">Data Uploader</a> → sync Plant Data from Google Sheets &amp; fetch Oracle data for the period.</li>
+    <li>Go to <a href="{{ url_for('tp_data_uploader') }}">Data Uploader</a> → check Plant Data &amp; fetch Oracle data for the period.</li>
     <li>Go to <a href="{{ url_for('tp_calculate') }}">Calculate Throughput</a> → select month/year and run.</li>
     <li>Go to <a href="{{ url_for('tp_reports') }}">View Reports</a> → review Plant &amp; Location reports, download or email.</li>
   </ol>

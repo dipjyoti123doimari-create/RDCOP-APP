@@ -47,7 +47,7 @@ def _sla_oracle_cols() -> dict:
     # Customer NAME and friendly grade NAME are NOT in the trx table; they are
     # joined from rdc_batch_master_header (T009 customer, T006 grade) on
     # SALESORDER=T004 and LINENUMBER=T003. See _build_query().
-    #   mixer_cap → NOT in Oracle — comes from the Google Sheet plant mapping.
+    #   mixer_cap → NOT in Oracle — comes from the Plant Data mapping.
     # An EMPTY override means "this column is not available" → selected as NULL.
     return {
         "plant":         _ms("oracle_plant_col",      "PLANTNO"),
@@ -57,7 +57,7 @@ def _sla_oracle_cols() -> dict:
         "truck":         _ms("oracle_truck_col",       "TRUCK_CODE"),
         "quantity":      _ms("oracle_quantity_col",    "PRODUCED_QUANTITY"),
         "time":          _ms("oracle_time_col",        "TIMETAKEN"),
-        "mixer_cap":     _ms("oracle_mixer_cap_col",   ""),  # from Google Sheet
+        "mixer_cap":     _ms("oracle_mixer_cap_col",   ""),  # from Plant Data
         # Master-header columns for the customer/grade lookup (override if the
         # T-column positions ever differ).
         "cust_name_col": _ms("oracle_cust_name_col",   "T009"),
@@ -137,7 +137,7 @@ def fetch_loading_data(from_date=None, to_date=None) -> tuple:
         _hsel(cols["truck"],    "tm_number"),
         _hsel(cols["quantity"], "batched_quantity"),
         _hsel(time_col,         "loading_time_minutes"),
-        "NULL AS mixer_capacity",  # filled from Google Sheet in mapping_service
+        "NULL AS mixer_capacity",  # filled from Plant Data in mapping_service
     ])
 
     # Build the LEFT JOIN only when master-header lookup columns are configured.
