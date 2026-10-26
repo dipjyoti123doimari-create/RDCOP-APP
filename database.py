@@ -431,6 +431,16 @@ TABLE_SCHEMAS = {
         )
     """,
 
+    # Oracle sometimes sends a batcher as a username (e.g. MITUM) and sometimes
+    # as the employee ID (M00236). This maps username -> employee ID so both
+    # spellings are clubbed under the one ID that Master Data knows.
+    "employee_id_alias": """
+        CREATE TABLE IF NOT EXISTS employee_id_alias (
+            alias         TEXT PRIMARY KEY,   -- Oracle username, stored UPPERCASE
+            employee_code TEXT NOT NULL       -- the Master Data employee code
+        )
+    """,
+
     # ── RDC-BTRTP tables ────────────────────────────────────────────────────
 
     # Raw Oracle rows with batcher (CREATED_BY) column
@@ -733,9 +743,73 @@ def init_db():
                 [(m, r, b, now_ts, now_ts) for m, r, b in thresholds]
             )
 
+        # Seed the username -> employee ID pairs (only when the table is empty,
+        # so anything later removed is not silently put back)
+        cur.execute("SELECT COUNT(*) FROM employee_id_alias")
+        if cur.fetchone()[0] == 0:
+            cur.executemany(
+                "INSERT INTO employee_id_alias (alias, employee_code) VALUES (?, ?)",
+                [("AKUMAR", "2000501"), ("BIJAYAM", "2075033"),
+                 ("LOKANATHB", "3263420"), ("MANORANJANJ", "3282985"),
+                 ("MITUM", "M00236"), ("MRAIHAN", "4209253"),
+                 ("PSHARMA", "P00184"), ("RAJESHWAR", "R00182"),
+                 ("SANGRAMD", "3243680")]
+            )
+
+        # Club rows already saved under a username into the employee ID
+        _merge_aliases_in_oracle_raw(cur)
+
         conn.commit()
     finally:
         conn.close()
+
+
+def _merge_aliases_in_oracle_raw(cur):
+    """Rewrite created_by from username to employee ID in oracle_raw_data."""
+    cur.execute(
+        "UPDATE oracle_raw_data "
+        "SET created_by = (SELECT employee_code FROM employee_id_alias "
+        "                  WHERE alias = UPPER(TRIM(oracle_raw_data.created_by))) "
+        "WHERE UPPER(TRIM(created_by)) IN (SELECT alias FROM employee_id_alias)"
+    )
+
+
+def get_employee_aliases() -> dict:
+    """Return {USERNAME: employee_code} for every saved alias."""
+    conn = get_connection()
+    try:
+        return {r[0]: r[1] for r in conn.execute("SELECT alias, employee_code FROM employee_id_alias")}
+    finally:
+        conn.close()
+
+
+def set_employee_alias(alias, employee_code):
+    """Add / change one username -> employee ID pair and club the saved data straight away."""
+    alias = str(alias or "").strip().upper()
+    employee_code = str(employee_code or "").strip()
+    if not alias or not employee_code:
+        raise ValueError("Both the username and the employee ID are required.")
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("INSERT OR REPLACE INTO employee_id_alias (alias, employee_code) VALUES (?, ?)",
+                    (alias, employee_code))
+        _merge_aliases_in_oracle_raw(cur)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def apply_employee_aliases(codes):
+    """
+    Swap usernames for employee IDs in a pandas Series of created_by values.
+    Unknown values are returned unchanged (just trimmed).
+    """
+    aliases = get_employee_aliases()
+    cleaned = codes.astype(str).str.strip()
+    if not aliases:
+        return cleaned
+    return cleaned.apply(lambda c: aliases.get(c.upper(), c))
 
 
 def get_maintenance_months() -> list:

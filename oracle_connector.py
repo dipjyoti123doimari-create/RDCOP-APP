@@ -533,6 +533,8 @@ def save_oracle_raw_data(df: pd.DataFrame, replace: bool = True) -> int:
     if df.empty:
         return 0
     now = datetime.now().isoformat(timespec="seconds")
+    # Username (MITUM) and employee ID (M00236) are the same person - club them
+    df = df.assign(created_by=database.apply_employee_aliases(df["created_by"]))
     rows = []
     for _, row in df.iterrows():
         rows.append({
