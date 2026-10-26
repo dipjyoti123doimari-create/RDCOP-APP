@@ -3415,6 +3415,7 @@ def page_data_uploader():
     del_code  = request.args.get("del_code")
     edit_emp  = database.get_employee(edit_code) if edit_code else None
     del_emp   = database.get_employee(del_code)  if del_code  else None
+    _unmapped_ids, _unmapped_period = database.get_unmapped_employee_ids()
 
     return render_template("data_uploader.html",
                            ora_cfg=ora_cfg, ora_ready=ora_ready,
@@ -3432,6 +3433,7 @@ def page_data_uploader():
                            edit_emp=edit_emp, del_emp=del_emp,
                            categories=config.CATEGORIES,
                            plant_list=database.get_tp_plants(),
+                           unmapped_ids=_unmapped_ids, unmapped_period=_unmapped_period,
                            today=str(_date.today()),
                            today_first=str(_date.today().replace(day=1)))
 
@@ -3877,6 +3879,121 @@ def delete_employee(code):
     if request.form.get("_next") == "sysconfig":
         return redirect(url_for("sysconfig_page") + "?open_modal=employee&tab=delete")
     return redirect(url_for("page_data_uploader") + "?open_modal=employee&tab=delete")
+
+
+# ── Master Data in Excel: download unmapped IDs, download all, bulk upload ───
+_EMP_XLSX_COLS = ["Employee Code", "Employee Name", "Designation", "Category", "Plant", "Plant Code"]
+_EMP_XLSX_KEYS = ["employee_code", "employee_name", "designation", "category", "plant", "plant_code"]
+
+
+def _employee_xlsx(rows, extra_cols=()):
+    """
+    Build the Master Data Excel file in memory.
+    rows       : list of dicts keyed by _EMP_XLSX_KEYS (+ the extra_cols keys)
+    extra_cols : [(header, key)] shown after the 6 real columns, ignored on upload
+    Employee Code is stored as TEXT so IDs like 0611629 keep their leading zero.
+    """
+    import xlsxwriter
+    buf = io.BytesIO()
+    wb = xlsxwriter.Workbook(buf, {"in_memory": True})
+    ws = wb.add_worksheet("Master Data")
+    head = wb.add_format({"bold": True, "bg_color": "#1F4E78", "font_color": "white", "border": 1})
+    note = wb.add_format({"bold": True, "bg_color": "#7F7F7F", "font_color": "white", "border": 1})
+    text = wb.add_format({"num_format": "@"})
+    heads = _EMP_XLSX_COLS + [h for h, _ in extra_cols]
+    for c, h in enumerate(heads):
+        ws.write(0, c, h, head if c < len(_EMP_XLSX_COLS) else note)
+    for r, row in enumerate(rows, start=1):
+        for c, key in enumerate(_EMP_XLSX_KEYS):
+            ws.write_string(r, c, str(row.get(key) or ""), text)
+        for c, (_, key) in enumerate(extra_cols, start=len(_EMP_XLSX_COLS)):
+            ws.write(r, c, row.get(key))
+    widths = [16, 28, 26, 20, 28, 12] + [14] * len(extra_cols)
+    for c, w in enumerate(widths):
+        ws.set_column(c, c, w)
+    ws.freeze_panes(1, 0)
+    last = max(len(rows), 1) + 500            # the drop-down also works for rows typed below the data
+    ws.data_validation(1, 3, last, 3, {"validate": "list", "source": list(config.CATEGORIES),
+                                       "error_title": "Category",
+                                       "error_message": "Pick a category from the list."})
+    help_ws = wb.add_worksheet("Read me")
+    for i, line in enumerate([
+        "Fill Employee Name, Designation, Category, Plant, Plant Code and upload the file back.",
+        "Category must be one of the values in the drop-down (a new employee needs a Category).",
+        "Existing employees: blank cells keep the saved value; filled cells replace it.",
+        "Nobody is ever deleted by an upload. Grey columns (if any) are for your information only.",
+        "Allowed categories: " + ", ".join(config.CATEGORIES),
+    ]):
+        help_ws.write(i, 0, line)
+    help_ws.set_column(0, 0, 110)
+    wb.close()
+    buf.seek(0)
+    return buf
+
+
+@app.route("/action/download-unmapped")
+def download_unmapped():
+    """Excel of every unmapped Oracle ID, pre-filled with the suggested plant - fill the blanks and upload."""
+    ids, _ = database.get_unmapped_employee_ids()
+    rows = [{"employee_code": r["employee_code"], "plant": r["suggested_plant"],
+             "plant_code": r["suggested_plant_code"], "qty": r["total_quantity"],
+             "batches": r["batches"]} for r in ids]
+    buf = _employee_xlsx(rows, extra_cols=[("Qty m3 (info)", "qty"), ("Batches (info)", "batches")])
+    return send_file(buf, as_attachment=True, download_name="Unmapped_Employee_IDs.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.route("/action/download-master")
+def download_master():
+    """Excel of the whole Master Data - edit it and upload it back for bulk changes."""
+    df = database.read_table("master_data", order_by="employee_code")
+    rows = df.to_dict("records") if not df.empty else []
+    return send_file(_employee_xlsx(rows), as_attachment=True, download_name="Master_Data.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.route("/action/upload-employees", methods=["POST"])
+def upload_employees():
+    if request.form.get("_next") == "sysconfig":
+        back = url_for("sysconfig_page") + "?m=master"
+    else:
+        back = url_for("page_data_uploader") + "#master"
+    f = request.files.get("file")
+    if f is None or f.filename == "":
+        flash("No file selected.", "error")
+        return redirect(back)
+    try:
+        df = pd.read_excel(f, dtype=object)
+    except Exception as exc:
+        flash(f"Could not read the Excel file: {exc}", "error")
+        return redirect(back)
+
+    # Match the 6 columns by name (case / spaces / underscores ignored)
+    norm = lambda t: str(t).strip().lower().replace(" ", "").replace("_", "")
+    by_norm = {norm(c): c for c in df.columns}
+    if norm("Employee Code") not in by_norm:
+        flash("The file has no 'Employee Code' column. Use the Master Data or "
+              "Unmapped IDs download as the template.", "error")
+        return redirect(back)
+    records = [{key: row.get(by_norm.get(norm(head)))
+                for head, key in zip(_EMP_XLSX_COLS, _EMP_XLSX_KEYS)}
+               for row in df.to_dict("records")]
+    res = database.bulk_save_employees(records)
+
+    flash(f"Excel upload done: {res['added']} added, {res['updated']} updated, "
+          f"{res['unchanged']} unchanged, {len(res['skipped'])} skipped (errors).",
+          "success" if (res["added"] or res["updated"]) else "info")
+    if res["not_filled"]:
+        flash(f"{res['not_filled']} new ID(s) have no Category yet, so they were left out. "
+              "Fill in the Category and upload again when ready.", "info")
+    for row_no, code, why in res["skipped"][:10]:
+        flash(f"Row {row_no} {('(' + code + ') ') if code else ''}skipped: {why}", "warning")
+    if len(res["skipped"]) > 10:
+        flash(f"...and {len(res['skipped']) - 10} more skipped rows.", "warning")
+    if res["unknown_plants"]:
+        flash("Plant code(s) not found in Plant Data (saved anyway): "
+              + ", ".join(res["unknown_plants"]), "warning")
+    return redirect(back)
 
 
 @app.route("/action/upload-backend", methods=["POST"])
@@ -6670,6 +6787,7 @@ def sysconfig_page():
     plant_log    = database.get_tp_plant_log()
     edit_plant   = database.get_tp_plant(edit_code) if edit_code else None
     del_plant    = database.get_tp_plant(del_code)  if del_code  else None
+    _unmapped_ids, _unmapped_period = database.get_unmapped_employee_ids()
     # Dynamic dropdown options — pulled from existing plant data
     exco_opts = sorted({p["exco_location"] for p in plant_rows if p.get("exco_location")})
     bh_opts   = sorted({p["business_head"]  for p in plant_rows if p.get("business_head")})
@@ -6693,6 +6811,7 @@ def sysconfig_page():
                            edit_emp=edit_emp, del_emp=del_emp,
                            categories=config.CATEGORIES,
                            plant_list=plant_rows,
+                           unmapped_ids=_unmapped_ids, unmapped_period=_unmapped_period,
                            plant_rows=plant_rows, plant_count=plant_count,
                            tp_codes=tp_codes, plant_log=plant_log,
                            edit_plant=edit_plant, del_plant=del_plant,

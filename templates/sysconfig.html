@@ -258,6 +258,8 @@
       <p class="caption" style="margin-bottom:4px">Employee master list used to map Oracle login IDs to names, designations and categories.</p>
       <p class="caption" style="margin-bottom:12px;color:#5a7a9a">📌 Used by: I&amp;D (incentive/deduction calculation and report)</p>
 
+      {% with master_page_url=url_for('sysconfig_page'), next_tag='sysconfig' %}{% include '_master_tools.html' %}{% endwith %}
+
       {% if m_count > 0 %}
       <hr class="divider">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -459,7 +461,7 @@
         <form method="POST" action="{{ url_for('add_employee') }}">
           <input type="hidden" name="_next" value="sysconfig">
           <div class="form-grid">
-            <div class="form-group"><label>Employee Code *</label><input type="text" name="code" required autocomplete="off"></div>
+            <div class="form-group"><label>Employee Code *</label><input type="text" name="code" required autocomplete="off" value="{{ request.args.get('add_code', '') }}"></div>
             <div class="form-group"><label>Employee Name</label><input type="text" name="name" autocomplete="off"></div>
             <div class="form-group"><label>Designation</label><input type="text" name="designation" autocomplete="off"></div>
             <div class="form-group"><label>Category</label><select name="category">{% for c in categories %}<option>{{ c }}</option>{% endfor %}</select></div>
@@ -467,6 +469,7 @@
               <label>Plant</label>
               <input type="text" name="plant" id="add-plant-name" autocomplete="off"
                      placeholder="Type or select plant"
+                     value="{{ request.args.get('add_plant', '') }}"
                      data-combo data-opts-id="pl-names"
                      data-sync-target="add-plant-code" data-sync-map="byName">
             </div>
@@ -474,6 +477,7 @@
               <label>Plant Code</label>
               <input type="text" name="plant_code" id="add-plant-code" autocomplete="off"
                      placeholder="Type or select code"
+                     value="{{ request.args.get('add_plant_code', '') }}"
                      data-combo data-opts-id="pl-codes"
                      data-sync-target="add-plant-name" data-sync-map="byCode">
             </div>
@@ -631,6 +635,7 @@ if (hash) openModal('modal-' + hash);
 var params = new URLSearchParams(location.search);
 if (params.get('edit_code') && params.get('open_modal') !== 'plant-data')  { openModal('modal-master'); openManageModal('edit'); }
 if (params.get('del_code')  && params.get('open_modal') !== 'plant-data')  { openModal('modal-master'); openManageModal('delete'); }
+if (params.get('add_code')) { openModal('modal-master'); openManageModal('add'); }
 
 submitFormAjax(
   document.getElementById('fetch-form'),
@@ -640,6 +645,7 @@ submitFormAjax(
 
 initDrop('backend-drop', 'backend-file', 'backend-file-name');
 initDrop('maint-drop',   'maint-file',   'maint-file-name');
+initDrop('emp-drop',     'emp-file',     'emp-file-name');
 document.getElementById('backend-form').addEventListener('submit', function() {
   document.getElementById('backend-loading').classList.add('active');
 });

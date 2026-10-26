@@ -18,6 +18,8 @@
 <!-- ── Master Data ─────────────────────────────────── -->
 <div class="tab-panel active" data-tabpanel="main" data-tab="master">
 
+  {% with master_page_url=url_for('page_data_uploader'), next_tag='' %}{% include '_master_tools.html' %}{% endwith %}
+
   <!-- Current Master Data (full width) -->
   <div class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:10px;flex-wrap:wrap">
@@ -63,7 +65,7 @@
         <div class="tab-panel active" data-tabpanel="emp" data-tab="add">
           <form method="POST" action="{{ url_for('add_employee') }}">
             <div class="form-grid">
-              <div class="form-group"><label>Employee Code *</label><input type="text" name="code" required></div>
+              <div class="form-group"><label>Employee Code *</label><input type="text" name="code" required value="{{ request.args.get('add_code', '') }}"></div>
               <div class="form-group"><label>Employee Name</label><input type="text" name="name"></div>
               <div class="form-group"><label>Designation</label><input type="text" name="designation"></div>
               <div class="form-group">
@@ -74,6 +76,7 @@
                 <label>Plant</label>
                 <input type="text" name="plant" id="du-add-plant-name" autocomplete="off"
                        placeholder="Type or select plant"
+                       value="{{ request.args.get('add_plant', '') }}"
                        data-combo data-opts-id="du-pl-names"
                        data-sync-target="du-add-plant-code" data-sync-map="byName">
               </div>
@@ -81,6 +84,7 @@
                 <label>Plant Code</label>
                 <input type="text" name="plant_code" id="du-add-plant-code" autocomplete="off"
                        placeholder="Type or select code"
+                       value="{{ request.args.get('add_plant_code', '') }}"
                        data-combo data-opts-id="du-pl-codes"
                        data-sync-target="du-add-plant-name" data-sync-map="byCode">
               </div>
@@ -450,6 +454,7 @@ window._plantMap.byCode["{{ p.plant_code }}"] = "{{ p.plant_name | replace('"', 
 
   initDrop('backend-drop', 'backend-file', 'backend-file-name');
   initDrop('maint-drop',   'maint-file',   'maint-file-name');
+  initDrop('emp-drop',     'emp-file',     'emp-file-name');
 
   document.getElementById('backend-form').addEventListener('submit', function() {
     document.getElementById('backend-loading').classList.add('active');
@@ -498,5 +503,6 @@ window._plantMap.byCode["{{ p.plant_code }}"] = "{{ p.plant_name | replace('"', 
   if (params.get('edit_code'))  { openManageModal('edit'); }
   if (params.get('del_code'))   { openManageModal('delete'); }
   if (params.get('open_modal') === 'employee') { openManageModal(params.get('tab') || 'add'); }
+  if (params.get('add_code')) { openManageModal('add'); }
 </script>
 {% endblock %}

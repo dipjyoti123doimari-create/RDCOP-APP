@@ -1,0 +1,55 @@
+{# Shared by the I&D Data Uploader and Sys Config -> Master Data.
+   Needs: unmapped_ids, unmapped_period, master_page_url, next_tag ('' or 'sysconfig') #}
+<div class="card" style="margin-bottom:14px">
+  <div class="section-title">⚠️ Unmapped IDs from Oracle ({{ unmapped_ids | length }})</div>
+  {% if unmapped_ids %}
+  <p class="caption" style="margin-bottom:10px">
+    These IDs made production ({{ unmapped_period }}) but are <strong>not in Master Data</strong>, so they get no incentive or deduction.
+    Click <strong>Add</strong> to open the form with the ID and plant already filled in, or download them all as Excel, fill the blanks and upload it back below.
+  </p>
+  <div class="table-wrapper" style="max-height:260px">
+    <table>
+      <thead><tr><th>Employee ID</th><th>Qty (m³)</th><th>Batches</th><th>Plant</th><th></th></tr></thead>
+      <tbody>
+        {% for u in unmapped_ids %}
+        <tr>
+          <td>{{ u.employee_code }}</td>
+          <td>{{ "{:,.1f}".format(u.total_quantity) }}</td>
+          <td>{{ u.batches }}</td>
+          <td>{{ u.plant_codes }}</td>
+          <td><a class="btn btn-primary btn-sm"
+                 href="{{ master_page_url }}?add_code={{ u.employee_code | urlencode }}&add_plant_code={{ u.suggested_plant_code | urlencode }}&add_plant={{ u.suggested_plant | urlencode }}">➕ Add</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="btn-group" style="margin-top:10px">
+    <a class="btn btn-secondary btn-sm" href="{{ url_for('download_unmapped') }}">⬇️ Download unmapped IDs (Excel)</a>
+  </div>
+  {% else %}
+  <div class="alert alert-success">✅ Every ID in the production data is already in Master Data.</div>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-bottom:14px">
+  <div class="section-title">📤 Bulk add / update by Excel</div>
+  <p class="caption" style="margin-bottom:10px">
+    Columns: <strong>Employee Code, Employee Name, Designation, Category, Plant, Plant Code</strong>.
+    New employees need a Category; for existing employees blank cells keep the saved value.
+    <strong>Nobody is deleted</strong> by an upload.
+  </p>
+  <form method="POST" action="{{ url_for('upload_employees') }}" enctype="multipart/form-data">
+    {% if next_tag %}<input type="hidden" name="_next" value="{{ next_tag }}">{% endif %}
+    <div class="file-drop" id="emp-drop">
+      <input type="file" name="file" id="emp-file" accept=".xlsx">
+      <div class="drop-icon">📂</div>
+      <div class="drop-text">Click or drag &amp; drop the Excel file (.xlsx)</div>
+      <div class="drop-sub" id="emp-file-name">No file selected</div>
+    </div>
+    <div class="btn-group" style="margin-top:10px">
+      <button type="submit" class="btn btn-primary">💾 Upload &amp; Save</button>
+      <a class="btn btn-secondary" href="{{ url_for('download_master') }}">⬇️ Download all Master Data (Excel)</a>
+    </div>
+  </form>
+</div>

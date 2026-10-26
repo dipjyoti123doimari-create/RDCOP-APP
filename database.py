@@ -1246,6 +1246,167 @@ _TP_PLANT_FIELDS = ["exco_location", "plant_name", "business_head",
                     "pm_email", "bm_email", "bh_email", "cc_emails"]
 
 
+def _suggest_plant_name(plant_code, plant_name_by_code):
+    """
+    Suggest a plant NAME for a plant CODE using Plant Data.
+    Oracle gives the bare code ('AN1') but Plant Data may only hold the mixer
+    variants ('AN1_BP1'), so fall back to the first variant with the _BPn
+    suffix removed from its name.
+    """
+    code = str(plant_code or "").strip()
+    if code in plant_name_by_code:
+        return plant_name_by_code[code]
+    for full_code in sorted(plant_name_by_code):
+        if full_code.split("_")[0] == code:
+            name = plant_name_by_code[full_code]
+            return name.split("_BP")[0] if "_BP" in name else name
+    return ""
+
+
+def get_unmapped_employee_ids():
+    """
+    Employee IDs that appear in the production data but are NOT in Master Data
+    (these people get no incentive / deduction until they are added).
+
+    Uses exactly the calculator's rules: Oracle data first (falling back to the
+    Excel backend data only when Oracle has nothing), rows with
+    time_taken_min = 0 ignored, IDs trimmed.
+
+    Returns (rows, period) where rows is a list of dicts, biggest volume first:
+      employee_code, total_quantity, batches, plant_codes,
+      suggested_plant_code (the plant where most of their volume was made),
+      suggested_plant (its name from Plant Data, "" if unknown)
+    and period is "2026-09-01 to 2026-10-26" (or "" when there is no data).
+    """
+    conn = get_connection()
+    try:
+        has_oracle = conn.execute("SELECT COUNT(*) FROM oracle_raw_data").fetchone()[0] > 0
+        if has_oracle:
+            df = pd.read_sql_query(
+                "SELECT TRIM(created_by) AS employee_code, TRIM(plant_code) AS plant_code, "
+                "quantity, production_date AS date FROM oracle_raw_data "
+                "WHERE time_taken_min IS NULL OR time_taken_min <> 0", conn)
+        else:
+            df = pd.read_sql_query(
+                "SELECT TRIM(created_by) AS employee_code, '' AS plant_code, "
+                "quantity, date FROM backend_data", conn)
+        known = {str(r[0]).strip() for r in conn.execute("SELECT employee_code FROM master_data")}
+        plant_name_by_code = {str(r[0]).strip(): (r[1] or "").strip() for r in
+                              conn.execute("SELECT plant_code, plant_name FROM tp_plant_data")}
+    finally:
+        conn.close()
+
+    if df.empty:
+        return [], ""
+    period = f"{df['date'].min()} to {df['date'].max()}"      # the whole data held, not just unmapped rows
+    df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0)
+    df = df[df["employee_code"].notna() & (df["employee_code"] != "")]
+    df = df[~df["employee_code"].isin(known)]
+    if df.empty:
+        return [], period
+
+    rows = []
+    for code, grp in df.groupby("employee_code"):
+        by_plant = grp.groupby("plant_code")["quantity"].sum().sort_values(ascending=False)
+        top_plant = by_plant.index[0] if len(by_plant) else ""
+        rows.append({
+            "employee_code":        code,
+            "total_quantity":       round(float(grp["quantity"].sum()), 1),
+            "batches":              int(len(grp)),
+            "plant_codes":          ", ".join(sorted(p for p in by_plant.index if p)),
+            "suggested_plant_code": top_plant,
+            "suggested_plant":      _suggest_plant_name(top_plant, plant_name_by_code),
+        })
+    rows.sort(key=lambda r: -r["total_quantity"])
+    return rows, period
+
+
+def _clean_cell(value):
+    """Excel cell -> clean text. 4159975.0 -> '4159975', NaN/None -> ''."""
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        if value != value:                      # NaN
+            return ""
+        if value.is_integer():
+            return str(int(value))
+    text = str(value).strip()
+    return "" if text.lower() == "nan" else text
+
+
+def bulk_save_employees(records, changed_by="Admin (Excel upload)"):
+    """
+    Add / update many employees from an Excel upload. NEVER deletes anyone.
+
+    records: list of dicts with the keys employee_code, employee_name,
+             designation, category, plant, plant_code (any may be blank).
+
+    Rules
+      - Employee Code required; a code repeated in the file is skipped.
+      - New employee: Category is required and must be one of config.CATEGORIES.
+      - Existing employee: blank cells keep the saved value, filled cells
+        replace it (so you can upload just the column you want to change).
+      - Every add / edit goes to the Master Data change log.
+
+    Returns {"added": n, "updated": n, "unchanged": n,
+             "not_filled": n   (new IDs whose Category is still blank - left alone, not an error),
+             "skipped": [(row, code, why)]   (real mistakes),
+             "unknown_plants": [codes not found in Plant Data]}
+    """
+    import config
+    result = {"added": 0, "updated": 0, "unchanged": 0, "not_filled": 0,
+              "skipped": [], "unknown_plants": []}
+    plant_codes = set(get_tp_plant_codes())
+    bare_plant_codes = {c.split("_")[0] for c in plant_codes}
+    seen, unknown = set(), set()
+
+    for n, rec in enumerate(records, start=2):          # row 1 of the sheet is the header
+        code = _clean_cell(rec.get("employee_code"))
+        if not code:
+            result["skipped"].append((n, "", "Employee Code is blank"))
+            continue
+        if code in seen:
+            result["skipped"].append((n, code, "Employee Code appears more than once in the file"))
+            continue
+        seen.add(code)
+
+        new = {k: _clean_cell(rec.get(k)) for k in
+               ("employee_name", "designation", "category", "plant", "plant_code")}
+        if new["category"] and new["category"] not in config.CATEGORIES:
+            result["skipped"].append((n, code, f"Category '{new['category']}' is not valid"))
+            continue
+
+        old = get_employee(code)
+        try:
+            if old is None:
+                if not new["category"]:
+                    # Typical when the Unmapped IDs file is only partly filled in:
+                    # leave the row alone and just count it.
+                    result["not_filled"] += 1
+                    continue
+                add_employee(code, new["employee_name"], new["designation"], new["category"],
+                             new["plant"], new["plant_code"], changed_by=changed_by)
+                result["added"] += 1
+            else:
+                merged = {k: (new[k] or (old.get(k) or "")) for k in new}
+                if all(merged[k] == (old.get(k) or "") for k in merged):
+                    result["unchanged"] += 1
+                    continue
+                update_employee(code, merged["employee_name"], merged["designation"],
+                                merged["category"], merged["plant"], merged["plant_code"],
+                                changed_by=changed_by)
+                result["updated"] += 1
+        except ValueError as exc:
+            result["skipped"].append((n, code, str(exc)))
+            continue
+
+        pc = new["plant_code"]
+        if pc and pc not in plant_codes and pc not in bare_plant_codes:
+            unknown.add(pc)
+    result["unknown_plants"] = sorted(unknown)
+    return result
+
+
 def get_batcher_master():
     """
     Return the batcher list used by RDC-BTRTP and the Slow Loading Alert module
