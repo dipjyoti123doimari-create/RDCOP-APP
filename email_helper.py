@@ -25,12 +25,14 @@ report is attached separately.
 
 import os
 import smtplib
+import time
 from email.message import EmailMessage
 
 import database
 
 
 _DEFAULT_PORT  = 587
+_SMTP_ATTEMPTS = 3        # connect + login tries before a send is reported as failed
 _XLSX_MAINTYPE = "application"
 _XLSX_SUBTYPE  = "vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -797,11 +799,24 @@ def send_report_email(to_emails, cc_emails, subject, body,
                         filename=attachment_name or "report.xlsx")
 
             recipients = to_list + cc_list
-            with smtplib.SMTP(cfg["host"], cfg["port"], timeout=30) as server:
-                if cfg["use_tls"]:
-                    server.starttls()
-                server.login(cfg["sender"], cfg["password"])
-                server.send_message(msg, to_addrs=recipients)
+            # The mail server sometimes drops or stalls a connection ("Server not
+            # connected", timeouts, DNS blips). Retry the CONNECT + LOGIN step a few
+            # times; once the message itself is being sent we never retry, so a
+            # report can't go out twice.
+            for attempt in range(1, _SMTP_ATTEMPTS + 1):
+                sending = False
+                try:
+                    with smtplib.SMTP(cfg["host"], cfg["port"], timeout=30) as server:
+                        if cfg["use_tls"]:
+                            server.starttls()
+                        server.login(cfg["sender"], cfg["password"])
+                        sending = True
+                        server.send_message(msg, to_addrs=recipients)
+                    break
+                except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError, OSError):
+                    if sending or attempt == _SMTP_ATTEMPTS:
+                        raise
+                    time.sleep(5 * attempt)
 
             result["success"] = True
         except Exception as exc:
