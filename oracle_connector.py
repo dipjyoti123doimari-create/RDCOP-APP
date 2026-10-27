@@ -739,11 +739,111 @@ def resolve_gl_period_name(for_date=None) -> str:
         conn.close()
 
 
+# R&M cost per cum for ONE date range, by GL location. Cost = R&M (611001) +
+# oil/lubricants (612002/612015/612016/612017) from GL balances; volume = ERP
+# batching (RDC_BATCH_TRX_HEADERS) + Direct Batching (XXRDC_IMPORTSO_DATA_STG).
+# Binds: :p_from / :p_to (first and last day of the range).
+_GL_RM_COST_PER_CUM_SQL = """
+    WITH cost AS (
+        SELECT gcc.segment3 AS loc,
+               SUM(CASE WHEN gcc.segment5 = '611001'
+                        THEN NVL(gb.period_net_dr,0) - NVL(gb.period_net_cr,0) ELSE 0 END) AS rm_plant,
+               SUM(CASE WHEN gcc.segment5 IN ('612002','612015','612016','612017')
+                        THEN NVL(gb.period_net_dr,0) - NVL(gb.period_net_cr,0) ELSE 0 END) AS oil_lub_plant
+        FROM   APPS.GL_BALANCES gb
+        JOIN   APPS.GL_CODE_COMBINATIONS gcc ON gcc.code_combination_id = gb.code_combination_id
+        JOIN   APPS.GL_LEDGERS led           ON led.ledger_id = gb.ledger_id
+        JOIN   APPS.GL_PERIODS gp            ON gp.period_set_name = led.period_set_name
+                                            AND gp.period_name     = gb.period_name
+        WHERE  gb.ledger_id = 1001 AND gb.actual_flag = 'A' AND gb.currency_code = 'INR'
+          AND  gcc.segment4 IN ('000','001')
+          AND  gcc.segment5 IN ('611001','612002','612015','612016','612017')
+          AND  gp.start_date BETWEEN :p_from AND :p_to
+        GROUP BY gcc.segment3
+    ),
+    org_loc AS (
+        SELECT mp.organization_code AS plant_code, gcc.segment3 AS loc, ood.organization_name
+        FROM   APPS.MTL_PARAMETERS mp
+        JOIN   APPS.GL_CODE_COMBINATIONS gcc        ON gcc.code_combination_id = mp.material_account
+        JOIN   APPS.ORG_ORGANIZATION_DEFINITIONS ood ON ood.organization_id = mp.organization_id
+    ),
+    vol AS (
+        SELECT ol.loc,
+               SUM(CASE WHEN v.src = 'TRX' THEN v.qty ELSE 0 END) AS trx_cum,
+               SUM(CASE WHEN v.src = 'DB'  THEN v.qty ELSE 0 END) AS direct_batching_cum,
+               LISTAGG(DISTINCT v.plant_code, ',') WITHIN GROUP (ORDER BY v.plant_code) AS plant_codes
+        FROM (
+            SELECT 'TRX' AS src, h.PLANTNO AS plant_code, h.PRODUCED_QUANTITY AS qty
+            FROM   APPSREAD.RDC_BATCH_TRX_HEADERS h
+            WHERE  TO_DATE(h.PRODDATE, 'YYYY-MM-DD') BETWEEN :p_from AND :p_to
+              AND  h.PRODUCED_QUANTITY > 0
+            UNION ALL
+            SELECT 'DB' AS src, s.B_PLANTNO AS plant_code, s.B_PRODUCED_QUANTITY AS qty
+            FROM   APPS.XXRDC_IMPORTSO_DATA_STG s
+            WHERE  TO_DATE(s.B_PRODDATE, 'DD-MM-YYYY') BETWEEN :p_from AND :p_to
+              AND  s.B_PRODUCED_QUANTITY > 0
+        ) v
+        LEFT JOIN org_loc ol ON ol.plant_code = v.plant_code
+        GROUP BY ol.loc
+    )
+    SELECT NVL(c.loc, v.loc) AS gl_location_code,
+           (SELECT MIN(ol.organization_name) FROM org_loc ol WHERE ol.loc = NVL(c.loc, v.loc)) AS plant_name,
+           v.plant_codes,
+           ROUND(NVL(c.rm_plant,0) + NVL(c.oil_lub_plant,0), 2)      AS total_rm_cost,
+           ROUND(NVL(v.trx_cum,0) + NVL(v.direct_batching_cum,0), 2) AS erp_volume_cum
+    FROM cost c
+    FULL OUTER JOIN vol v ON v.loc = c.loc
+"""
+
+
+def _gl_period_ranges(cur, period_name: str) -> dict:
+    """
+    Date ranges for a GL period: PTD = the month itself, YTD = financial-year
+    start to month end, LY = the whole previous financial year. Read from
+    apps.gl_periods so the financial-year start is never hard-coded.
+    """
+    cur.execute(
+        """
+        SELECT p.start_date, p.end_date, p.year_start_date,
+               (SELECT MIN(start_date) FROM apps.gl_periods
+                 WHERE period_set_name = 'RDCACCCAL'
+                   AND year_start_date = ADD_MONTHS(p.year_start_date, -12)),
+               (SELECT MAX(end_date) FROM apps.gl_periods
+                 WHERE period_set_name = 'RDCACCCAL'
+                   AND year_start_date = ADD_MONTHS(p.year_start_date, -12))
+        FROM apps.gl_periods p
+        WHERE p.period_set_name = 'RDCACCCAL'
+          AND p.period_name = :p_month
+          AND p.adjustment_period_flag = 'N'
+        """,
+        {"p_month": period_name},
+    )
+    row = cur.fetchone()
+    if not row:
+        raise ValueError(f"No RDCACCCAL period found named '{period_name}'")
+    return {"ptd": (row[0], row[1]), "ytd": (row[2], row[1]), "ly": (row[3], row[4])}
+
+
+def _run_rm_cost_per_cum(cur, date_from, date_to) -> pd.DataFrame:
+    """Run _GL_RM_COST_PER_CUM_SQL for one range; returns one row per GL location."""
+    cur.execute(_GL_RM_COST_PER_CUM_SQL, {"p_from": date_from, "p_to": date_to})
+    df = pd.DataFrame(cur.fetchall(), columns=[d[0].lower() for d in cur.description])
+    df["total_rm_cost"] = pd.to_numeric(df["total_rm_cost"], errors="coerce").fillna(0.0)
+    df["erp_volume_cum"] = pd.to_numeric(df["erp_volume_cum"], errors="coerce").fillna(0.0)
+    return df
+
+
+def _cost_per_cum(cost, volume):
+    """Cost per cum rounded to 2 decimals; 0 when there is no volume."""
+    return round(cost / volume, 2) if volume else 0.0
+
+
 def fetch_gl_maintenance_cost(period_name: str = None) -> tuple:
     """
-    Run the GL-balances query for R&M (maintenance) cost per cum, PTD/YTD/LY,
-    by location. period_name is an Oracle RDCACCCAL period name like 'Jul-26';
-    if not given, it's resolved from today's date.
+    R&M (maintenance) cost per cum, PTD/YTD/LY, by location. period_name is an
+    Oracle RDCACCCAL period name like 'Jul-26'; if not given, it's resolved
+    from today's date. The same R&M-cost-per-cum query (_GL_RM_COST_PER_CUM_SQL)
+    is run once per range: PTD, YTD and last year.
 
     Returns:
         (DataFrame, warnings_list)
@@ -764,228 +864,67 @@ def fetch_gl_maintenance_cost(period_name: str = None) -> tuple:
     conn = oracledb.connect(user=cfg["user"], password=cfg["password"], dsn=_dsn(cfg))
     try:
         cur = conn.cursor()
-        sql = """
-            SELECT location_code, org_code, org_name,
-                   ptd_total_rm_cost, ptd_volume, ptd_rm_cost_per_cum,
-                   ytd_total_rm_cost, ytd_volume, ytd_rm_cost_per_cum,
-                   ly_total_rm_cost,  ly_volume,  ly_rm_cost_per_cum
-            FROM (
-                SELECT 1 AS sort_key,
-                       v.location_code, v.org_code, v.org_name,
-                       v.ptd_total_rm_cost, v.ptd_volume, v.ptd_rm_cost_per_cum,
-                       v.ytd_total_rm_cost, v.ytd_volume, v.ytd_rm_cost_per_cum,
-                       v.ly_total_rm_cost,  v.ly_volume,  v.ly_rm_cost_per_cum
-                FROM (
-                    SELECT
-                        c.s3 AS location_code,
-                        m.org_code,
-                        m.org_name,
-                        ROUND(c.ptd_rm + c.ptd_oil, 1) AS ptd_total_rm_cost,
-                        ROUND(c.ptd_vol, 1)            AS ptd_volume,
-                        ROUND(CASE WHEN c.ptd_vol = 0 THEN 0 ELSE (c.ptd_rm + c.ptd_oil) / c.ptd_vol END, 1) AS ptd_rm_cost_per_cum,
-                        ROUND(c.ytd_rm + c.ytd_oil, 1) AS ytd_total_rm_cost,
-                        ROUND(c.ytd_vol, 1)            AS ytd_volume,
-                        ROUND(CASE WHEN c.ytd_vol = 0 THEN 0 ELSE (c.ytd_rm + c.ytd_oil) / c.ytd_vol END, 1) AS ytd_rm_cost_per_cum,
-                        ROUND(c.ly_rm + c.ly_oil, 1)   AS ly_total_rm_cost,
-                        ROUND(c.ly_vol, 1)             AS ly_volume,
-                        ROUND(CASE WHEN c.ly_vol = 0 THEN 0 ELSE (c.ly_rm + c.ly_oil) / c.ly_vol END, 1) AS ly_rm_cost_per_cum
-                    FROM (
-                        SELECT gcc.segment3 AS s3,
-                               SUM(CASE WHEN gp.start_date BETWEEN w.ptd_s AND w.ptd_e AND gb.currency_code='INR'
-                                         AND ((gcc.segment5='601032' AND gcc.segment4='000')
-                                           OR (gcc.segment5='611001' AND gcc.segment4 IN ('000','001','005'))
-                                           OR (gcc.segment5 IN ('611002','611003','611005','611006') AND gcc.segment4 IN ('000','001'))
-                                           OR (gcc.segment5='611007' AND gcc.segment4='001'))
-                                    THEN NVL(gb.period_net_dr,0)-NVL(gb.period_net_cr,0) ELSE 0 END) AS ptd_rm,
-                               SUM(CASE WHEN gp.start_date BETWEEN w.ptd_s AND w.ptd_e AND gb.currency_code='INR'
-                                         AND gcc.segment5 IN ('612002','612015','612016','612017','612019','612020','612022')
-                                         AND gcc.segment4 IN ('000','001')
-                                    THEN NVL(gb.period_net_dr,0)-NVL(gb.period_net_cr,0) ELSE 0 END) AS ptd_oil,
-                               SUM(CASE WHEN gp.start_date BETWEEN w.ptd_s AND w.ptd_e AND gb.currency_code='STAT'
-                                         AND gcc.segment5='501001' AND gcc.segment4 IN ('000','001')
-                                    THEN NVL(gb.period_net_dr,0)-NVL(gb.period_net_cr,0) ELSE 0 END) AS ptd_vol,
-                               SUM(CASE WHEN gp.start_date BETWEEN w.ytd_s AND w.ytd_e AND gb.currency_code='INR'
-                                         AND ((gcc.segment5='601032' AND gcc.segment4='000')
-                                           OR (gcc.segment5='611001' AND gcc.segment4 IN ('000','001','005'))
-                                           OR (gcc.segment5 IN ('611002','611003','611005','611006') AND gcc.segment4 IN ('000','001'))
-                                           OR (gcc.segment5='611007' AND gcc.segment4='001'))
-                                    THEN NVL(gb.period_net_dr,0)-NVL(gb.period_net_cr,0) ELSE 0 END) AS ytd_rm,
-                               SUM(CASE WHEN gp.start_date BETWEEN w.ytd_s AND w.ytd_e AND gb.currency_code='INR'
-                                         AND gcc.segment5 IN ('612002','612015','612016','612017','612019','612020','612022')
-                                         AND gcc.segment4 IN ('000','001')
-                                    THEN NVL(gb.period_net_dr,0)-NVL(gb.period_net_cr,0) ELSE 0 END) AS ytd_oil,
-                               SUM(CASE WHEN gp.start_date BETWEEN w.ytd_s AND w.ytd_e AND gb.currency_code='STAT'
-                                         AND gcc.segment5='501001' AND gcc.segment4 IN ('000','001')
-                                    THEN NVL(gb.period_net_dr,0)-NVL(gb.period_net_cr,0) ELSE 0 END) AS ytd_vol,
-                               SUM(CASE WHEN gp.start_date BETWEEN w.ly_s AND w.ly_e AND gb.currency_code='INR'
-                                         AND ((gcc.segment5='601032' AND gcc.segment4='000')
-                                           OR (gcc.segment5='611001' AND gcc.segment4 IN ('000','001','005'))
-                                           OR (gcc.segment5 IN ('611002','611003','611005','611006') AND gcc.segment4 IN ('000','001'))
-                                           OR (gcc.segment5='611007' AND gcc.segment4='001'))
-                                    THEN NVL(gb.period_net_dr,0)-NVL(gb.period_net_cr,0) ELSE 0 END) AS ly_rm,
-                               SUM(CASE WHEN gp.start_date BETWEEN w.ly_s AND w.ly_e AND gb.currency_code='INR'
-                                         AND gcc.segment5 IN ('612002','612015','612016','612017','612019','612020','612022')
-                                         AND gcc.segment4 IN ('000','001')
-                                    THEN NVL(gb.period_net_dr,0)-NVL(gb.period_net_cr,0) ELSE 0 END) AS ly_oil,
-                               SUM(CASE WHEN gp.start_date BETWEEN w.ly_s AND w.ly_e AND gb.currency_code='STAT'
-                                         AND gcc.segment5='501001' AND gcc.segment4 IN ('000','001')
-                                    THEN NVL(gb.period_net_dr,0)-NVL(gb.period_net_cr,0) ELSE 0 END) AS ly_vol
-                        FROM apps.gl_balances gb
-                        JOIN apps.gl_code_combinations gcc ON gcc.code_combination_id = gb.code_combination_id
-                        JOIN apps.gl_periods gp ON gp.period_set_name = 'RDCACCCAL'
-                                               AND gp.period_name     = gb.period_name
-                        CROSS JOIN (
-                            SELECT p.start_date AS ptd_s, p.end_date AS ptd_e,
-                                   p.year_start_date AS ytd_s, p.end_date AS ytd_e,
-                                   ly.ly_s, ly.ly_e
-                            FROM apps.gl_periods p,
-                                 (SELECT MIN(start_date) AS ly_s, MAX(end_date) AS ly_e
-                                    FROM apps.gl_periods
-                                   WHERE period_set_name = 'RDCACCCAL'
-                                     AND year_start_date = ADD_MONTHS(
-                                           (SELECT year_start_date FROM apps.gl_periods
-                                             WHERE period_set_name = 'RDCACCCAL'
-                                               AND period_name = :p_month
-                                               AND adjustment_period_flag = 'N'), -12)) ly
-                            WHERE p.period_set_name = 'RDCACCCAL'
-                              AND p.period_name = :p_month
-                              AND p.adjustment_period_flag = 'N'
-                        ) w
-                        WHERE gb.actual_flag = 'A'
-                          AND gb.ledger_id   = 1001
-                          AND gb.currency_code IN ('INR','STAT')
-                          AND gp.start_date >= w.ly_s
-                          AND gp.start_date <= w.ytd_e
-                        GROUP BY gcc.segment3
-                    ) c
-                    LEFT JOIN (
-                        SELECT gcc2.segment3 AS loc_code,
-                               MIN(ood.organization_code) AS org_code,
-                               MIN(ood.organization_name) AS org_name
-                        FROM apps.org_organization_definitions ood
-                        JOIN apps.mtl_parameters mp   ON mp.organization_id = ood.organization_id
-                        JOIN apps.gl_code_combinations gcc2 ON gcc2.code_combination_id = mp.material_account
-                        GROUP BY gcc2.segment3
-                    ) m ON m.loc_code = c.s3
-                    WHERE c.ptd_vol <> 0
-                ) v
-                UNION ALL
-                SELECT 2 AS sort_key,
-                       'ALL' AS location_code, 'ALL' AS org_code, 'PAN INDIA LEVEL' AS org_name,
-                       ROUND(SUM(v2.ptd_total_rm_cost),1), ROUND(SUM(v2.ptd_volume),1),
-                       ROUND(CASE WHEN SUM(v2.ptd_volume)=0 THEN 0 ELSE SUM(v2.ptd_total_rm_cost)/SUM(v2.ptd_volume) END,1),
-                       ROUND(SUM(v2.ytd_total_rm_cost),1), ROUND(SUM(v2.ytd_volume),1),
-                       ROUND(CASE WHEN SUM(v2.ytd_volume)=0 THEN 0 ELSE SUM(v2.ytd_total_rm_cost)/SUM(v2.ytd_volume) END,1),
-                       ROUND(SUM(v2.ly_total_rm_cost),1),  ROUND(SUM(v2.ly_volume),1),
-                       ROUND(CASE WHEN SUM(v2.ly_volume)=0 THEN 0 ELSE SUM(v2.ly_total_rm_cost)/SUM(v2.ly_volume) END,1)
-                FROM (
-                    SELECT
-                        ROUND(c.ptd_rm + c.ptd_oil, 1) AS ptd_total_rm_cost, c.ptd_vol AS ptd_volume,
-                        ROUND(c.ytd_rm + c.ytd_oil, 1) AS ytd_total_rm_cost, c.ytd_vol AS ytd_volume,
-                        ROUND(c.ly_rm + c.ly_oil, 1)   AS ly_total_rm_cost,  c.ly_vol  AS ly_volume
-                    FROM (
-                        SELECT gcc.segment3 AS s3,
-                               SUM(CASE WHEN gp.start_date BETWEEN w.ptd_s AND w.ptd_e AND gb.currency_code='INR'
-                                         AND ((gcc.segment5='601032' AND gcc.segment4='000')
-                                           OR (gcc.segment5='611001' AND gcc.segment4 IN ('000','001','005'))
-                                           OR (gcc.segment5 IN ('611002','611003','611005','611006') AND gcc.segment4 IN ('000','001'))
-                                           OR (gcc.segment5='611007' AND gcc.segment4='001'))
-                                    THEN NVL(gb.period_net_dr,0)-NVL(gb.period_net_cr,0) ELSE 0 END) AS ptd_rm,
-                               SUM(CASE WHEN gp.start_date BETWEEN w.ptd_s AND w.ptd_e AND gb.currency_code='INR'
-                                         AND gcc.segment5 IN ('612002','612015','612016','612017','612019','612020','612022')
-                                         AND gcc.segment4 IN ('000','001')
-                                    THEN NVL(gb.period_net_dr,0)-NVL(gb.period_net_cr,0) ELSE 0 END) AS ptd_oil,
-                               SUM(CASE WHEN gp.start_date BETWEEN w.ptd_s AND w.ptd_e AND gb.currency_code='STAT'
-                                         AND gcc.segment5='501001' AND gcc.segment4 IN ('000','001')
-                                    THEN NVL(gb.period_net_dr,0)-NVL(gb.period_net_cr,0) ELSE 0 END) AS ptd_vol,
-                               SUM(CASE WHEN gp.start_date BETWEEN w.ytd_s AND w.ytd_e AND gb.currency_code='INR'
-                                         AND ((gcc.segment5='601032' AND gcc.segment4='000')
-                                           OR (gcc.segment5='611001' AND gcc.segment4 IN ('000','001','005'))
-                                           OR (gcc.segment5 IN ('611002','611003','611005','611006') AND gcc.segment4 IN ('000','001'))
-                                           OR (gcc.segment5='611007' AND gcc.segment4='001'))
-                                    THEN NVL(gb.period_net_dr,0)-NVL(gb.period_net_cr,0) ELSE 0 END) AS ytd_rm,
-                               SUM(CASE WHEN gp.start_date BETWEEN w.ytd_s AND w.ytd_e AND gb.currency_code='INR'
-                                         AND gcc.segment5 IN ('612002','612015','612016','612017','612019','612020','612022')
-                                         AND gcc.segment4 IN ('000','001')
-                                    THEN NVL(gb.period_net_dr,0)-NVL(gb.period_net_cr,0) ELSE 0 END) AS ytd_oil,
-                               SUM(CASE WHEN gp.start_date BETWEEN w.ytd_s AND w.ytd_e AND gb.currency_code='STAT'
-                                         AND gcc.segment5='501001' AND gcc.segment4 IN ('000','001')
-                                    THEN NVL(gb.period_net_dr,0)-NVL(gb.period_net_cr,0) ELSE 0 END) AS ytd_vol,
-                               SUM(CASE WHEN gp.start_date BETWEEN w.ly_s AND w.ly_e AND gb.currency_code='INR'
-                                         AND ((gcc.segment5='601032' AND gcc.segment4='000')
-                                           OR (gcc.segment5='611001' AND gcc.segment4 IN ('000','001','005'))
-                                           OR (gcc.segment5 IN ('611002','611003','611005','611006') AND gcc.segment4 IN ('000','001'))
-                                           OR (gcc.segment5='611007' AND gcc.segment4='001'))
-                                    THEN NVL(gb.period_net_dr,0)-NVL(gb.period_net_cr,0) ELSE 0 END) AS ly_rm,
-                               SUM(CASE WHEN gp.start_date BETWEEN w.ly_s AND w.ly_e AND gb.currency_code='INR'
-                                         AND gcc.segment5 IN ('612002','612015','612016','612017','612019','612020','612022')
-                                         AND gcc.segment4 IN ('000','001')
-                                    THEN NVL(gb.period_net_dr,0)-NVL(gb.period_net_cr,0) ELSE 0 END) AS ly_oil,
-                               SUM(CASE WHEN gp.start_date BETWEEN w.ly_s AND w.ly_e AND gb.currency_code='STAT'
-                                         AND gcc.segment5='501001' AND gcc.segment4 IN ('000','001')
-                                    THEN NVL(gb.period_net_dr,0)-NVL(gb.period_net_cr,0) ELSE 0 END) AS ly_vol
-                        FROM apps.gl_balances gb
-                        JOIN apps.gl_code_combinations gcc ON gcc.code_combination_id = gb.code_combination_id
-                        JOIN apps.gl_periods gp ON gp.period_set_name = 'RDCACCCAL'
-                                               AND gp.period_name     = gb.period_name
-                        CROSS JOIN (
-                            SELECT p.start_date AS ptd_s, p.end_date AS ptd_e,
-                                   p.year_start_date AS ytd_s, p.end_date AS ytd_e,
-                                   ly.ly_s, ly.ly_e
-                            FROM apps.gl_periods p,
-                                 (SELECT MIN(start_date) AS ly_s, MAX(end_date) AS ly_e
-                                    FROM apps.gl_periods
-                                   WHERE period_set_name = 'RDCACCCAL'
-                                     AND year_start_date = ADD_MONTHS(
-                                           (SELECT year_start_date FROM apps.gl_periods
-                                             WHERE period_set_name = 'RDCACCCAL'
-                                               AND period_name = :p_month
-                                               AND adjustment_period_flag = 'N'), -12)) ly
-                            WHERE p.period_set_name = 'RDCACCCAL'
-                              AND p.period_name = :p_month
-                              AND p.adjustment_period_flag = 'N'
-                        ) w
-                        WHERE gb.actual_flag = 'A'
-                          AND gb.ledger_id   = 1001
-                          AND gb.currency_code IN ('INR','STAT')
-                          AND gp.start_date >= w.ly_s
-                          AND gp.start_date <= w.ytd_e
-                        GROUP BY gcc.segment3
-                    ) c
-                    WHERE c.ptd_vol <> 0
-                ) v2
-            )
-            ORDER BY sort_key, ytd_rm_cost_per_cum DESC NULLS LAST
-        """
-        cur.execute(sql, {"p_month": period_name})
-        rows = cur.fetchall()
-        col_names = [d[0].lower() for d in cur.description]
-
-        if not rows:
-            warnings.append(f"No GL maintenance cost rows found for period '{period_name}'.")
-            return pd.DataFrame(columns=col_names), warnings
-
-        df = pd.DataFrame(rows, columns=col_names)
-        # Drop the pan-India total row — the app aggregates its own totals.
-        df = df[df["location_code"] != "ALL"].reset_index(drop=True)
-        for num_col in ["ptd_total_rm_cost", "ptd_volume", "ptd_rm_cost_per_cum",
-                        "ytd_total_rm_cost", "ytd_volume", "ytd_rm_cost_per_cum",
-                        "ly_total_rm_cost", "ly_volume", "ly_rm_cost_per_cum"]:
-            df[num_col] = pd.to_numeric(df[num_col], errors="coerce")
-
-        # Business rule: a negative YTD cost/cum is treated as unusable —
-        # fall back to the PTD cost/cum for that plant. This drives both the
-        # saved ytd_rm_cost_per_cum and the SPE threshold (via ytd_maintenance_cost).
-        _neg_ytd = df["ytd_rm_cost_per_cum"] < 0
-        if _neg_ytd.any():
-            warnings.append(f"{int(_neg_ytd.sum())} plant(s) had negative YTD cost/cum — "
-                            f"used PTD cost/cum instead.")
-            df.loc[_neg_ytd, "ytd_rm_cost_per_cum"] = df.loc[_neg_ytd, "ptd_rm_cost_per_cum"]
-
-        df["location_code"] = df["location_code"].astype(str).str.strip()
-        df["org_code"] = df["org_code"].fillna("").astype(str).str.strip()
-        df["org_name"] = df["org_name"].fillna("").astype(str).str.strip()
-
-        return df, warnings
+        ranges = _gl_period_ranges(cur, period_name)
+        ptd = _run_rm_cost_per_cum(cur, *ranges["ptd"])
+        ytd = _run_rm_cost_per_cum(cur, *ranges["ytd"])
+        ly  = _run_rm_cost_per_cum(cur, *ranges["ly"])
     finally:
         conn.close()
+
+    out_cols = ["location_code", "org_code", "org_name",
+                "ptd_total_rm_cost", "ptd_volume", "ptd_rm_cost_per_cum",
+                "ytd_total_rm_cost", "ytd_volume", "ytd_rm_cost_per_cum",
+                "ly_total_rm_cost",  "ly_volume",  "ly_rm_cost_per_cum"]
+
+    # Only plants that produced in the month; rows with no GL location can't be
+    # keyed to a plant, so they are skipped.
+    ptd = ptd[(ptd["erp_volume_cum"] > 0) & ptd["gl_location_code"].notna()]
+    if ptd.empty:
+        warnings.append(f"No GL maintenance cost rows found for period '{period_name}'.")
+        return pd.DataFrame(columns=out_cols), warnings
+
+    ytd_by_loc = ytd.dropna(subset=["gl_location_code"]).set_index("gl_location_code")
+    ly_by_loc  = ly.dropna(subset=["gl_location_code"]).set_index("gl_location_code")
+
+    rows = []
+    for _, p in ptd.iterrows():
+        loc = str(p["gl_location_code"]).strip()
+        ytd_cost, ytd_vol = 0.0, 0.0
+        if loc in ytd_by_loc.index:
+            ytd_cost = ytd_by_loc.at[loc, "total_rm_cost"]
+            ytd_vol  = ytd_by_loc.at[loc, "erp_volume_cum"]
+        ly_cost, ly_vol = 0.0, 0.0
+        if loc in ly_by_loc.index:
+            ly_cost = ly_by_loc.at[loc, "total_rm_cost"]
+            ly_vol  = ly_by_loc.at[loc, "erp_volume_cum"]
+        # A location can host several plants ("KL6,KL7"); employees are keyed on
+        # one org code, so take the first (same as the old MIN(org_code)).
+        org_code = str(p["plant_codes"] or "").split(",")[0].strip()
+        rows.append({
+            "location_code":       loc,
+            "org_code":            org_code,
+            "org_name":            str(p["plant_name"] or "").strip(),
+            "ptd_total_rm_cost":   float(p["total_rm_cost"]),
+            "ptd_volume":          float(p["erp_volume_cum"]),
+            "ptd_rm_cost_per_cum": _cost_per_cum(p["total_rm_cost"], p["erp_volume_cum"]),
+            "ytd_total_rm_cost":   float(ytd_cost),
+            "ytd_volume":          float(ytd_vol),
+            "ytd_rm_cost_per_cum": _cost_per_cum(ytd_cost, ytd_vol),
+            "ly_total_rm_cost":    float(ly_cost),
+            "ly_volume":           float(ly_vol),
+            "ly_rm_cost_per_cum":  _cost_per_cum(ly_cost, ly_vol),
+        })
+
+    df = pd.DataFrame(rows, columns=out_cols)
+    df = df.sort_values("ytd_rm_cost_per_cum", ascending=False).reset_index(drop=True)
+
+    # Business rule: a negative YTD cost/cum is treated as unusable —
+    # fall back to the PTD cost/cum for that plant. This drives both the
+    # saved ytd_rm_cost_per_cum and the SPE threshold (via ytd_maintenance_cost).
+    _neg_ytd = df["ytd_rm_cost_per_cum"] < 0
+    if _neg_ytd.any():
+        warnings.append(f"{int(_neg_ytd.sum())} plant(s) had negative YTD cost/cum — "
+                        f"used PTD cost/cum instead.")
+        df.loc[_neg_ytd, "ytd_rm_cost_per_cum"] = df.loc[_neg_ytd, "ptd_rm_cost_per_cum"]
+
+    return df, warnings
