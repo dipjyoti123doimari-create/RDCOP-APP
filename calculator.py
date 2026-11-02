@@ -305,18 +305,21 @@ def _highest_volume_plants(activity: pd.DataFrame) -> dict:
 
 def _find_overused_ids(activity: pd.DataFrame) -> dict:
     """
-    Find IDs used continuously for MORE than config.MAX_ID_CONTINUOUS_HOURS.
+    Find IDs that ran a plant for MORE than config.MAX_ID_CONTINUOUS_HOURS with
+    no other ID batching in between.
 
-    An ID's batches are chained in time order; the chain breaks when the next
-    batch starts more than config.ID_CONTINUOUS_GAP_HOURS after the previous
-    one ended. A chain whose first start -> last end exceeds the limit is
-    flagged, and every plant the ID batched at during that chain is returned.
+    For each plant all batches are put in time order; a run is a stretch of
+    batches by the SAME ID where no other ID appears in between, and where the
+    plant is never idle for more than config.ID_CONTINUOUS_GAP_HOURS (without
+    that, a one-ID plant that stops every night would look like one endless
+    run). If a run's first start -> last end is longer than the limit, that ID
+    and plant are flagged.
 
     Returns {plant_code: [(employee_code, hours), ...]}.
     """
     if activity.empty:
         return {}
-    a = activity.copy()
+    a = activity[activity["plant_code"] != ""].copy()
     a["start"] = pd.to_datetime(a["batch_start"], errors="coerce")
     a = a.dropna(subset=["start"])
     if a.empty:
@@ -333,27 +336,19 @@ def _find_overused_ids(activity: pd.DataFrame) -> dict:
     gap   = pd.Timedelta(hours=config.ID_CONTINUOUS_GAP_HOURS)
     flagged = {}   # plant -> {employee_code: longest_hours}
 
-    def _close(emp, c_start, c_end, plants):
-        if c_end - c_start > limit:
-            hrs = (c_end - c_start).total_seconds() / 3600.0
-            for pl in plants:
-                prev = flagged.setdefault(pl, {}).get(emp, 0.0)
-                flagged[pl][emp] = max(prev, hrs)
-
-    for emp, g in a.sort_values("start").groupby("created_by"):
-        c_start = c_end = None
-        plants = set()
-        for r in g.itertuples():
-            if c_start is not None and r.start - c_end > gap:
-                _close(emp, c_start, c_end, plants)
-                c_start = None
-            if c_start is None:
-                c_start, c_end, plants = r.start, r.end, set()
-            c_end = max(c_end, r.end)
-            if r.plant_code:
-                plants.add(r.plant_code)
-        if c_start is not None:
-            _close(emp, c_start, c_end, plants)
+    for plant, g in a.sort_values("start").groupby("plant_code"):
+        # a new run starts when the ID changes from the previous batch, or the
+        # plant sat idle for longer than the allowed gap before this batch
+        idle = g["start"] - g["end"].cummax().shift()
+        new_run = (g["created_by"] != g["created_by"].shift()) | (idle > gap)
+        g = g.assign(run=new_run.cumsum())
+        runs = g.groupby("run").agg(emp=("created_by", "first"),
+                                    first=("start", "min"), last=("end", "max"))
+        for r in runs.itertuples():
+            if r.last - r.first > limit:
+                hrs = (r.last - r.first).total_seconds() / 3600.0
+                prev = flagged.setdefault(plant, {}).get(r.emp, 0.0)
+                flagged[plant][r.emp] = max(prev, hrs)
 
     return {pl: sorted(ids.items()) for pl, ids in flagged.items()}
 
