@@ -44,6 +44,56 @@ _DEFAULT_INSTANTCLIENT = r"D:\AI Project\Incentive Calculator\instantclient"
 _thick_initialized = False
 
 
+# Direct Batching staging table. Its volume is ADDED to the ERP batching table
+# (_TABLE) everywhere volume is counted. The two tables never share a batch, so
+# there is no double counting. Column map (same meaning as the ERP table):
+#   B_PRODDATE (DD-MM-YYYY text) -> PRODDATE     O_CREATED_BY      -> CREATED_BY
+#   B_PLANTNO                    -> PLANTNO      B_BATCHCODE       -> BATCHCODE
+#   B_PRODUCED_QUANTITY          -> PRODUCED_QUANTITY
+#   B_TIMETAKEN                  -> TIMETAKEN    B_ITEMNAME        -> ITEMNAME
+#   B_BATCH_START_TIME / B_BATCH_END_TIME (DD-MM-YYYY HH24:MI:SS text)
+# It has no STATUS column, so the ERP status filter does not apply to it.
+_DIRECT_BATCHING_TABLE = "APPS.XXRDC_IMPORTSO_DATA_STG"
+
+_DB_COLS = ["production_date", "created_by", "plant_code", "batch_ref",
+            "quantity", "time_taken_min", "batch_start", "batch_end", "item_name"]
+
+
+def _fetch_direct_batching(cur, from_date, to_date) -> pd.DataFrame:
+    """
+    Direct Batching rows for the date range, in the shared column layout
+    _DB_COLS (production_date as 'YYYY-MM-DD', times as 'YYYY-MM-DD HH:MM:SS').
+    Callers rename/filter these exactly like the ERP rows.
+    """
+    cur.execute(f"""
+        SELECT TO_CHAR(TO_DATE(B_PRODDATE, 'DD-MM-YYYY'), 'YYYY-MM-DD') AS production_date,
+               O_CREATED_BY            AS created_by,
+               B_PLANTNO               AS plant_code,
+               B_BATCHCODE             AS batch_ref,
+               B_PRODUCED_QUANTITY     AS quantity,
+               B_TIMETAKEN             AS time_taken_min,
+               B_BATCH_START_TIME      AS batch_start,
+               B_BATCH_END_TIME        AS batch_end,
+               B_ITEMNAME              AS item_name
+        FROM   {_DIRECT_BATCHING_TABLE}
+        WHERE  TO_DATE(B_PRODDATE, 'DD-MM-YYYY')
+               BETWEEN TO_DATE(:from_date, 'YYYY-MM-DD') AND TO_DATE(:to_date, 'YYYY-MM-DD')
+    """, {"from_date": str(from_date), "to_date": str(to_date)})
+    df = pd.DataFrame(cur.fetchall(), columns=_DB_COLS)
+    df["batch_start"] = _clean_ts(df["batch_start"], "%d-%m-%Y %H:%M:%S")
+    df["batch_end"]   = _clean_ts(df["batch_end"],   "%d-%m-%Y %H:%M:%S")
+    return df
+
+
+def _clean_ts(series, fmt=None):
+    """Batch start/end text -> 'YYYY-MM-DD HH:MM:SS' (None when missing/unparseable)."""
+    # Oracle holds these as free text: 'YYYY-MM-DD HH:MM', 'YYYY-MM-DD HH:MM:SS' and
+    # even 'YYYY-MM-DD  HH:MM:SS' (double space) all occur, so tidy spaces first.
+    txt = series.astype("string").str.strip().str.replace(r"\s+", " ", regex=True)
+    ts = pd.to_datetime(txt, format=fmt or "mixed", errors="coerce")
+    return ts.dt.strftime("%Y-%m-%d %H:%M:%S").astype(object).where(ts.notna(), None)
+
+
 def get_oracle_config() -> dict:
     """Read Oracle connection settings from app_settings (single DB call)."""
     s = database.get_all_settings()
@@ -168,16 +218,21 @@ def fetch_backend_data(from_date, to_date) -> tuple:
         cur.execute(sql, params)
         rows = cur.fetchall()
         cols = [d[0].lower() for d in cur.description]
+        trx_df = pd.DataFrame(rows, columns=cols).rename(columns={"prod_date": "date"})
 
-        if not rows:
+        # Volume also comes from the Direct Batching table.
+        db_df = _fetch_direct_batching(cur, fd, td).rename(
+            columns={"production_date": "date", "time_taken_min": "time_taken"}
+        )[["created_by", "date", "quantity", "time_taken"]]
+        df = pd.concat([trx_df, db_df], ignore_index=True)
+
+        if df.empty:
             warnings.append(
                 f"No rows found in Oracle for {from_date} → {to_date}"
                 + (f" with STATUS = '{cfg['status_filter']}'." if cfg["status_filter"] else ".")
             )
             return pd.DataFrame(columns=["created_by", "date", "quantity"]), warnings
 
-        df = pd.DataFrame(rows, columns=cols)
-        df = df.rename(columns={"prod_date": "date"})
         df["quantity"]   = pd.to_numeric(df["quantity"],   errors="coerce").fillna(0)
         df["time_taken"] = pd.to_numeric(df["time_taken"], errors="coerce").fillna(0)
 
@@ -334,12 +389,20 @@ def fetch_tp_data(from_date, to_date) -> tuple:
 
         rows = cur.fetchall()
         col_names = [d[0].lower() for d in cur.description]
+        trx_df = pd.DataFrame(rows, columns=col_names)
 
-        if not rows:
+        # Volume also comes from the Direct Batching table (grade = item name,
+        # since it has no master-header grade lookup).
+        db_df = _fetch_direct_batching(cur, fd, td).rename(
+            columns={"plant_code": "plant_col", "item_name": "grade_desc"}
+        )[["production_date", "plant_col", "batch_ref", "quantity",
+           "time_taken_min", "grade_desc"]]
+        df = pd.concat([trx_df, db_df], ignore_index=True)
+
+        if df.empty:
             warnings.append(f"No rows found in Oracle for {from_date} → {to_date}.")
             return pd.DataFrame(columns=["production_date","plant_col","batch_ref","quantity","time_taken_min","grade_desc"]), warnings
 
-        df = pd.DataFrame(rows, columns=col_names)
         df["quantity"]      = pd.to_numeric(df["quantity"],      errors="coerce").fillna(0)
         df["time_taken_min"] = pd.to_numeric(df["time_taken_min"], errors="coerce").fillna(0)
         if "grade_desc" not in df.columns:
@@ -397,12 +460,19 @@ def fetch_btrtp_data(from_date, to_date) -> tuple:
         cur.execute(sql, params)
         rows = cur.fetchall()
         col_names = [d[0].lower() for d in cur.description]
+        trx_df = pd.DataFrame(rows, columns=col_names)
 
-        if not rows:
+        # Volume also comes from the Direct Batching table.
+        db_df = _fetch_direct_batching(cur, params["from_date"], params["to_date"]).rename(
+            columns={"created_by": "batcher_id", "plant_code": "plant_col"}
+        )[["production_date", "batcher_id", "plant_col", "batch_ref",
+           "quantity", "time_taken_min"]]
+        df = pd.concat([trx_df, db_df], ignore_index=True)
+
+        if df.empty:
             warnings.append(f"No rows found in Oracle for {from_date} → {to_date}.")
             return pd.DataFrame(columns=["production_date","batcher_id","plant_col","batch_ref","quantity","time_taken_min"]), warnings
 
-        df = pd.DataFrame(rows, columns=col_names)
         df["quantity"]       = pd.to_numeric(df["quantity"],       errors="coerce").fillna(0)
         df["time_taken_min"] = pd.to_numeric(df["time_taken_min"], errors="coerce").fillna(0)
 
@@ -452,15 +522,20 @@ def fetch_oracle_raw_data(from_date, to_date) -> tuple:
     I&D uses: created_by, production_date, quantity, time_taken_min
     TP  uses: plant_code, batch_ref, production_date, quantity, time_taken_min
     BTRTP uses: all of the above together
+    The ID-overuse rule uses: batch_start, batch_end
+
+    Volume = ERP batching table + Direct Batching table (see _DIRECT_BATCHING_TABLE).
 
     Returns (DataFrame, warnings_list).
     DataFrame columns: production_date, created_by, plant_code, batch_ref,
-                       quantity, time_taken_min
+                       quantity, time_taken_min, batch_start, batch_end
     """
     cfg  = get_oracle_config()
     cols = get_tp_oracle_cols()
     batcher_col = (database.get_module_setting("btrtp", "oracle_batcher_col", "CREATED_BY") or "CREATED_BY").strip()
     warnings = []
+    out_cols = ["production_date", "created_by", "plant_code", "batch_ref",
+                "quantity", "time_taken_min", "batch_start", "batch_end"]
 
     _init_thick(cfg["instantclient"])
     conn = oracledb.connect(user=cfg["user"], password=cfg["password"], dsn=_dsn(cfg))
@@ -480,7 +555,9 @@ def fetch_oracle_raw_data(from_date, to_date) -> tuple:
                 {cols['plant']}       AS plant_code,
                 {cols['batch']}       AS batch_ref,
                 PRODUCED_QUANTITY     AS quantity,
-                {cols['time']}        AS time_taken_min
+                {cols['time']}        AS time_taken_min,
+                BATCH_START_TIME      AS batch_start,
+                BATCH_END_TIME        AS batch_end
             FROM {_TABLE}
             WHERE PRODDATE >= :from_date
               AND PRODDATE <= :to_date
@@ -488,15 +565,18 @@ def fetch_oracle_raw_data(from_date, to_date) -> tuple:
             ORDER BY PRODDATE, {batcher_col}
         """
         cur.execute(sql, params)
-        rows = cur.fetchall()
-        col_names = [d[0].lower() for d in cur.description]
+        trx_df = pd.DataFrame(cur.fetchall(), columns=[d[0].lower() for d in cur.description])
+        trx_df["batch_start"] = _clean_ts(trx_df["batch_start"])
+        trx_df["batch_end"]   = _clean_ts(trx_df["batch_end"])
 
-        if not rows:
+        # Volume also comes from the Direct Batching table.
+        db_df = _fetch_direct_batching(cur, fd, td)[out_cols]
+        df = pd.concat([trx_df, db_df], ignore_index=True)
+
+        if df.empty:
             warnings.append(f"No rows found in Oracle for {from_date} → {to_date}.")
-            return pd.DataFrame(columns=["production_date","created_by","plant_code",
-                                         "batch_ref","quantity","time_taken_min"]), warnings
+            return pd.DataFrame(columns=out_cols), warnings
 
-        df = pd.DataFrame(rows, columns=col_names)
         df["quantity"]       = pd.to_numeric(df["quantity"],       errors="coerce").fillna(0)
         df["time_taken_min"] = pd.to_numeric(df["time_taken_min"], errors="coerce").fillna(0)
 
@@ -544,6 +624,8 @@ def save_oracle_raw_data(df: pd.DataFrame, replace: bool = True) -> int:
             "batch_ref":       str(row.get("batch_ref", "") or ""),
             "quantity":        float(row["quantity"]),
             "time_taken_min":  float(row["time_taken_min"]),
+            "batch_start":     None if pd.isna(row.get("batch_start")) else str(row["batch_start"]),
+            "batch_end":       None if pd.isna(row.get("batch_end")) else str(row["batch_end"]),
             "fetched_at":      now,
         })
     if replace and rows:
@@ -611,12 +693,17 @@ def fetch_dual_plant_data(from_date, to_date) -> tuple:
         cur.execute(sql, params)
         rows = cur.fetchall()
         col_names = [d[0].lower() for d in cur.description]
+        trx_df = pd.DataFrame(rows, columns=col_names)
 
-        if not rows:
+        # Volume also comes from the Direct Batching table.
+        db_df = _fetch_direct_batching(cur, fd, td)[
+            ["production_date", "plant_code", "batch_ref", "quantity"]]
+        df = pd.concat([trx_df, db_df], ignore_index=True)
+
+        if df.empty:
             warnings.append(f"No rows found for dual-plant report {from_date} to {to_date}.")
             return pd.DataFrame(columns=["production_date","plant_code","batch_ref","quantity"]), warnings
 
-        df = pd.DataFrame(rows, columns=col_names)
         df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0)
         df["batch_ref"] = df["batch_ref"].fillna("").astype(str).str.strip()
         df["plant_code"] = df["plant_code"].fillna("").astype(str).str.strip()
@@ -871,7 +958,7 @@ def fetch_gl_maintenance_cost(period_name: str = None) -> tuple:
     finally:
         conn.close()
 
-    out_cols = ["location_code", "org_code", "org_name",
+    out_cols = ["location_code", "org_code", "org_name", "plant_codes",
                 "ptd_total_rm_cost", "ptd_volume", "ptd_rm_cost_per_cum",
                 "ytd_total_rm_cost", "ytd_volume", "ytd_rm_cost_per_cum",
                 "ly_total_rm_cost",  "ly_volume",  "ly_rm_cost_per_cum"]
@@ -904,6 +991,9 @@ def fetch_gl_maintenance_cost(period_name: str = None) -> tuple:
             "location_code":       loc,
             "org_code":            org_code,
             "org_name":            str(p["plant_name"] or "").strip(),
+            # every plant code of this GL location ("KL6,KL7") so a batcher's
+            # highest-volume plant can be matched to its location's cost
+            "plant_codes":         ",".join(c.strip() for c in str(p["plant_codes"] or "").split(",") if c.strip()),
             "ptd_total_rm_cost":   float(p["total_rm_cost"]),
             "ptd_volume":          float(p["erp_volume_cum"]),
             "ptd_rm_cost_per_cum": _cost_per_cum(p["total_rm_cost"], p["erp_volume_cum"]),

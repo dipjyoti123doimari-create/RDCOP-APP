@@ -102,6 +102,13 @@ CATEGORIES = [
 INCENTIVE_MIN_QUANTITY = 1000          # minimum quantity to be eligible
 MAINTENANCE_COST_THRESHOLD = 18        # <= 18 is "low cost", > 18 is "high cost"
 
+# ID-overuse rule: if ONE batching ID is used continuously for MORE than
+# MAX_ID_CONTINUOUS_HOURS, the whole plant is ruled out of the incentive scheme.
+# "Continuously" = the ID's batches follow each other with no break longer than
+# ID_CONTINUOUS_GAP_HOURS between one batch ending and the next one starting.
+MAX_ID_CONTINUOUS_HOURS = 30
+ID_CONTINUOUS_GAP_HOURS = 2
+
 # Incentive rate (Rs per quantity) for SPE category.
 SPE_RATE_LOW_COST = 5.0     # when YTD maintenance cost <= 18
 SPE_RATE_HIGH_COST = 2.5    # when YTD maintenance cost  > 18

@@ -7,6 +7,12 @@
   <p>Configure the automatic fortnightly Dual Plant Utilisation report email</p>
 </div>
 
+{% if auto_mail_paused() %}
+<div class="alert alert-warning">
+  ⏸️ <b>All auto-scheduled report emails are PAUSED.</b> Nothing will be sent on schedule until auto-mail is resumed. Manual "Send now" still works.
+</div>
+{% endif %}
+
 {% if not email_configured %}
 <div class="alert alert-warning">
   ⚠️ SMTP not configured. Go to <a href="{{ url_for('sysconfig_page') }}">System Config</a> to set up email before enabling the scheduler.

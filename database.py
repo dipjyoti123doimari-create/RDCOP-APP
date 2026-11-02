@@ -115,6 +115,7 @@ TABLE_SCHEMAS = {
             ly_volume            REAL,
             ly_rm_cost_per_cum   REAL,
             oracle_period_name   TEXT,
+            plant_codes          TEXT,
             UNIQUE(plant_code, month, year)
         )
     """,
@@ -427,7 +428,9 @@ TABLE_SCHEMAS = {
             batch_ref       TEXT,
             quantity        REAL,
             time_taken_min  REAL,
-            fetched_at      TEXT
+            fetched_at      TEXT,
+            batch_start     TEXT,
+            batch_end       TEXT
         )
     """,
 
@@ -679,6 +682,7 @@ def init_db():
             "ytd_total_rm_cost": "REAL", "ytd_volume": "REAL",
             "ly_total_rm_cost": "REAL", "ly_volume": "REAL", "ly_rm_cost_per_cum": "REAL",
             "oracle_period_name": "TEXT",
+            "plant_codes": "TEXT",   # all plant codes of the GL location, comma-separated
         }
         for _col, _type in _gl_cols.items():
             if _col not in existing_cols:
@@ -709,6 +713,14 @@ def init_db():
         for _col in ("pm_email", "bm_email", "bh_email", "cc_emails"):
             if _col not in _plant_cols:
                 cur.execute(f"ALTER TABLE tp_plant_data ADD COLUMN {_col} TEXT")
+
+        # Migration: batch start/end times on the shared Oracle raw cache
+        # (needed by the "ID used continuously for too long" rule)
+        cur.execute("PRAGMA table_info(oracle_raw_data)")
+        _raw_cols = {row[1] for row in cur.fetchall()}
+        for _col in ("batch_start", "batch_end"):
+            if _col not in _raw_cols:
+                cur.execute(f"ALTER TABLE oracle_raw_data ADD COLUMN {_col} TEXT")
 
         # Index for fast date-range queries on the shared Oracle raw cache
         cur.execute("""CREATE INDEX IF NOT EXISTS idx_oracle_raw_date
@@ -903,6 +915,7 @@ def save_gl_maintenance_cost(df, month: int, year: int, period_name: str) -> int
                 "ly_volume":            float(row["ly_volume"]),
                 "ly_rm_cost_per_cum":   float(row["ly_rm_cost_per_cum"]),
                 "oracle_period_name":   period_name,
+                "plant_codes":          str(row.get("plant_codes", "") or ""),
             }
             for _, row in df.iterrows()
         ]

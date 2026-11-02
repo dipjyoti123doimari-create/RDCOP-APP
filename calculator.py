@@ -56,7 +56,7 @@ def _live_fetch_gl_maintenance_cost(month: int, year: int) -> pd.DataFrame:
     table query, or an empty DataFrame if Oracle isn't configured / fetch fails.
     """
     import oracle_connector
-    empty = pd.DataFrame(columns=["plant_code", "ytd_maintenance_cost", "month", "year"])
+    empty = pd.DataFrame(columns=["plant_code", "plant_codes", "ytd_maintenance_cost", "month", "year"])
     if not oracle_connector.is_configured():
         return empty
     try:
@@ -75,7 +75,7 @@ def _live_fetch_gl_maintenance_cost(month: int, year: int) -> pd.DataFrame:
     conn = database.get_connection()
     try:
         return pd.read_sql_query(
-            "SELECT plant_code, ytd_maintenance_cost, month, year "
+            "SELECT plant_code, plant_codes, ytd_maintenance_cost, month, year "
             "FROM maintenance_cost WHERE month = ? AND year = ?",
             conn, params=(month, year)
         )
@@ -253,6 +253,119 @@ def get_batch_detail_for_period(month: int, year: int,
             df[col] = ""
     df["created_by"] = df["created_by"].astype(str).str.strip()
     return df[["created_by", "date", "plant_code", "batch_ref", "quantity"]]
+
+
+# ---------------------------------------------------------------------------
+# 1b. PER-BATCH ACTIVITY (highest-volume plant + ID-overuse rule)
+# ---------------------------------------------------------------------------
+
+def _fetch_batch_activity(month: int, year: int,
+                          start_date: str = None,
+                          end_date: str = None) -> pd.DataFrame:
+    """
+    One row per batch (Oracle-sourced data only, time_taken_min = 0 excluded —
+    the same rows that make up the quantity totals) with the plant and the
+    batch start/end times. Empty when the period has no Oracle data (Excel
+    uploads carry no plant or times).
+    Columns: created_by, plant_code, quantity, time_taken_min, batch_start, batch_end
+    """
+    if start_date and end_date:
+        where, params = "production_date >= ? AND production_date <= ?", (start_date, end_date)
+    else:
+        where, params = "substr(production_date,1,7) = ?", (f"{year:04d}-{month:02d}",)
+    conn = database.get_connection()
+    try:
+        df = pd.read_sql_query(
+            "SELECT created_by, plant_code, quantity, time_taken_min, batch_start, batch_end "
+            f"FROM oracle_raw_data WHERE {where} "
+            "AND (time_taken_min IS NULL OR time_taken_min <> 0)",
+            conn, params=params)
+    finally:
+        conn.close()
+    df["created_by"] = df["created_by"].astype(str).str.strip()
+    df["plant_code"] = df["plant_code"].fillna("").astype(str).str.strip()
+    df["quantity"]   = pd.to_numeric(df["quantity"], errors="coerce").fillna(0)
+    return df
+
+
+def _highest_volume_plants(activity: pd.DataFrame) -> dict:
+    """{employee_code: plant where that ID batched the most quantity}."""
+    if activity.empty:
+        return {}
+    a = activity[activity["plant_code"] != ""]
+    if a.empty:
+        return {}
+    by_plant = a.groupby(["created_by", "plant_code"], as_index=False)["quantity"].sum()
+    # biggest quantity first; ties broken by plant code so the result is stable
+    by_plant = by_plant.sort_values(["created_by", "quantity", "plant_code"],
+                                    ascending=[True, False, True])
+    top = by_plant.drop_duplicates("created_by")
+    return dict(zip(top["created_by"], top["plant_code"]))
+
+
+def _find_overused_ids(activity: pd.DataFrame) -> dict:
+    """
+    Find IDs used continuously for MORE than config.MAX_ID_CONTINUOUS_HOURS.
+
+    An ID's batches are chained in time order; the chain breaks when the next
+    batch starts more than config.ID_CONTINUOUS_GAP_HOURS after the previous
+    one ended. A chain whose first start -> last end exceeds the limit is
+    flagged, and every plant the ID batched at during that chain is returned.
+
+    Returns {plant_code: [(employee_code, hours), ...]}.
+    """
+    if activity.empty:
+        return {}
+    a = activity.copy()
+    a["start"] = pd.to_datetime(a["batch_start"], errors="coerce")
+    a = a.dropna(subset=["start"])
+    if a.empty:
+        return {}
+    # End time: use the recorded one when it is sane; otherwise start + time taken.
+    rec_end  = pd.to_datetime(a["batch_end"], errors="coerce")
+    dur_min  = pd.to_numeric(a["time_taken_min"], errors="coerce").fillna(0).clip(lower=0)
+    calc_end = a["start"] + pd.to_timedelta(dur_min, unit="m")
+    sane     = (rec_end.notna() & (rec_end >= a["start"])
+                & ((rec_end - a["start"]) <= pd.Timedelta(hours=6)))
+    a["end"] = rec_end.where(sane, calc_end)
+
+    limit = pd.Timedelta(hours=config.MAX_ID_CONTINUOUS_HOURS)
+    gap   = pd.Timedelta(hours=config.ID_CONTINUOUS_GAP_HOURS)
+    flagged = {}   # plant -> {employee_code: longest_hours}
+
+    def _close(emp, c_start, c_end, plants):
+        if c_end - c_start > limit:
+            hrs = (c_end - c_start).total_seconds() / 3600.0
+            for pl in plants:
+                prev = flagged.setdefault(pl, {}).get(emp, 0.0)
+                flagged[pl][emp] = max(prev, hrs)
+
+    for emp, g in a.sort_values("start").groupby("created_by"):
+        c_start = c_end = None
+        plants = set()
+        for r in g.itertuples():
+            if c_start is not None and r.start - c_end > gap:
+                _close(emp, c_start, c_end, plants)
+                c_start = None
+            if c_start is None:
+                c_start, c_end, plants = r.start, r.end, set()
+            c_end = max(c_end, r.end)
+            if r.plant_code:
+                plants.add(r.plant_code)
+        if c_start is not None:
+            _close(emp, c_start, c_end, plants)
+
+    return {pl: sorted(ids.items()) for pl, ids in flagged.items()}
+
+
+def _ruled_out_remark(ids_hours: list, name_lookup: dict) -> str:
+    """Remark text for a plant ruled out by the ID-overuse rule."""
+    labels = []
+    for emp, _hrs in ids_hours:
+        nm = name_lookup.get(emp, "")
+        labels.append(f"{emp} ({nm})" if nm and nm.lower() != "nan" else emp)
+    return (f"Ruled out due to ID is being used for more than "
+            f"{config.MAX_ID_CONTINUOUS_HOURS} hours - ID: {', '.join(labels)}")
 
 
 # ---------------------------------------------------------------------------
@@ -538,7 +651,7 @@ def run_calculation(month: int, year: int,
         try:
             import pandas as _pd2
             maint_df = _pd2.read_sql_query(
-                "SELECT plant_code, ytd_maintenance_cost, month, year "
+                "SELECT plant_code, plant_codes, ytd_maintenance_cost, month, year "
                 "FROM maintenance_cost WHERE month = ? AND year = ?",
                 conn_m, params=(month, year)
             )
@@ -553,7 +666,7 @@ def run_calculation(month: int, year: int,
             try:
                 # Fall back to all uploaded rows (use whatever month is available)
                 maint_df = _pd2.read_sql_query(
-                    "SELECT plant_code, ytd_maintenance_cost, month, year "
+                    "SELECT plant_code, plant_codes, ytd_maintenance_cost, month, year "
                     "FROM maintenance_cost",
                     conn_m
                 )
@@ -574,6 +687,13 @@ def run_calculation(month: int, year: int,
             maint_lookup = dict(
                 zip(maint_df["plant_code"], maint_df["ytd_maintenance_cost"])
             )
+            # A GL location can host several plants ("KL6,KL7") but is saved under
+            # one plant_code; let the other plants resolve to that location's cost.
+            for _pc, _cost in zip(maint_df["plant_codes"], maint_df["ytd_maintenance_cost"]):
+                for _code in str(_pc or "").split(","):
+                    _code = _code.strip()
+                    if _code and _code != "nan":
+                        maint_lookup.setdefault(_code, _cost)
 
         # ── Step 3: Separate mapped vs unmapped ──────────────────────────────
         known_codes = set(master_df["employee_code"].tolist())
@@ -602,6 +722,16 @@ def run_calculation(month: int, year: int,
         # Load waivers for this month/year — {employee_code: display_text}
         waiver_lookup = database.get_waiver_lookup(month, year)
 
+        # Per-batch plant + times (Oracle data only) drive two rules:
+        #  - a batcher's maintenance cost is taken from the plant where that ID
+        #    did the HIGHEST volume (falls back to the Master Data plant);
+        #  - an ID used continuously for too long rules its whole plant out.
+        activity    = _fetch_batch_activity(month, year, start_date, end_date)
+        top_plants  = _highest_volume_plants(activity)
+        overused    = _find_overused_ids(activity)
+        name_lookup = dict(zip(master_df["employee_code"],
+                               master_df["employee_name"].astype(str)))
+
         results = []
         for _, row in merged.iterrows():
             emp_code  = str(row["employee_code"])
@@ -609,14 +739,21 @@ def run_calculation(month: int, year: int,
             category  = str(row.get("category", "")).strip()
             plant_code = str(row.get("plant_code", "")).strip()
 
+            # Maintenance cost comes from the plant where this ID batched the most
+            # volume; if that plant has no cost row, use the Master Data plant.
+            top_plant  = top_plants.get(emp_code, "")
+            cost_plant = top_plant if top_plant in maint_lookup else plant_code
+
             # If this plant has no row in the maintenance file, the rule says:
             # treat the cost as 0 (counts as low-cost) AND add a clear remark.
-            cost_missing = plant_code not in maint_lookup
-            ytd_cost = float(maint_lookup.get(plant_code, 0.0))
+            cost_missing = cost_plant not in maint_lookup
+            ytd_cost = float(maint_lookup.get(cost_plant, 0.0))
 
             inc_elig, inc_rate, inc_amount, remark = _calculate_incentive(
                 total_qty, category, ytd_cost
             )
+            if inc_elig == "Yes" and cost_plant != plant_code:
+                remark = f"{remark} (plant {cost_plant}, highest volume)"
             if cost_missing:
                 miss_note = "Maintenance cost missing, treated as 0"
                 remark = f"{remark}; {miss_note}" if remark else miss_note
@@ -638,6 +775,15 @@ def run_calculation(month: int, year: int,
                 if total_qty < config.INCENTIVE_MIN_QUANTITY:
                     remark = (f"Quantity {total_qty:.0f} < minimum "
                               f"{config.INCENTIVE_MIN_QUANTITY} for incentive")
+
+            # ID-overuse rule: the whole plant is out of the incentive scheme
+            # (deduction rules are untouched).
+            ruled_ids = overused.get(plant_code) or overused.get(top_plant)
+            if ruled_ids:
+                inc_elig, inc_rate, inc_amount = "No", 0.0, 0.0
+                ruled = _ruled_out_remark(ruled_ids, name_lookup)
+                keep_other = ded_amount > 0 or emp_code in waiver_lookup
+                remark = f"{ruled}; {remark}" if keep_other else ruled
 
             results.append({
                 "month":                month,
@@ -700,6 +846,11 @@ def run_calculation(month: int, year: int,
                 f"but maintenance cost data applied is from {maint_applied_label}. "
                 f"Upload {calc_month_label} maintenance cost for accurate results."
             )
+        for _pl, _ids in sorted(overused.items()):
+            calc_warnings.append(
+                f"🚫 Plant {_pl} ruled out of the incentive scheme — ID used continuously "
+                f"for more than {config.MAX_ID_CONTINUOUS_HOURS} hours: "
+                + ", ".join(f"{e} ({h:.0f} h)" for e, h in _ids))
         if bad_qty_count > 0:
             calc_warnings.append(
                 f"⚠️ {bad_qty_count} backend row(s) had non-numeric Quantity and were "
@@ -763,6 +914,7 @@ def run_calculation(month: int, year: int,
             "unmapped_rows":   unmapped_rows,
             "calc_warnings":   calc_warnings,
             "maint_anomaly":   maint_anomaly,
+            "ruled_out_plants": overused,
             "preflight_errors": [],
             "error":           None,
         }

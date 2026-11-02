@@ -105,7 +105,7 @@ def send_uep_email(to, cc, subject, body, html=False,
         raise RuntimeError("UEP SMTP is not configured. Add settings in UEP Settings.")
 
     to_list = _split_emails(to)
-    cc_list  = _split_emails(cc)
+    cc_list  = _with_mandatory_cc(to_list, _split_emails(cc))
     if not to_list:
         raise RuntimeError("No recipient address provided.")
 
@@ -185,6 +185,18 @@ def _split_emails(text) -> list:
         return []
     parts = [p.strip() for p in str(text).replace(";", ",").split(",")]
     return [p for p in parts if p]
+
+
+# Every report e-mail must carry this address in CC (company rule).
+MANDATORY_CC = "dipjyoti.doimari@rdc.in"
+
+
+def _with_mandatory_cc(to_list, cc_list) -> list:
+    """Return cc_list with MANDATORY_CC added, unless it is already a recipient."""
+    already = {a.lower() for a in to_list + cc_list}
+    if MANDATORY_CC.lower() in already:
+        return cc_list
+    return cc_list + [MANDATORY_CC]
 
 
 def wrap_html_body(message_text, tables_html="") -> str:
@@ -761,7 +773,7 @@ def send_report_email(to_emails, cc_emails, subject, body,
     """
     cfg     = get_smtp_config()
     to_list = _split_emails(to_emails)
-    cc_list = _split_emails(cc_emails)
+    cc_list = _with_mandatory_cc(to_list, _split_emails(cc_emails))
     result  = {"success": False, "error": None}
 
     if not is_configured():

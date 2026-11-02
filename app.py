@@ -398,7 +398,7 @@ def _start_scheduler():
                        CronTrigger(hour=0, minute=45),
                        id="gl_maintenance_cost_fetch", replace_existing=True)
     # SLA — hourly slow loading alert.
-    _scheduler.add_job(sla_scheduler.run_hourly_alert_job,
+    _scheduler.add_job(_sla_guarded(sla_scheduler.run_hourly_alert_job),
                        CronTrigger(minute=0),  # fires at top of every hour
                        id="sla_hourly_alert", replace_existing=True)
     # SLA — daily summary (default 07:00; re-read from DB each time).
@@ -407,10 +407,49 @@ def _start_scheduler():
         _sla_h, _sla_m = map(int, _sla_ds_time.split(":"))
     except Exception:
         _sla_h, _sla_m = 7, 0
-    _scheduler.add_job(sla_scheduler.run_daily_summary_job,
+    _scheduler.add_job(_sla_guarded(sla_scheduler.run_daily_summary_job),
                        CronTrigger(hour=_sla_h, minute=_sla_m),
                        id="sla_daily_summary", replace_existing=True)
     _scheduler.start()
+
+
+# ── Global pause for ALL auto-scheduled report mails ─────────────────────────
+# Set app_settings 'auto_mail_paused' = 'true' to stop every scheduled report
+# send (I&D / TP / BTRTP / ECMD / DPU / PFS / SLA daily summary) without losing
+# any schedule settings. Manual "Send now" buttons are NOT affected. Set it back
+# to 'false' to resume.
+def _auto_mail_paused():
+    return database.get_setting("auto_mail_paused", "false") == "true"
+
+
+def _stamp_paused_skip(module_key, run_key, status_key):
+    """A scheduled slot passed while paused: record it as handled so that when
+    auto-mail is resumed the catch-up scan does NOT back-fill the skipped send."""
+    database.set_module_setting(module_key, run_key,
+                                _dt.now().isoformat(timespec="seconds"))
+    database.set_module_setting(module_key, status_key,
+                                f"Paused - not sent {_dt.now():%d %b %Y %H:%M}")
+    print(f"[auto-mail] paused - skipped scheduled send ({module_key}/{run_key})")
+
+
+def _uep_guarded(prefix, func):
+    """Wrap a scheduled ECMD/DPU/PFS sender so it does nothing while paused."""
+    def _job():
+        if _auto_mail_paused():
+            _stamp_paused_skip("ecmd", f"{prefix}_last_run_at", f"{prefix}_last_status")
+            return
+        return func()
+    return _job
+
+
+def _sla_guarded(func):
+    """Wrap an SLA scheduled job so it does nothing while auto-mail is paused."""
+    def _job():
+        if _auto_mail_paused():
+            print("[auto-mail] paused - skipped scheduled SLA job")
+            return
+        return func()
+    return _job
 
 
 _UEP_WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -474,7 +513,7 @@ def _register_uep_mail_jobs():
     for mod, (prefix, func, default_freq) in _uep_mail_jobs().items():
         if database.get_module_setting("ecmd", f"{prefix}_enabled", "false") == "true":
             _, h, m, cron_kwargs = _uep_job_trigger(prefix, default_freq)
-            _scheduler.add_job(id=f"ecmd_{mod}_mail", func=func,
+            _scheduler.add_job(id=f"ecmd_{mod}_mail", func=_uep_guarded(prefix, func),
                                trigger="cron", hour=h, minute=m,
                                replace_existing=True, **cron_kwargs)
 
@@ -817,6 +856,9 @@ def _make_rdc_scheduled_sender(module):
     """Build the scheduled-send callback for a module (sends previous month)."""
     def _job():
         with app.app_context():
+            if _auto_mail_paused():
+                _stamp_paused_skip(module, "mail_last_run_at", "mail_last_status")
+                return
             database.set_module_setting(module, "mail_last_run_at",
                                         _dt.now().isoformat(timespec="seconds"))
             try:
@@ -937,7 +979,7 @@ def _catch_up_missed_mail_jobs():
         last_run = _last_run("ecmd", f"{prefix}_last_run_at", trigger)
         if _due_since(trigger, last_run):
             print(f"[mail-catchup] ecmd/{mod} mail missed a scheduled send — running now")
-            func()
+            _uep_guarded(prefix, func)()   # no-op (and marks slot handled) while paused
 
 
 _start_scheduler()
@@ -954,6 +996,11 @@ def _fmt_int(v):
         return f"{int(v):,}"
     except Exception:
         return v
+
+
+@app.template_global()
+def auto_mail_paused():
+    return _auto_mail_paused()
 
 
 @app.template_global()
@@ -5936,7 +5983,7 @@ def ecmd_mail_scheduler_save():
                 "dpu":  _dpu_send_scheduled_email,
                 "pfs":  _pfs_send_scheduled_email}[module]
         cron_kwargs = _uep_cron_kwargs(freq, weekday, day1, day2)
-        _scheduler.add_job(id=job_id, func=func,
+        _scheduler.add_job(id=job_id, func=_uep_guarded(prefix, func),
                           trigger="cron", hour=h, minute=m,
                           replace_existing=True, **cron_kwargs)
     else:
